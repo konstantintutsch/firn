@@ -14,8 +14,13 @@
   --nav-space: 112px;
   --accent: #d9480f;
   --accent-fill: #d9480f;
-  /* Liquid glass: a translucent tint over a blurred, saturated backdrop, lit along its edges. */
-  --glass: rgb(255 255 255 / 28%);
+  /* Liquid glass: a nearly clear tint over a blurred, saturated backdrop, lit along its rim. */
+  --glass: rgb(255 255 255 / 8%);
+  --glass-filter: blur(12px) saturate(180%) brightness(1.06);
+  --glass-rim: rgb(255 255 255 / 80%);
+  --glass-rim-dim: rgb(255 255 255 / 45%);
+  --glass-glow: rgb(255 255 255 / 12%);
+  --glass-outline: rgb(0 0 0 / 10%);
   --fill: rgb(118 118 128 / 12%);
   --glass-selected: rgb(255 255 255 / 60%);
   --glass-edge: rgb(255 255 255 / 70%);
@@ -42,7 +47,12 @@
     --series-3: #199e70;
     --series-4: #c98500;
     --accent: #ff8a4c;
-    --glass: rgb(30 32 42 / 30%);
+    --glass: rgb(0 0 0 / 12%);
+    --glass-filter: blur(12px) saturate(180%) brightness(0.95);
+    --glass-rim: rgb(255 255 255 / 40%);
+    --glass-rim-dim: rgb(255 255 255 / 18%);
+    --glass-glow: rgb(255 255 255 / 6%);
+    --glass-outline: rgb(0 0 0 / 40%);
     --fill: rgb(118 118 128 / 24%);
     --glass-selected: rgb(255 255 255 / 20%);
     --glass-edge: rgb(255 255 255 / 16%);
@@ -68,7 +78,12 @@
   --series-3: #199e70;
   --series-4: #c98500;
   --accent: #ff8a4c;
-  --glass: rgb(30 32 42 / 30%);
+  --glass: rgb(0 0 0 / 12%);
+  --glass-filter: blur(12px) saturate(180%) brightness(0.95);
+  --glass-rim: rgb(255 255 255 / 40%);
+  --glass-rim-dim: rgb(255 255 255 / 18%);
+  --glass-glow: rgb(255 255 255 / 6%);
+  --glass-outline: rgb(0 0 0 / 40%);
   --fill: rgb(118 118 128 / 24%);
   --glass-selected: rgb(255 255 255 / 20%);
   --glass-edge: rgb(255 255 255 / 16%);
@@ -101,14 +116,17 @@ body {
 .activity-list,
 .chart-tooltip,
 .maplibregl-ctrl-group:not(:empty) {
-  background: linear-gradient(160deg, var(--glass-shade), transparent 45%), var(--glass);
-  border: 1px solid var(--glass-edge);
+  background: var(--glass);
+  border: 0;
   box-shadow:
-    inset 0 1px 0 var(--glass-specular),
-    inset 0 -1px 0 var(--glass-shade),
+    inset 0 0 0 0.5px var(--glass-rim-dim),
+    inset 1.5px 1.5px 1px -1px var(--glass-rim),
+    inset -1.5px -1.5px 1px -1px var(--glass-rim-dim),
+    inset 0 0 18px var(--glass-glow),
+    0 0 0 0.5px var(--glass-outline),
     var(--glass-shadow);
-  -webkit-backdrop-filter: blur(18px) saturate(180%);
-  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
 }
 
 .panel {
