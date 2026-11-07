@@ -41,6 +41,8 @@ const DOT_LAYER_ID = "activities-dots";
 /** Below this zoom an activity can be too short to draw as a line, so it also gets a faint dot. */
 const DOT_MAX_ZOOM = 9;
 const REFRESH_DELAY_MS = 150;
+/** While zooming, the heat refreshes at most this often, and only once the last refresh has loaded. */
+const ZOOM_REFRESH_MS = 400;
 /** Fetches beyond the viewport so that small pans do not show empty edges. */
 const VIEWPORT_PADDING = 0.25;
 const PLACE_SEARCH_URL = "https://photon.komoot.io/api/";
@@ -95,6 +97,7 @@ map.addControl(
 
 let pendingRequest = null;
 let refreshTimer = null;
+let lastRefresh = 0;
 let pendingStats = null;
 let pendingSearch = null;
 let searchTimer = null;
@@ -180,6 +183,11 @@ map.on("style.load", () => {
   }
 });
 
+map.on("zoom", () => {
+  if (pendingRequest || performance.now() - lastRefresh < ZOOM_REFRESH_MS) return;
+  refresh();
+});
+
 map.on("moveend", () => {
   clearTimeout(refreshTimer);
   refreshTimer = setTimeout(refresh, REFRESH_DELAY_MS);
@@ -200,6 +208,7 @@ async function refresh() {
   pendingRequest?.abort();
   const request = new AbortController();
   pendingRequest = request;
+  lastRefresh = performance.now();
 
   try {
     const query = new URLSearchParams([...viewportQuery(), ...filterQuery()]);
@@ -210,6 +219,8 @@ async function refresh() {
     if (!legend.isColored) legendElement.hidden = lines.length === 0;
   } catch (error) {
     if (error.name !== "AbortError") showStatus(t(NOT_LOADED));
+  } finally {
+    if (pendingRequest === request) pendingRequest = null;
   }
 }
 

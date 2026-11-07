@@ -4,7 +4,7 @@
  * Only Chromium applies SVG filters in backdrop-filter, so other browsers keep the plain blur.
  */
 
-const GLASS = ".panel, .nav, .settings, .tile, .card, .activity-list, .chart-tooltip, .maplibregl-ctrl-group";
+const GLASS = ".panel, .nav, .tile, .card, .activity-list, .chart-tooltip, .maplibregl-ctrl-group";
 // The widest band along the rim that refracts, in pixels.
 const BAND_PX = 22;
 // The largest shift at the very edge, as a share of the band.

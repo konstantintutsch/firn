@@ -1,4 +1,4 @@
-/** The signed-in account, the settings dialog and the theme, shared by all pages. */
+/** The signed-in account, the settings page and the theme, shared by all pages. */
 
 import { plural, t, typeName } from "/js/i18n.js";
 
@@ -80,7 +80,6 @@ let account = null;
  */
 export async function requireAccount() {
   setUpThemeToggle();
-  setUpSettings();
   const failed = new URLSearchParams(location.search).get("login") === "failed";
   if (failed) history.replaceState(null, "", location.pathname + location.hash);
 
@@ -108,8 +107,8 @@ export function hasGarminKey() {
   return account?.has_garmin_key ?? false;
 }
 
-export function openSettings(message = "") {
-  const dialog = document.querySelector("#settings");
+/** Shows the account and whether it has a Garmin key on the settings page, with an optional `message`. */
+function showSettings(message = "") {
   document.querySelector("#settings-account").textContent =
     account?.name || account?.email || t("Signed in");
   document.querySelector("#key-status").textContent = hasGarminKey()
@@ -117,17 +116,16 @@ export function openSettings(message = "") {
     : t("No Garmin key is saved yet. Add one to sync your data.");
   document.querySelector("#key-remove").hidden = !hasGarminKey();
   document.querySelector("#settings-message").textContent = message;
-  dialog.showModal();
 }
 
-function setUpSettings() {
-  const dialog = document.querySelector("#settings");
+/** Wires the settings page. Other pages send people here with `?key=missing` to add a key before syncing. */
+export function setUpSettings() {
   const form = document.querySelector("#key-form");
   const input = form.elements.api_key;
   const message = document.querySelector("#settings-message");
 
-  document.querySelector("#account-button").addEventListener("click", () => openSettings());
-  document.querySelector("#settings-close").addEventListener("click", () => dialog.close());
+  const keyMissing = new URLSearchParams(location.search).get("key") === "missing";
+  showSettings(keyMissing ? t("Add your Garmin key first.") : "");
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -143,7 +141,7 @@ function setUpSettings() {
       if (response.ok) {
         account.has_garmin_key = true;
         input.value = "";
-        openSettings(t("Saved. Select Sync to save your data."));
+        showSettings(t("Saved. Select Sync to save your data."));
       } else {
         message.textContent = await errorMessage(response, t("Could not save the key."));
       }
@@ -158,7 +156,7 @@ function setUpSettings() {
     const response = await send("/api/me/garmin-key", { method: "DELETE" });
     if (response.ok) {
       account.has_garmin_key = false;
-      openSettings(t("Removed. Your saved data stays."));
+      showSettings(t("Removed. Your saved data stays."));
     } else {
       message.textContent = await errorMessage(response, t("Could not remove the key."));
     }
@@ -251,7 +249,7 @@ export function setUpSync(onFinished) {
 
   button.addEventListener("click", async () => {
     if (!hasGarminKey()) {
-      openSettings(t("Add your Garmin key first."));
+      location.href = "/settings/?key=missing";
       return;
     }
     button.disabled = true;

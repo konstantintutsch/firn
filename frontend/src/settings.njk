@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Runmap settings</title>
+    <script>
+      // Applies a saved theme before the first paint, to avoid a flash of the wrong one.
+      try {
+        const theme = localStorage.getItem("theme");
+        if (theme) document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="stylesheet" href="/css/style.css">
+  </head>
+  <body class="page">
+    <header class="page-header">
+      {% include "header.njk" %}
+      <p id="sync-status" role="status"></p>
+    </header>
+    <main class="settings-page">
+      <section class="card">
+        <h2 data-i18n>Settings</h2>
+        <p id="settings-account" class="muted"></p>
+        <form id="key-form">
+          <label><span data-i18n>Garmin Personal API key</span>
+            <input name="api_key" type="password" autocomplete="off" required>
+          </label>
+          <p class="muted">
+            <span data-i18n>Create one on</span>
+            <a href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noreferrer">Garmin Connect</a>.
+            <span data-i18n>Runmap stores it encrypted and never shows it again.</span>
+          </p>
+          <p id="key-status" class="muted"></p>
+          <div class="panel-actions">
+            <button class="panel-button" type="submit" data-i18n>Save key</button>
+            <button id="key-remove" class="panel-button" type="button" hidden data-i18n>Remove key</button>
+          </div>
+        </form>
+        <p id="settings-message" role="status"></p>
+      </section>
+      <button id="sign-out" class="panel-button" type="button" data-i18n>Sign out</button>
+    </main>
+    {% include "nav.njk" %}
+    {% include "account.njk" %}
+    <script type="module" src="/js/settings.js"></script>
+    <script type="module" src="/js/glass.js"></script>
+  </body>
+</html>

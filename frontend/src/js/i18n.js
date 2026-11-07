@@ -10,6 +10,7 @@ const GERMAN = {
   // Pages and navigation
   "Runmap statistics": "Runmap-Statistik",
   "Runmap activities": "Runmap-Aktivitäten",
+  "Runmap settings": "Runmap-Einstellungen",
   Map: "Karte",
   Activities: "Aktivitäten",
   Statistics: "Statistik",
@@ -24,7 +25,6 @@ const GERMAN = {
     "Deine Garmin-Aktivitäten auf einer Karte, mit Statistiken zu Training, Schlaf und Gesundheit.",
   "Sign in": "Anmelden",
   "Sign out": "Abmelden",
-  Close: "Schließen",
   "Garmin Personal API key": "Persönlicher Garmin-API-Schlüssel",
   "Create one on": "Erstelle einen bei",
   "Runmap stores it encrypted and never shows it again.":

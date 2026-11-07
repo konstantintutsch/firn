@@ -7,27 +7,3 @@
     <p id="sign-in-message" role="status"></p>
   </div>
 </section>
-<dialog id="settings" class="settings" aria-labelledby="settings-title">
-  <div class="panel-header">
-    <h2 id="settings-title" data-i18n>Settings</h2>
-    <button id="settings-close" class="panel-button" type="button" data-i18n>Close</button>
-  </div>
-  <p id="settings-account" class="muted"></p>
-  <form id="key-form">
-    <label><span data-i18n>Garmin Personal API key</span>
-      <input name="api_key" type="password" autocomplete="off" required>
-    </label>
-    <p class="muted">
-      <span data-i18n>Create one on</span>
-      <a href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noreferrer">Garmin Connect</a>.
-      <span data-i18n>Runmap stores it encrypted and never shows it again.</span>
-    </p>
-    <p id="key-status" class="muted"></p>
-    <div class="panel-actions">
-      <button class="panel-button" type="submit" data-i18n>Save key</button>
-      <button id="key-remove" class="panel-button" type="button" hidden data-i18n>Remove key</button>
-    </div>
-  </form>
-  <p id="settings-message" role="status"></p>
-  <button id="sign-out" class="panel-button" type="button" data-i18n>Sign out</button>
-</dialog>

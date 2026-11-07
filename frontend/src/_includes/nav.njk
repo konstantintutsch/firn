@@ -2,5 +2,5 @@
   <a class="nav-item" href="/" {% if page.url == "/" %}aria-current="page"{% endif %}>{% icon "map" %}<span data-i18n>Map</span></a>
   <a class="nav-item" href="/activities/" {% if page.url == "/activities/" %}aria-current="page"{% endif %}>{% icon "list" %}<span data-i18n>Activities</span></a>
   <a class="nav-item" href="/stats/" {% if page.url == "/stats/" %}aria-current="page"{% endif %}>{% icon "chart" %}<span data-i18n>Statistics</span></a>
-  <button id="account-button" class="nav-item" type="button" hidden>{% icon "settings" %}<span data-i18n>Settings</span></button>
+  <a id="account-button" class="nav-item" href="/settings/" hidden {% if page.url == "/settings/" %}aria-current="page"{% endif %}>{% icon "settings" %}<span data-i18n>Settings</span></a>
 </nav>
