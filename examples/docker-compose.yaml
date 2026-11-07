@@ -7,6 +7,7 @@ name: runmap
 services:
   db:
     image: postgres:18-alpine
+    container_name: runmap-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: runmap
@@ -19,8 +20,9 @@ services:
       retries: 30
 
   # The frontend forwards /api to a service of exactly this name.
-  api:
+  backend:
     image: ${RUNMAP_IMAGES:?Set RUNMAP_IMAGES in .env}/backend:${RUNMAP_VERSION:-latest}
+    container_name: runmap-backend
     restart: unless-stopped
     env_file: .env
     environment:
@@ -29,13 +31,14 @@ services:
       db:
         condition: service_healthy
 
-  web:
+  frontend:
     image: ${RUNMAP_IMAGES}/frontend:${RUNMAP_VERSION:-latest}
+    container_name: runmap-frontend
     restart: unless-stopped
     ports:
       - 127.0.0.1:8080:80
     depends_on:
-      - api
+      - backend
 
 volumes:
   db:

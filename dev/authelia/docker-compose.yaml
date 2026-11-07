@@ -3,6 +3,7 @@
 services:
   authelia:
     image: authelia/authelia:4.39
+    container_name: runmap-authelia
     environment:
       # Lets the configuration read the generated key with the secret template.
       X_AUTHELIA_CONFIG_FILTERS: template
@@ -15,12 +16,12 @@ services:
       - 127.0.0.1:9091:9091
     networks:
       default:
-        # The api reaches Authelia at the same address as the browser.
+        # The backend reaches Authelia at the same address as the browser.
         aliases: [authelia.localhost]
     healthcheck:
       disable: true
 
-  api:
+  backend:
     environment:
       OIDC_ISSUER: https://authelia.localhost:9091
       OIDC_CLIENT_ID: runmap

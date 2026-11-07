@@ -5,6 +5,7 @@ x-database-url: &database-url postgres://runmap:${POSTGRES_PASSWORD:-runmap}@db/
 services:
   db:
     image: postgres:18-alpine
+    container_name: runmap-db
     environment:
       POSTGRES_USER: runmap
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runmap}
@@ -17,10 +18,11 @@ services:
       timeout: 3s
       retries: 30
 
-  api:
+  backend:
     build:
       context: backend
       target: runtime
+    container_name: runmap-backend
     env_file:
       - path: .env
         required: false
@@ -35,14 +37,15 @@ services:
           action: rebuild
           ignore: [target/]
 
-  web:
+  frontend:
     build: frontend
+    container_name: runmap-frontend
     ports:
       # Localhost by default. Set WEB_BIND to 0.0.0.0 to serve other machines,
       # ideally behind a reverse proxy with HTTPS.
       - ${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8080}:80
     depends_on:
-      - api
+      - backend
     develop:
       watch:
         - path: frontend
@@ -69,6 +72,7 @@ services:
   test-db:
     profiles: [dev]
     image: postgres:18-alpine
+    container_name: runmap-test-db
     environment:
       POSTGRES_PASSWORD: test
     tmpfs:
