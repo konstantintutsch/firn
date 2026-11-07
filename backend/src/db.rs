@@ -390,11 +390,12 @@ pub struct ActivitySummary {
     pub location: Option<String>,
 }
 
-/// The newest activities that match.
+/// The newest activities that match, after skipping the `offset` newest.
 pub async fn search_activities(
     pool: &Pool,
     filter: &Filter,
     limit: i64,
+    offset: i64,
 ) -> Result<Vec<ActivitySummary>> {
     Ok(filter
         .apply(
@@ -404,6 +405,7 @@ pub async fn search_activities(
         )
         .order((activities::started_at.desc(), activities::id.desc()))
         .limit(limit)
+        .offset(offset)
         .load(&mut pool.get().await?)
         .await?)
 }

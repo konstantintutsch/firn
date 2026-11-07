@@ -406,6 +406,13 @@ async fn search_returns_details_newest_first_up_to_the_limit() {
 
     let (_, limited) = get(&pool, "/api/activities?limit=1").await;
     assert_eq!(limited["activities"].as_array().unwrap().len(), 1);
+    let (_, next) = get(&pool, "/api/activities?limit=1&offset=1").await;
+    assert_eq!(next["activities"].as_array().unwrap().len(), 1);
+    assert_ne!(next["activities"][0]["id"], limited["activities"][0]["id"]);
+    let (_, past_end) = get(&pool, "/api/activities?offset=2").await;
+    assert!(past_end["activities"].as_array().unwrap().is_empty());
+    let (status, _) = get(&pool, "/api/activities?offset=-1").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, _) = get(&pool, "/api/activities?limit=0").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, _) = get(&pool, "/api/activities?limit=101").await;

@@ -326,6 +326,8 @@ fn to_degrees(position: Position) -> Position {
 struct SearchQuery {
     /// How many activities to return, from 1 to 100. Defaults to 20.
     limit: Option<i64>,
+    /// How many of the newest matching activities to skip, for the next page. Defaults to 0.
+    offset: Option<i64>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -356,7 +358,7 @@ struct ActivityList {
     params(SearchQuery, FilterQuery),
     responses(
         (status = 200, body = ActivityList),
-        (status = 400, description = "Invalid limit", body = ErrorBody),
+        (status = 400, description = "Invalid limit or offset", body = ErrorBody),
         (status = 401, description = "Not signed in", body = ErrorBody),
     )
 )]
@@ -370,7 +372,12 @@ async fn activities(
     if !(1..=MAX_SEARCH_LIMIT).contains(&limit) {
         return Err(ApiError::BadRequest("limit must be from 1 to 100"));
     }
-    let found = db::search_activities(&state.pool, &filter.into_filter(user.id), limit).await?;
+    let offset = search.offset.unwrap_or(0);
+    if offset < 0 {
+        return Err(ApiError::BadRequest("offset must not be negative"));
+    }
+    let found =
+        db::search_activities(&state.pool, &filter.into_filter(user.id), limit, offset).await?;
     let tracks = state.tracks(user.id).await?;
     let bounds: HashMap<i64, Viewport> = tracks
         .iter()
