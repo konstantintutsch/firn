@@ -54,6 +54,8 @@ struct ExportedActivity {
     workouts: Option<Value>,
     #[serde(default)]
     images: Vec<ExportedImage>,
+    #[serde(default)]
+    result: Option<db::RaceResult>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -94,6 +96,7 @@ pub fn export(
 
     let ids = handle.block_on(db::activity_ids(pool, user_id))?;
     for chunk in ids.chunks(ACTIVITIES_PER_QUERY) {
+        let mut results = handle.block_on(db::race_results(pool, chunk))?;
         for activity in handle.block_on(db::activity_exports(pool, user_id, chunk))? {
             let dir = format!("activities/{}", activity.id);
             zip.start_file(format!("{dir}/activity.json"), deflated)?;
@@ -111,6 +114,7 @@ pub fn export(
                             content_type: content_type.clone(),
                         })
                         .collect(),
+                    result: results.remove(&activity.id),
                 },
             )?;
             if let Some(original) = handle.block_on(files.original(activity.id))? {
@@ -264,6 +268,14 @@ impl Import<'_> {
             .block_on(self.files.save_images(activity.id, &images))?;
         self.handle
             .block_on(db::save_images(self.pool, activity.id, &saved))?;
+        if let Some(result) = &exported.result {
+            self.handle.block_on(db::save_race_result(
+                self.pool,
+                self.user_id,
+                activity.id,
+                result,
+            ))?;
+        }
         Ok(true)
     }
 

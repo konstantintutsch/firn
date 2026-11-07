@@ -777,6 +777,7 @@ async fn activity_has_its_summary_and_samples() {
     assert_eq!(samples["position"][1], Value::Null);
     assert!((samples["position"][0][1].as_f64().unwrap() - BERLIN.lat).abs() < 1e-6);
     assert!(samples.get("power_w").is_none());
+    assert_eq!(body["original_format"], "fit");
 
     // The second activity's file is not a ZIP, so it has no samples.
     let (status, body) = get(&pool, "/api/activities/2").await;
@@ -821,13 +822,7 @@ async fn activity_statistics_include_activities_without_gps() {
     add_activity(
         &pool,
         1,
-        json!({
-            "averageHR": 151.0,
-            "elevationGain": 40.0,
-            "vO2MaxValue": 52.0,
-            "fastestSplit_1000": 290.5,
-            "fastestSplit_5000": 0.0,
-        }),
+        json!({"averageHR": 151.0, "elevationGain": 40.0, "vO2MaxValue": 52.0}),
         &[BERLIN, NEAR_BERLIN],
     )
     .await;
@@ -853,7 +848,7 @@ async fn activity_statistics_include_activities_without_gps() {
         .unwrap();
     assert_eq!(run["average_heart_rate"], 151.0);
     assert_eq!(run["vo2_max"], 52.0);
-    assert_eq!(run["fastest_splits"], json!({"1000": 290.5}));
+    assert_eq!(run["result"], Value::Null);
     let gym = activities
         .iter()
         .find(|activity| activity["id"] == 2)
@@ -1217,4 +1212,79 @@ async fn photos_are_only_for_their_account() {
     let other = common::user_named(&pool, "other").await;
     let (status, _) = fetch(common::cookie_for(&pool, other).await).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn race_results_are_entered_by_hand() {
+    let pool = common::test_pool().await;
+    add_two_activities(&pool).await;
+    let state = common::state(pool.clone(), "http://unused", None).await;
+    let send = async |method: &str, id: i64, body: Value, cookie: String| {
+        let request = Request::builder()
+            .method(method)
+            .uri(format!("/api/activities/{id}/result"))
+            .header("cookie", cookie)
+            .header("x-requested-with", "runmap")
+            .header("content-type", "application/json");
+        router(state.clone())
+            .oneshot(request.body(Body::from(body.to_string())).unwrap())
+            .await
+            .unwrap()
+            .status()
+    };
+    let result = json!({
+        "distance_m": 21097.5,
+        "time_s": 5400.0,
+        "event": " Berlin Half ",
+        "results_url": "https://results.example/123",
+    });
+
+    let cookie = common::cookie(&pool).await;
+    assert_eq!(
+        send("PUT", 1, result.clone(), cookie.clone()).await,
+        StatusCode::NO_CONTENT
+    );
+    let (_, detail) = get(&pool, "/api/activities/1").await;
+    assert_eq!(detail["result"]["event"], "Berlin Half");
+    assert_eq!(detail["result"]["time_s"], 5400.0);
+    let (_, statistics) = get(&pool, "/api/statistics/activities").await;
+    let first = &statistics["activities"].as_array().unwrap()[0];
+    assert_eq!(
+        first["result"]["results_url"],
+        "https://results.example/123"
+    );
+
+    let mut bad = result.clone();
+    bad["results_url"] = json!("javascript:alert(1)");
+    assert_eq!(
+        send("PUT", 1, bad, cookie.clone()).await,
+        StatusCode::BAD_REQUEST
+    );
+    let mut bad = result.clone();
+    bad["time_s"] = json!(0);
+    assert_eq!(
+        send("PUT", 1, bad, cookie.clone()).await,
+        StatusCode::BAD_REQUEST
+    );
+    let other = common::user_named(&pool, "other").await;
+    let other_cookie = common::cookie_for(&pool, other).await;
+    assert_eq!(
+        send("PUT", 1, result.clone(), other_cookie.clone()).await,
+        StatusCode::NOT_FOUND
+    );
+    // Another account cannot remove it either.
+    send("DELETE", 1, Value::Null, other_cookie).await;
+    assert_eq!(
+        get(&pool, "/api/activities/1").await.1["result"]["time_s"],
+        5400.0
+    );
+
+    assert_eq!(
+        send("DELETE", 1, Value::Null, cookie).await,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        get(&pool, "/api/activities/1").await.1["result"],
+        Value::Null
+    );
 }

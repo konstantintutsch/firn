@@ -53,6 +53,8 @@ struct CachedTracks {
         activity,
         activity_file,
         resync_activity,
+        save_result,
+        delete_result,
         activity_image,
         export,
         import,
@@ -194,6 +196,10 @@ pub fn router_with(state: AppState, docs: bool) -> Router {
         .route("/api/activities/{id}/file", get(activity_file))
         .route("/api/activities/{id}/sync", post(resync_activity))
         .route(
+            "/api/activities/{id}/result",
+            put(save_result).delete(delete_result),
+        )
+        .route(
             "/api/activities/{id}/images/{image_id}",
             get(activity_image),
         )
@@ -331,11 +337,6 @@ pub struct FilterQuery {
 impl FilterQuery {
     pub fn into_filter(self, user_id: i64) -> Filter {
         let query = self;
-        let text = |value: Option<String>| {
-            value
-                .map(|value| value.trim().to_owned())
-                .filter(|value| !value.is_empty())
-        };
         Filter {
             user_id,
             id: query.id,
@@ -441,6 +442,13 @@ fn to_degree_bounds(bounds: Viewport) -> [f64; 4] {
     let [west, south] = to_degrees([bounds.min[0], bounds.max[1]]);
     let [east, north] = to_degrees([bounds.max[0], bounds.min[1]]);
     [west, south, east, north]
+}
+
+/// Trimmed text, or `None` if nothing is left.
+fn text(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
 }
 
 fn to_degrees(position: Position) -> Position {
@@ -640,6 +648,10 @@ struct ActivityDetail {
     /// The lowest heart rate of zones 1 to 5 and the maximum, from the zones
     /// that Garmin has for this sport, or else its default ones.
     heart_rate_zones: Option<Vec<f64>>,
+    /// `fit`, `gpx` or `tcx`: the kind of file the device recorded, or `None` without one.
+    original_format: Option<String>,
+    /// The official result, if it was a race and one was entered.
+    result: Option<db::RaceResult>,
     /// The account's activity that started just before this one.
     previous_id: Option<i64>,
     /// The account's activity that started just after this one.
@@ -694,16 +706,22 @@ async fn activity(
     let (activity, summary) = db::activity_with_summary(&state.pool, user.id, id)
         .await?
         .ok_or(ApiError::NotFound("no such activity"))?;
-    let samples = match state.files.original(id).await? {
-        Some(zip) => tokio::task::spawn_blocking(move || track::parse_samples(&zip))
-            .await
-            .map_err(anyhow::Error::from)?
-            .unwrap_or_else(|error| {
+    let (samples, original_format) = match state.files.original(id).await? {
+        Some(zip) => tokio::task::spawn_blocking(move || {
+            let format = track::original_file(&zip).ok().and_then(|(name, _)| {
+                name.rsplit_once('.')
+                    .map(|(_, extension)| extension.to_owned())
+            });
+            let samples = track::parse_samples(&zip).unwrap_or_else(|error| {
                 // The file was read once already to save the track, so this should not happen.
                 tracing::warn!(id, "could not read the activity file: {error:#}");
                 Vec::new()
-            }),
-        None => Vec::new(),
+            });
+            (samples, format)
+        })
+        .await
+        .map_err(anyhow::Error::from)?,
+        None => (Vec::new(), None),
     };
     let bounds = samples.iter().filter_map(|sample| sample.position).fold(
         None,
@@ -729,12 +747,15 @@ async fn activity(
         .and_then(|document| heart_rate_zones(&document, &activity.activity_type));
     let (previous_id, next_id) =
         db::neighbors(&state.pool, user.id, id, activity.started_at).await?;
+    let result = db::race_results(&state.pool, &[id]).await?.remove(&id);
     Ok(Json(ActivityDetail {
         activity: ActivityItem::new(activity, bounds),
         summary,
         samples: Samples::from_samples(&samples),
         images,
         heart_rate_zones,
+        original_format,
+        result,
         previous_id,
         next_id,
     }))
@@ -785,6 +806,78 @@ async fn resync_activity(
         Err(GarminError::Database(error)) => Err(ApiError::Internal(error)),
         Err(error) => Err(ApiError::BadGateway(error.to_string())),
     }
+}
+
+/// Enters the official result of a race, for the personal records. Replaces an
+/// earlier one.
+///
+/// Requires the `X-Requested-With` header.
+#[utoipa::path(
+    put,
+    path = "/api/activities/{id}/result",
+    params(("id" = i64, Path, description = "Garmin's activity ID")),
+    request_body = db::RaceResult,
+    responses(
+        (status = 204, description = "Saved"),
+        (status = 400, description = "Invalid distance, time or link", body = ErrorBody),
+        (status = 401, description = "Not signed in", body = ErrorBody),
+        (status = 403, description = "The header is missing", body = ErrorBody),
+        (status = 404, description = "No such activity", body = ErrorBody),
+    )
+)]
+async fn save_result(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    Json(mut result): Json<db::RaceResult>,
+) -> Result<StatusCode, ApiError> {
+    require_header(&headers)?;
+    let positive = |value: f64| value.is_finite() && value > 0.0;
+    if !positive(result.distance_m) || !positive(result.time_s) {
+        return Err(ApiError::BadRequest("distance and time must be positive"));
+    }
+    result.event = text(result.event);
+    result.results_url = text(result.results_url);
+    // Only web links, so that the page never links to javascript: or the like.
+    if let Some(url) = &result.results_url {
+        let parsed = reqwest::Url::parse(url)
+            .map_err(|_| ApiError::BadRequest("the results link is not a valid URL"))?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return Err(ApiError::BadRequest(
+                "the results link must start with https://",
+            ));
+        }
+    }
+    if db::save_race_result(&state.pool, user.id, id, &result).await? {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::NotFound("no such activity"))
+    }
+}
+
+/// Removes the official result of a race.
+///
+/// Requires the `X-Requested-With` header.
+#[utoipa::path(
+    delete,
+    path = "/api/activities/{id}/result",
+    params(("id" = i64, Path, description = "Garmin's activity ID")),
+    responses(
+        (status = 204, description = "Removed, or there was none"),
+        (status = 401, description = "Not signed in", body = ErrorBody),
+        (status = 403, description = "The header is missing", body = ErrorBody),
+    )
+)]
+async fn delete_result(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<StatusCode, ApiError> {
+    require_header(&headers)?;
+    db::delete_race_result(&state.pool, user.id, id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize, IntoParams)]

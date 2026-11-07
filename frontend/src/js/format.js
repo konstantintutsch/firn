@@ -1,7 +1,7 @@
 /** Number formats and element helpers that the pages share. */
 
 import { language, t } from "/js/i18n.js";
-import { paceUnit } from "/js/units.js";
+import { distanceUnit, paceUnit, toDistance } from "/js/units.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 
@@ -40,4 +40,13 @@ export function svgElement(name, attributes = {}, parent = null) {
   for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
   parent?.append(node);
   return node;
+}
+
+/** Distances with names, in meters, as the form offers them. */
+export const RACE_DISTANCES = { 5000: "5 km", 10000: "10 km", 21097.5: "Half marathon", 42195: "Marathon" };
+
+/** The name of a race distance, or its kilometers or miles. */
+export function raceDistanceName(meters) {
+  const named = Object.entries(RACE_DISTANCES).find(([distance]) => Math.abs(distance - meters) < 1);
+  return named ? t(named[1]) : `${number(toDistance(meters) % 1 === 0 ? 0 : 1)(toDistance(meters))} ${distanceUnit}`;
 }

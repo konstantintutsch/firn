@@ -32,10 +32,16 @@
           </div>
           <p id="detail-description" class="detail-description"></p>
           <div id="detail-actions" class="detail-actions" hidden>
-            <a id="detail-original" class="panel-button" download data-i18n>Original file</a>
-            <a id="detail-gpx" class="panel-button" download>GPX</a>
-            <a id="detail-garmin" class="panel-button" target="_blank" rel="noopener" data-i18n>Garmin Connect</a>
-            <button id="detail-resync" class="panel-button" type="button" data-i18n>Download again</button>
+            <div id="detail-download" class="split-button">
+              <a id="detail-original" class="panel-button" download>{% icon "download" %}<span id="detail-original-label">FIT</span></a>
+              <button id="detail-download-more" class="panel-button" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="detail-download-menu" aria-label="More formats" title="More formats" data-i18n-attrs="aria-label title">{% icon "expand" %}</button>
+              <div id="detail-download-menu" class="menu" role="menu" hidden>
+                <a id="detail-menu-original" role="menuitem" download>FIT</a>
+                <a id="detail-gpx" role="menuitem" download>GPX</a>
+              </div>
+            </div>
+            <a id="detail-garmin" class="panel-button" target="_blank" rel="noopener" title="Garmin Connect">Garmin{% icon "external" %}</a>
+            <button id="detail-resync" class="panel-button" type="button">{% icon "sync" %}<span data-i18n>Update</span></button>
           </div>
           <div id="detail-images" class="detail-images" hidden></div>
           <p id="detail-status" class="muted" role="status"></p>
@@ -49,12 +55,37 @@
             <select id="track-color"></select>
           </label>
           <dl id="detail-metrics" class="metrics"></dl>
+          <section id="detail-race" class="race">
+            <div id="race-view" hidden>
+              <h3 data-i18n>Race result</h3>
+              <p id="race-summary" class="race-summary"></p>
+            </div>
+            <button id="race-edit" class="panel-button" type="button">{% icon "trophy" %}<span id="race-edit-label" data-i18n>Enter race result</span></button>
+            <form id="race-form" class="race-form" hidden>
+              <h3 data-i18n>Race result</h3>
+              <label><span data-i18n>Distance</span>
+                <select name="distance">
+                  <option value="5000" data-i18n>5 km</option>
+                  <option value="10000" data-i18n>10 km</option>
+                  <option value="21097.5" data-i18n>Half marathon</option>
+                  <option value="42195" data-i18n>Marathon</option>
+                  <option value="other" data-i18n>Other distance</option>
+                </select>
+              </label>
+              <label id="race-other" hidden><span data-i18n>Distance in km</span> <input name="other_km" type="number" min="0" step="any"></label>
+              <label><span data-i18n>Official time</span> <input name="time" placeholder="1:29:59" pattern="(\d+:)?\d{1,2}:\d{2}" required autocomplete="off"></label>
+              <label><span data-i18n>Race</span> <input name="event" autocomplete="off"></label>
+              <label><span data-i18n>Link to the official results</span> <input name="results_url" type="url" placeholder="https://"></label>
+              <div class="panel-actions">
+                <button class="primary-button" type="submit" data-i18n>Save</button>
+                <button id="race-cancel" class="panel-button" type="button" data-i18n>Cancel</button>
+                <button id="race-remove" class="panel-button danger-button" type="button" data-i18n>Remove</button>
+              </div>
+            </form>
+          </section>
           <section id="detail-laps" hidden>
             <h3 data-i18n>Splits</h3>
-            <table class="laps">
-              <thead><tr><th data-i18n>km</th><th data-i18n>Time</th><th id="laps-speed" data-i18n>Pace</th><th data-i18n>Heart rate</th><th data-i18n>Elevation</th></tr></thead>
-              <tbody></tbody>
-            </table>
+            <div></div>
           </section>
           <section id="detail-splits" hidden>
             <h3 data-i18n>Fastest splits</h3>

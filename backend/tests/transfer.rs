@@ -125,6 +125,11 @@ async fn synced_state() -> AppState {
 #[tokio::test]
 async fn an_export_restores_everything_in_another_runmap() {
     let source = synced_state().await;
+    let result = json!({"distance_m": 1000.0, "time_s": 240.0, "event": null, "results_url": null});
+    let request =
+        Request::put("/api/activities/7/result").header("content-type", "application/json");
+    let (status, _) = send(&source, request, Body::from(result.to_string())).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, zip) = send(&source, Request::get("/api/export"), Body::empty()).await;
     assert_eq!(status, StatusCode::OK);
 
@@ -143,6 +148,7 @@ async fn an_export_restores_everything_in_another_runmap() {
     let (_, body) = send(&target, Request::get("/api/activities/7"), Body::empty()).await;
     let detail: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(detail["activity"]["name"], "Lunch run");
+    assert_eq!(detail["result"], result);
     assert_eq!(detail["images"], json!(["/api/activities/7/images/p1"]));
     assert_eq!(detail["samples"]["position"].as_array().unwrap().len(), 2);
     let (_, body) = send(

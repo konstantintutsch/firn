@@ -368,18 +368,24 @@ function hover(state, svg, show, hide) {
 }
 
 /** Horizontal bars with the value at each tip, for a few named amounts. */
-export function bars(container, items, format) {
+/**
+ * Horizontal bars. Each item can bring its own `color` and `text`. Bars start
+ * at `baseline` instead of 0 where small differences matter, like in splits.
+ */
+export function bars(container, items, format, { baseline = 0, valueWidth = 64 } = {}) {
   container.replaceChildren();
   container.classList.add("bars");
   const max = Math.max(...items.map(({ value }) => value), 0) || 1;
-  for (const { label, value, slot, color } of items) {
+  for (const { label, value, slot, color, text } of items) {
     const row = html("div", "bar-row");
     const track = html("div", "bar-track");
     const bar = html("div", "bar");
     // Leaves room at the tip for the value.
-    bar.style.width = `calc((100% - 64px) * ${value / max})`;
+    const share = max > baseline ? (value - baseline) / (max - baseline) : 1;
+    // A sliver even for the smallest value above the baseline, but none for nothing.
+    bar.style.width = `calc((100% - ${valueWidth}px) * ${value > 0 ? Math.max(0.02, share) : 0})`;
     bar.style.background = color ?? `var(--series-${slot})`;
-    track.append(bar, html("span", "bar-value", format(value)));
+    track.append(bar, html("span", "bar-value", text ?? format(value)));
     row.append(html("span", "bar-label", label), track);
     container.append(row);
   }

@@ -9,6 +9,10 @@ const ICONS = {
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
   previous: '<path d="m15 6-6 6 6 6"/>',
   collapse: '<path d="m6 15 6-6 6 6"/>',
+  expand: '<path d="m6 9 6 6 6-6"/>',
+  download: '<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>',
+  external: '<path d="M14 5h5v5"/><path d="M19 5l-8 8"/><path d="M18 14v5H5V6h5"/>',
+  trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0V4Z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4"/><path d="M12 13v4M8 20h8"/>',
   next: '<path d="m9 6 6 6-6 6"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
 };

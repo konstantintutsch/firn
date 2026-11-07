@@ -1,5 +1,5 @@
 import { bars, chart, forgetCharts } from "/js/charts.js";
-import { duration, number, pace, unit } from "/js/format.js";
+import { duration, number, pace, raceDistanceName, unit } from "/js/format.js";
 import { language } from "/js/i18n.js";
 import { plural, requireAccount, setUpSync, t, typeName } from "/js/account.js";
 import { localDay, setUpFilters } from "/js/filters.js";
@@ -326,18 +326,17 @@ function renderActivities(activities, buckets) {
   if (activities.length === 0) return;
 
   const dated = activities.filter(({ day }) => day).map((activity) => ({ ...activity, time: parseDay(activity.day) }));
-  const { current, longest } = streaks(dated);
   tiles(document.querySelector("#activity-tiles"), [
     ["Activities", activities.length.toLocaleString(language)],
     ["Distance", `${number()(toDistance(sum(activities, "distance_m")))} ${distanceUnit}`],
     ["Time", `${number()(sum(activities, "duration_s") / 3600)} h`],
     ["Elevation gain", `${number()(toElevation(sum(activities, "elevation_gain_m")))} ${elevationUnit}`],
     ["Calories", `${number()(sum(activities, "calories"))} kcal`],
-    ["Current streak", plural(current, "day", "days")],
-    ["Longest streak", plural(longest, "day", "days")],
   ]);
 
-  calendar(card(container, "Calendar", "Distance per day, darker is more"), dated, buckets);
+  const calendarCard = card(container, "Calendar", "Distance per day, darker is more");
+  calendarCard.parentElement.classList.add("wide");
+  calendar(calendarCard, dated, buckets);
   records(container, dated);
   yearOverYear(container, dated);
   const byType = new Map();
@@ -501,24 +500,6 @@ function renderHealth(metrics, buckets) {
 }
 
 
-/** Days in a row with an activity: the run up to today or yesterday, and the longest. */
-function streaks(dated) {
-  const days = [...new Set(dated.map(({ day }) => day))].sort();
-  let longest = 0;
-  let run = 0;
-  let previous = null;
-  for (const day of days) {
-    run = previous && parseDay(day) - parseDay(previous) <= DAY_MS * 1.5 ? run + 1 : 1;
-    longest = Math.max(longest, run);
-    previous = day;
-  }
-  // A day without an activity yet does not end the streak until it is over.
-  const today = parseDay(localDay(Date.now()));
-  const last = previous ? parseDay(previous) : null;
-  const current = last != null && today - last <= DAY_MS * 1.5 ? run : 0;
-  return { current, longest };
-}
-
 /** A grid of the last weeks of the period, one square per day, darker for more distance. */
 function calendar(container, dated, buckets) {
   const SVG = "http://www.w3.org/2000/svg";
@@ -569,63 +550,60 @@ function calendar(container, dated, buckets) {
   container.append(svg);
 }
 
-const RECORD_DISTANCES = [
-  ["1000", "1 km"],
-  ["1609", "1 mile"],
-  ["5000", "5 km"],
-  ["10000", "10 km"],
-  ["21098", "Half marathon"],
-  ["42195", "Marathon"],
-];
-
-/** The fastest times of the period, and how the 5 and 10 km times developed. */
+/** The best official time over each distance, from the race results entered by hand. */
 function records(container, dated) {
-  const best = RECORD_DISTANCES.map(([meters, label]) => {
-    const fastest = dated
-      .filter((activity) => activity.fastest_splits?.[meters])
-      .reduce((winner, activity) => (!winner || activity.fastest_splits[meters] < winner.fastest_splits[meters] ? activity : winner), null);
-    return { meters, label, fastest };
-  }).filter(({ fastest }) => fastest);
-  if (best.length === 0) return;
-
+  const races = dated.filter(({ result }) => result).sort((a, b) => b.time - a.time);
+  if (races.length === 0) return;
+  // Results over the same distance, within a meter, count against each other.
+  const best = new Map();
+  for (const race of races) {
+    const key = Math.round(race.result.distance_m);
+    const current = best.get(key);
+    if (!current || race.result.time_s < current.result.time_s) best.set(key, race);
+  }
   const list = document.createElement("dl");
   list.className = "records";
-  for (const { meters, label, fastest } of best) {
-    const row = document.createElement("div");
-    const name = document.createElement("dt");
-    name.textContent = t(label);
-    const value = document.createElement("dd");
-    const link = document.createElement("a");
-    link.href = `/?${new URLSearchParams({ activity: fastest.id })}`;
-    link.textContent = duration(fastest.fastest_splits[meters]);
-    const when = document.createElement("small");
-    when.textContent = new Date(fastest.time).toLocaleDateString(language);
-    value.append(link, when);
-    row.append(name, value);
-    list.append(row);
+  for (const race of [...best.values()].sort((a, b) => a.result.distance_m - b.result.distance_m)) {
+    list.append(raceRow(race, raceDistanceName(race.result.distance_m)));
   }
-  card(container, "Personal records", "The fastest times in the period, as Garmin measured them").append(list);
+  card(container, "Personal records", "The best official time over each distance, from the race results").append(list);
 
-  const series = [
-    ["5000", "5 km", 1],
-    ["10000", "10 km", 2],
-  ]
-    .map(([meters, label, slot]) => ({
-      name: t(label),
-      slot,
-      values: dated.filter((activity) => activity.fastest_splits?.[meters]).map((activity) => [activity.time, activity.fastest_splits[meters] / 60]),
-    }))
-    .filter(({ values }) => values.length > 1);
-  if (series.length > 0) {
-    chart(card(container, "Times over 5 and 10 km", "The fastest stretch of each activity, lower is faster"), {
-      kind: "line",
-      series,
-      format: (minutes) => duration(minutes * 60),
-      label: t("Times over 5 and 10 km"),
-    });
+  const all = document.createElement("dl");
+  all.className = "records";
+  for (const race of races) {
+    all.append(raceRow(race, `${race.result.event || activityName(race)} · ${raceDistanceName(race.result.distance_m)}`));
   }
+  card(container, "Races", "Every race with an official result, newest first").append(all);
 }
 
+function activityName({ name, activity_type: type }) {
+  return name || typeName(type);
+}
+
+/** A row with the time, linked to the activity, the date and the official results. */
+function raceRow(race, label) {
+  const row = document.createElement("div");
+  const name = document.createElement("dt");
+  name.textContent = label;
+  const value = document.createElement("dd");
+  const link = document.createElement("a");
+  link.href = `/?${new URLSearchParams({ activity: race.id })}`;
+  link.textContent = duration(race.result.time_s);
+  const when = document.createElement("small");
+  when.textContent = new Date(race.time).toLocaleDateString(language);
+  value.append(link, when);
+  if (race.result.results_url) {
+    const results = document.createElement("a");
+    results.href = race.result.results_url;
+    results.target = "_blank";
+    results.rel = "noopener noreferrer";
+    results.className = "records-results";
+    results.textContent = t("Results");
+    value.append(results);
+  }
+  row.append(name, value);
+  return row;
+}
 
 /** The distance so far in each year, on the same calendar, to compare the years. */
 function yearOverYear(container, dated) {

@@ -5,9 +5,9 @@
 
 import { bars } from "/js/charts.js";
 import { activityDetails, errorMessage, send, t, typeName } from "/js/account.js";
-import { duration, html, number, pace, unit } from "/js/format.js";
+import { RACE_DISTANCES, duration, html, number, pace, raceDistanceName, unit } from "/js/format.js";
 import { profile } from "/js/profile.js";
-import { DISTANCE_M, distanceUnit, elevationUnit, paceUnit, speedUnit, toDistance, toElevation, toPace, toSpeed } from "/js/units.js";
+import { DISTANCE_M, distanceUnit, elevationUnit, speedUnit, toDistance, toElevation, toPace, toSpeed } from "/js/units.js";
 
 const TRACK_SOURCE_ID = "selected-track";
 const CURSOR_SOURCE_ID = "selected-cursor";
@@ -247,6 +247,9 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
   const statusElement = document.querySelector("#detail-status");
   const imagesElement = document.querySelector("#detail-images");
   const actionsElement = document.querySelector("#detail-actions");
+  const downloadElement = document.querySelector("#detail-download");
+  setUpMenu(document.querySelector("#detail-download-more"), document.querySelector("#detail-download-menu"));
+  const race = setUpRace(statusElement, (id) => onReload(id));
   const lapsElement = document.querySelector("#detail-laps");
   const previousButton = document.querySelector("#detail-previous");
   const nextButton = document.querySelector("#detail-next");
@@ -257,6 +260,8 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
   let detail = null;
   let metrics = [];
   let x = null;
+  /** Whether the profile runs along the distance, or else along the time. */
+  let byDistance = false;
   let chart = null;
   let colorKey = readStorage(COLOR_STORAGE_KEY) ?? "heat";
   let profileKey = readStorage(PROFILE_STORAGE_KEY) ?? "elevation";
@@ -420,7 +425,6 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     for (const button of profileTabs.children) {
       button.setAttribute("aria-pressed", String(button.dataset.key === metric.key));
     }
-    const byDistance = detail.samples.distance_m != null;
     chart = profile(profileChart, {
       x,
       values: metric.values,
@@ -459,7 +463,8 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
 
   /** Time per heart rate zone, each in its color, with its range if Garmin has one. */
   function renderZones(summary, floors) {
-    const zones = [1, 2, 3, 4, 5].map((zone) => {
+    // The hardest zone on top, like on the watch.
+    const zones = [5, 4, 3, 2, 1].map((zone) => {
       const low = floors?.[zone - 1];
       const high = floors?.[zone];
       const range = low != null && high != null ? ` · ${Math.round(low)}–${Math.round(high) - (zone < 5 ? 1 : 0)}` : "";
@@ -473,30 +478,29 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     if (!zonesElement.hidden) bars(zonesElement.querySelector("div"), zones, duration);
   }
 
+  /** A bar per kilometer or mile, longer for faster, with the pace or speed and heart rate. */
   function renderLaps(type, samples) {
     const splits = kilometerSplits(samples);
     lapsElement.hidden = splits.length < 2;
     if (lapsElement.hidden) return;
     const foot = isOnFoot(type);
-    lapsElement.querySelector("#laps-speed").textContent = t(foot ? "Pace" : "Speed");
-    lapsElement.querySelector("th").textContent = distanceUnit;
-    const fastest = Math.min(...splits.filter(({ meters }) => meters >= DISTANCE_M - 1).map(({ seconds }) => seconds));
-    lapsElement.querySelector("tbody").replaceChildren(
-      ...splits.map(({ meters, seconds, heartRate, climb }, index) => {
-        const row = html("tr");
-        if (seconds === fastest) row.className = "fastest";
-        const kilometer = meters >= DISTANCE_M - 1 ? String(index + 1) : number(2)(toDistance(index * DISTANCE_M + meters));
-        const speed = meters / seconds;
-        row.append(
-          html("td", null, kilometer),
-          html("td", null, duration(seconds)),
-          html("td", null, foot ? paceOfSpeed(speed).replace(` ${paceUnit}`, "") : kmh(speed)),
-          html("td", null, heartRate == null ? "–" : String(Math.round(heartRate))),
-          html("td", null, climb == null ? "–" : `${climb > 0 ? "+" : ""}${Math.round(toElevation(climb))} ${elevationUnit}`),
-        );
-        return row;
-      }),
-    );
+    const speeds = splits.map(({ meters, seconds }) => meters / seconds);
+    const full = splits.map(({ meters }) => meters >= DISTANCE_M - 1);
+    const fastest = Math.max(...speeds.filter((_, index) => full[index]));
+    const items = splits.map(({ meters, heartRate }, index) => {
+      const speed = speeds[index];
+      const parts = [foot ? paceOfSpeed(speed) : kmh(speed)];
+      if (heartRate != null) parts.push(`${Math.round(heartRate)} ${t("bpm")}`);
+      return {
+        label: full[index] ? String(index + 1) : number(2)(toDistance(index * DISTANCE_M + meters)),
+        value: speed,
+        text: parts.join(" · "),
+        color: speed === fastest ? "var(--accent)" : "var(--series-1)",
+      };
+    });
+    // Starts the bars below the slowest split, so that the differences show.
+    const slowest = Math.min(...speeds);
+    bars(lapsElement.querySelector("div"), items, String, { baseline: slowest * 0.8, valueWidth: 120 });
   }
 
   /** The photos from Garmin Connect, each opening at full size. */
@@ -521,13 +525,19 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
   }
 
   /** Links to download the files and to open the activity on Garmin Connect. */
-  function renderActions(activity, samples) {
+  function renderActions(activity, samples, originalFormat) {
     const file = `/api/activities/${activity.id}/file`;
-    const hasFile = Object.keys(samples).length > 0;
+    const format = (originalFormat ?? "fit").toUpperCase();
+    downloadElement.hidden = originalFormat == null;
     document.querySelector("#detail-original").href = file;
+    document.querySelector("#detail-original-label").textContent = format;
+    document.querySelector("#detail-menu-original").href = file;
+    document.querySelector("#detail-menu-original").textContent = format;
     document.querySelector("#detail-gpx").href = `${file}?format=gpx`;
-    document.querySelector("#detail-original").hidden = !hasFile;
-    document.querySelector("#detail-gpx").hidden = samples.position == null;
+    // A GPX file needs positions, and is the original already for GPX uploads.
+    const gpx = samples.position != null && originalFormat !== "gpx";
+    document.querySelector("#detail-gpx").hidden = !gpx;
+    document.querySelector("#detail-download-more").hidden = !gpx;
     // Imported files have negative IDs, since Garmin does not know them.
     const fromGarmin = activity.id > 0;
     document.querySelector("#detail-garmin").href = `https://connect.garmin.com/modern/activity/${activity.id}`;
@@ -541,7 +551,9 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     detail = loaded;
     const { activity, summary, samples, images } = detail;
     metrics = trackMetrics(activity.activity_type, samples);
-    x = samples.distance_m ?? samples.time_s ?? null;
+    // Without a track, the time is what the activity is about, like on a treadmill.
+    byDistance = samples.position != null && samples.distance_m != null;
+    x = byDistance ? samples.distance_m : (samples.time_s ?? null);
 
     titleElement.textContent = activity.name || typeName(activity.activity_type);
     const event = EVENT_TYPES[summary.eventType?.typeKey];
@@ -552,7 +564,8 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     statusElement.textContent = "";
     renderMetrics(summary, activity.activity_type);
     renderImages(images ?? []);
-    renderActions(activity, samples);
+    renderActions(activity, samples, detail.original_format);
+    race.show(activity, detail.result);
     renderLaps(activity.activity_type, samples);
     renderZones(summary, detail.heart_rate_zones);
     previousButton.disabled = detail.previous_id == null;
@@ -600,6 +613,7 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     metaElement.textContent = "";
     descriptionElement.textContent = "";
     actionsElement.hidden = true;
+    document.querySelector("#detail-race").hidden = true;
     lapsElement.hidden = true;
     zonesElement.hidden = true;
     previousButton.disabled = true;
@@ -652,6 +666,130 @@ function setUpPhotoDialog() {
       urls = all;
       show(at);
       dialog.showModal();
+    },
+  };
+}
+
+/** A button that opens a menu below it, which closes on a choice, outside clicks and Escape. */
+function setUpMenu(button, menu) {
+  const toggle = (open) => {
+    menu.hidden = !open;
+    button.setAttribute("aria-expanded", String(open));
+  };
+  button.addEventListener("click", () => toggle(menu.hidden));
+  menu.addEventListener("click", () => toggle(false));
+  document.addEventListener("pointerdown", (event) => {
+    if (!menu.hidden && !button.parentElement.contains(event.target)) toggle(false);
+  });
+  button.parentElement.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !menu.hidden) {
+      event.stopPropagation();
+      toggle(false);
+      button.focus();
+    }
+  });
+}
+
+/** Reads "1:29:59" or "29:59" as seconds, or `null`. */
+function parseClock(text) {
+  const parts = text.trim().split(":").map(Number);
+  if (parts.length < 2 || parts.length > 3 || parts.some((part) => !Number.isFinite(part) || part < 0)) return null;
+  return parts.reduce((total, part) => total * 60 + part, 0) || null;
+}
+
+/** The official result of a race: shown, entered and changed by hand. */
+function setUpRace(statusElement, reload) {
+  const view = document.querySelector("#race-view");
+  const summary = document.querySelector("#race-summary");
+  const editButton = document.querySelector("#race-edit");
+  const editLabel = document.querySelector("#race-edit-label");
+  const form = document.querySelector("#race-form");
+  const other = document.querySelector("#race-other");
+  let activity = null;
+  let result = null;
+
+  const editing = (on) => {
+    form.hidden = !on;
+    editButton.hidden = on;
+    view.hidden = on || result == null;
+  };
+
+  form.elements.distance.addEventListener("change", () => {
+    other.hidden = form.elements.distance.value !== "other";
+  });
+  editButton.addEventListener("click", () => {
+    const named = result && Object.keys(RACE_DISTANCES).find((distance) => Math.abs(distance - result.distance_m) < 1);
+    form.elements.distance.value = result ? (named ?? "other") : "5000";
+    form.elements.other_km.value = result && !named ? result.distance_m / 1000 : "";
+    other.hidden = form.elements.distance.value !== "other";
+    form.elements.time.value = result ? duration(result.time_s) : "";
+    form.elements.event.value = result?.event ?? activity.name ?? "";
+    form.elements.results_url.value = result?.results_url ?? "";
+    document.querySelector("#race-remove").hidden = result == null;
+    editing(true);
+    form.elements.time.focus();
+  });
+  document.querySelector("#race-cancel").addEventListener("click", () => editing(false));
+
+  async function save(method, body) {
+    try {
+      const response = await send(`/api/activities/${activity.id}/result`, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: body && JSON.stringify(body),
+      });
+      if (!response.ok) {
+        statusElement.textContent = await errorMessage(response, t("Could not save the race result."));
+        return;
+      }
+      statusElement.textContent = "";
+      reload(activity.id);
+    } catch {
+      statusElement.textContent = t("Could not reach the API. Is it running?");
+    }
+  }
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const choice = form.elements.distance.value;
+    const meters = choice === "other" ? Number(form.elements.other_km.value) * 1000 : Number(choice);
+    const seconds = parseClock(form.elements.time.value);
+    if (!(meters > 0) || seconds == null) {
+      statusElement.textContent = t("Enter a distance and a time like 1:29:59.");
+      return;
+    }
+    save("PUT", {
+      distance_m: meters,
+      time_s: seconds,
+      event: form.elements.event.value,
+      results_url: form.elements.results_url.value,
+    });
+  });
+  document.querySelector("#race-remove").addEventListener("click", () => {
+    if (confirm(t("Remove the race result?"))) save("DELETE");
+  });
+
+  return {
+    show(shown, entered) {
+      document.querySelector("#detail-race").hidden = false;
+      activity = shown;
+      result = entered ?? null;
+      editLabel.textContent = t(result ? "Change race result" : "Enter race result");
+      summary.replaceChildren();
+      if (result) {
+        const parts = [duration(result.time_s), raceDistanceName(result.distance_m)];
+        if (result.event) parts.push(result.event);
+        summary.append(parts.join(" · "));
+        if (result.results_url) {
+          const link = document.createElement("a");
+          link.href = result.results_url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = t("Official results");
+          summary.append(" · ", link);
+        }
+      }
+      editing(false);
     },
   };
 }

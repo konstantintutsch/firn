@@ -17,7 +17,8 @@ use crate::files::FileStore;
 use crate::garmin::Activity;
 use crate::heatmap::{self, Track, Viewport};
 use crate::schema::{
-    activities, activity_images, daily_metrics, garmin_documents, sessions, track_points, users,
+    activities, activity_images, daily_metrics, garmin_documents, race_results, sessions,
+    track_points, users,
 };
 use crate::track::Point;
 
@@ -934,6 +935,91 @@ pub async fn activity_records(pool: &Pool, filter: &Filter) -> Result<Vec<Activi
         )
         .load(&mut pool.get().await?)
         .await?)
+}
+
+/// The official result of a race, entered by hand.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Queryable,
+    Selectable,
+    serde::Serialize,
+    serde::Deserialize,
+    utoipa::ToSchema,
+)]
+#[diesel(table_name = race_results)]
+pub struct RaceResult {
+    /// The race's distance, like 21097.5 for a half marathon.
+    pub distance_m: f64,
+    /// The official finish time.
+    pub time_s: f64,
+    /// The name of the race, if it differs from the activity's.
+    pub event: Option<String>,
+    /// Where the official results are published.
+    pub results_url: Option<String>,
+}
+
+/// The race results of activities, by activity.
+pub async fn race_results(pool: &Pool, ids: &[i64]) -> Result<HashMap<i64, RaceResult>> {
+    let rows: Vec<(i64, RaceResult)> = race_results::table
+        .filter(race_results::activity_id.eq_any(ids))
+        .select((race_results::activity_id, RaceResult::as_select()))
+        .load(&mut pool.get().await?)
+        .await?;
+    Ok(rows.into_iter().collect())
+}
+
+/// Saves the result of one of the account's activities. False if it has no such activity.
+pub async fn save_race_result(
+    pool: &Pool,
+    user_id: i64,
+    id: i64,
+    result: &RaceResult,
+) -> Result<bool> {
+    let mut connection = pool.get().await?;
+    let owned: bool = diesel::select(exists(
+        activities::table
+            .find(id)
+            .filter(activities::user_id.eq(user_id)),
+    ))
+    .get_result(&mut connection)
+    .await?;
+    if !owned {
+        return Ok(false);
+    }
+    let row = (
+        race_results::activity_id.eq(id),
+        race_results::distance_m.eq(result.distance_m),
+        race_results::time_s.eq(result.time_s),
+        race_results::event.eq(&result.event),
+        race_results::results_url.eq(&result.results_url),
+    );
+    diesel::insert_into(race_results::table)
+        .values(row)
+        .on_conflict(race_results::activity_id)
+        .do_update()
+        .set(row)
+        .execute(&mut connection)
+        .await?;
+    Ok(true)
+}
+
+/// Removes the result of one of the account's activities.
+pub async fn delete_race_result(pool: &Pool, user_id: i64, id: i64) -> Result<()> {
+    diesel::delete(
+        race_results::table.filter(
+            race_results::activity_id.eq_any(
+                activities::table
+                    .filter(activities::id.eq(id))
+                    .filter(activities::user_id.eq(user_id))
+                    .select(activities::id),
+            ),
+        ),
+    )
+    .execute(&mut pool.get().await?)
+    .await?;
+    Ok(())
 }
 
 pub async fn ping(pool: &Pool) -> Result<()> {

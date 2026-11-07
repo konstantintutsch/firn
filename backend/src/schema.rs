@@ -72,6 +72,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    race_results (activity_id) {
+        activity_id -> Int8,
+        distance_m -> Float8,
+        time_s -> Float8,
+        event -> Nullable<Text>,
+        results_url -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
     users (id) {
         id -> Int8,
         oidc_issuer -> Text,
@@ -88,6 +98,7 @@ diesel::joinable!(activities -> users (user_id));
 diesel::joinable!(activity_images -> activities (activity_id));
 diesel::joinable!(daily_metrics -> users (user_id));
 diesel::joinable!(garmin_documents -> users (user_id));
+diesel::joinable!(race_results -> activities (activity_id));
 diesel::joinable!(sessions -> users (user_id));
 diesel::joinable!(track_points -> activities (activity_id));
 
@@ -96,6 +107,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     activity_images,
     daily_metrics,
     garmin_documents,
+    race_results,
     sessions,
     track_points,
     users,

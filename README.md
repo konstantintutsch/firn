@@ -19,11 +19,12 @@ a server with.
   in the link, so you can bookmark and share a view.
 - **Activity details** with a profile of pace, elevation, heart rate, cadence
   and power to scrub along, the track colored by any of them, kilometer or mile
-  splits, heart rate zones, fastest splits and photos. Download the original
+  splits, heart rate zones and photos. Download the original
   FIT file or a GPX file, and step to the previous or next activity.
 - **Statistics** on distance, time, pace, heart rate, VO2 max and training load,
-  a calendar of the last year, streaks, personal records and a year over year
-  comparison. Health charts cover sleep, HRV, resting heart rate, stress, Body
+  a calendar of the last year and a year over year comparison.
+- **Personal records** from the official race results you enter for an
+  activity, each linked to the published results. Health charts cover sleep, HRV, resting heart rate, stress, Body
   Battery, steps, SpO2, weight and more.
 - **Everything from Garmin**, synced with the Personal API: activities with and
   without GPS, their files, details and photos, and all health data. Syncs can
