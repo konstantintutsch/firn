@@ -4,13 +4,23 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Runmap</title>
+    <script>
+      // Applies a saved theme before the first paint, to avoid a flash of the wrong one.
+      try {
+        const theme = localStorage.getItem("theme");
+        if (theme) document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
     <link rel="stylesheet" href="/vendor/maplibre-gl.css">
     <link rel="stylesheet" href="/css/style.css">
   </head>
   <body>
     <main id="map" aria-label="Heatmap of all runs"></main>
     <section class="panel">
-      <h1>Runmap</h1>
+      <div class="panel-header">
+        <h1>Runmap</h1>
+        <button id="theme-toggle" type="button"></button>
+      </div>
       <p id="stats"></p>
       <p id="status" role="status"></p>
       <div class="legend" id="legend" hidden>

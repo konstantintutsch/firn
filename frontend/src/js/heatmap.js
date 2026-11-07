@@ -1,6 +1,30 @@
 import * as maplibregl from "/vendor/maplibre-gl.mjs";
 
-const STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
+const THEMES = {
+  light: {
+    styleUrl: "https://tiles.openfreemap.org/styles/positron",
+    heatStops: [
+      0, "rgba(253, 186, 116, 0)",
+      0.1, "rgba(253, 186, 116, 0.85)",
+      0.35, "#f97316",
+      0.6, "#d6246e",
+      0.85, "#7b1fa2",
+      1, "#2e1065",
+    ],
+  },
+  dark: {
+    styleUrl: "https://tiles.openfreemap.org/styles/dark",
+    heatStops: [
+      0, "rgba(91, 42, 134, 0)",
+      0.1, "rgba(91, 42, 134, 0.75)",
+      0.35, "#c2366b",
+      0.6, "#f4743b",
+      0.85, "#fbd25d",
+      1, "#fff7d6",
+    ],
+  },
+};
+const THEME_STORAGE_KEY = "theme";
 const SOURCE_ID = "runs";
 const REFRESH_DELAY_MS = 150;
 /** Fetches beyond the viewport so that small pans do not show empty edges. */
@@ -9,10 +33,14 @@ const VIEWPORT_PADDING = 0.25;
 const statsElement = document.querySelector("#stats");
 const statusElement = document.querySelector("#status");
 const legendElement = document.querySelector("#legend");
+const themeToggle = document.querySelector("#theme-toggle");
+const systemDark = matchMedia("(prefers-color-scheme: dark)");
+
+let theme = currentTheme();
 
 const map = new maplibregl.Map({
   container: "map",
-  style: STYLE_URL,
+  style: THEMES[theme].styleUrl,
   center: [0, 25],
   zoom: 1.5,
   maxZoom: 18,
@@ -24,9 +52,12 @@ map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-ri
 let pendingRequest = null;
 let refreshTimer = null;
 let hasRuns = false;
+let cells = [];
+let isFirstStyle = true;
 
-map.on("load", () => {
-  map.addSource(SOURCE_ID, { type: "geojson", data: toGeoJson([]), tolerance: 0 });
+// Fires again after each theme change, because a new style drops source and layer.
+map.on("style.load", () => {
+  map.addSource(SOURCE_ID, { type: "geojson", data: toGeoJson(cells), tolerance: 0 });
   map.addLayer(
     {
       id: "runs-heat",
@@ -37,29 +68,53 @@ map.on("load", () => {
         "heatmap-radius": 10,
         // A lone cell of maximum weight peaks at 0.4 times this, a line at about 0.6.
         "heatmap-intensity": 2,
-        "heatmap-color": [
-          "interpolate",
-          ["linear"],
-          ["heatmap-density"],
-          0, "rgba(91, 42, 134, 0)",
-          0.1, "rgba(91, 42, 134, 0.75)",
-          0.35, "#c2366b",
-          0.6, "#f4743b",
-          0.85, "#fbd25d",
-          1, "#fff7d6",
-        ],
+        "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"], ...THEMES[theme].heatStops],
       },
     },
     firstLabelLayer(),
   );
-  loadStats();
-  refresh();
+  if (isFirstStyle) {
+    isFirstStyle = false;
+    loadStats();
+    refresh();
+  }
 });
 
 map.on("moveend", () => {
   clearTimeout(refreshTimer);
   refreshTimer = setTimeout(refresh, REFRESH_DELAY_MS);
 });
+
+themeToggle.addEventListener("click", () => {
+  const next = theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, next);
+  } catch {
+    // Without storage the choice still applies until the page is reloaded.
+  }
+  applyTheme();
+});
+
+systemDark.addEventListener("change", applyTheme);
+updateThemeToggle();
+
+function currentTheme() {
+  return document.documentElement.dataset.theme ?? (systemDark.matches ? "dark" : "light");
+}
+
+function applyTheme() {
+  const next = currentTheme();
+  if (next === theme) return;
+  theme = next;
+  updateThemeToggle();
+  map.setStyle(THEMES[theme].styleUrl, { diff: false });
+}
+
+function updateThemeToggle() {
+  themeToggle.textContent = theme === "dark" ? "Light" : "Dark";
+  themeToggle.setAttribute("aria-label", `Switch to ${theme === "dark" ? "light" : "dark"} mode`);
+}
 
 /** Keeps place names readable by drawing the heat below them. */
 function firstLabelLayer() {
@@ -74,8 +129,8 @@ async function refresh() {
   try {
     const response = await fetch(`/api/heatmap?${viewportQuery()}`, { signal: request.signal });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const { cells } = await response.json();
-    map.getSource(SOURCE_ID).setData(toGeoJson(cells));
+    ({ cells } = await response.json());
+    map.getSource(SOURCE_ID)?.setData(toGeoJson(cells));
     legendElement.hidden = cells.length === 0;
     if (hasRuns) showStatus("");
   } catch (error) {
@@ -98,7 +153,7 @@ function viewportQuery() {
 
 /** Log scale, so a route run once stays visible next to one run a thousand times. */
 function toGeoJson(cells) {
-  const maxRuns = Math.max(1, ...cells.map((cell) => cell.runs));
+  const maxRuns = cells.reduce((max, cell) => Math.max(max, cell.runs), 1);
   return {
     type: "FeatureCollection",
     features: cells.map((cell) => ({
@@ -119,7 +174,7 @@ async function loadStats() {
       const km = Math.round(distance / 1000).toLocaleString();
       statsElement.textContent = `${runs.toLocaleString()} ${runs === 1 ? "run" : "runs"} · ${km} km`;
     } else {
-      statusElement.innerHTML = "No runs saved yet. Run <code>just login</code>, then <code>just sync</code>.";
+      statusElement.innerHTML = "No runs saved yet. Run <code>just sync</code>.";
     }
   } catch {
     showStatus("Could not load runs. Is the API running?");
