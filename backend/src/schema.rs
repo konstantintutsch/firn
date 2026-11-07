@@ -17,6 +17,7 @@ diesel::table! {
         search_text -> Nullable<Text>,
         user_id -> Nullable<Int8>,
         details -> Nullable<Jsonb>,
+        workouts -> Nullable<Jsonb>,
     }
 }
 

@@ -98,23 +98,26 @@ pub async fn upsert_activities(pool: &Pool, user_id: i64, activities: &[Activity
 pub struct Missing {
     pub track: bool,
     pub details: bool,
+    pub workouts: bool,
 }
 
 /// `None` if the activity belongs to another account.
 pub async fn missing(pool: &Pool, user_id: i64, id: i64) -> Result<Option<Missing>> {
-    let row: Option<(Option<DateTime<Utc>>, bool)> = activities::table
+    let row: Option<(Option<DateTime<Utc>>, bool, bool)> = activities::table
         .find(id)
         .filter(activities::user_id.eq(user_id))
         .select((
             activities::track_synced_at,
             activities::details.is_not_null(),
+            activities::workouts.is_not_null(),
         ))
         .first(&mut pool.get().await?)
         .await
         .optional()?;
-    Ok(row.map(|(synced_at, has_details)| Missing {
+    Ok(row.map(|(synced_at, has_details, has_workouts)| Missing {
         track: synced_at.is_none(),
         details: !has_details,
+        workouts: !has_workouts,
     }))
 }
 
@@ -122,6 +125,15 @@ pub async fn missing(pool: &Pool, user_id: i64, id: i64) -> Result<Option<Missin
 pub async fn save_details(pool: &Pool, id: i64, details: &Value) -> Result<()> {
     diesel::update(activities::table.find(id))
         .set(activities::details.eq(details))
+        .execute(&mut pool.get().await?)
+        .await?;
+    Ok(())
+}
+
+/// `workouts` is an empty array if Garmin had none, so that no sync asks again.
+pub async fn save_workouts(pool: &Pool, id: i64, workouts: &Value) -> Result<()> {
+    diesel::update(activities::table.find(id))
+        .set(activities::workouts.eq(workouts))
         .execute(&mut pool.get().await?)
         .await?;
     Ok(())

@@ -580,3 +580,44 @@ async fn rate_limit_stops_the_health_sync() {
     .await;
     assert!(matches!(result, Err(GarminError::RateLimited)));
 }
+
+#[tokio::test]
+async fn saves_activity_workouts() {
+    let (pool, server) = setup().await;
+    mount_list(&server, &[vec![activity(1, "running", true)]]).await;
+    mount_file(&server, 1, 1).await;
+    Mock::given(method("GET"))
+        .and(path("/activity-service/activity/1/workouts"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!([{"workoutName": "Intervals"}])),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    run_sync(&pool, &server).await.unwrap();
+    assert_eq!(run_sync(&pool, &server).await.unwrap().to_download, 0);
+    let workouts: Option<Value> = activities::table
+        .find(1)
+        .select(activities::workouts)
+        .first(&mut pool.get().await.unwrap())
+        .await
+        .unwrap();
+    assert_eq!(workouts.unwrap()[0]["workoutName"], "Intervals");
+}
+
+#[tokio::test]
+async fn activity_without_workouts_is_not_asked_again() {
+    let (pool, server) = setup().await;
+    mount_list(&server, &[vec![activity(1, "running", true)]]).await;
+    mount_file(&server, 1, 1).await;
+    Mock::given(method("GET"))
+        .and(path("/activity-service/activity/1/workouts"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    run_sync(&pool, &server).await.unwrap();
+    run_sync(&pool, &server).await.unwrap();
+}

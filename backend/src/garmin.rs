@@ -187,6 +187,18 @@ impl GarminClient {
             .await
     }
 
+    /// The workouts that Garmin associates with an activity, like a planned session.
+    pub async fn activity_workouts(
+        &mut self,
+        activity_id: i64,
+    ) -> Result<Option<Value>, GarminError> {
+        self.get_json(
+            &format!("/activity-service/activity/{activity_id}/workouts"),
+            &[],
+        )
+        .await
+    }
+
     /// Any JSON resource of the API. `None` if Garmin has nothing there.
     pub async fn get_json(
         &mut self,

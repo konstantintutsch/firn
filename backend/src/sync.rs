@@ -24,7 +24,7 @@ pub struct Report {
     pub health_failed: usize,
 }
 
-/// Saves every activity, its original file and its details, then the health data.
+/// Saves every activity, its original file, details and workouts, then the health data.
 /// Safe to interrupt and rerun: finished work is skipped.
 pub async fn sync_all(
     pool: &Pool,
@@ -48,7 +48,7 @@ pub async fn sync_all(
     Ok(report)
 }
 
-/// Saves every activity with its original file and details. Activities without
+/// Saves every activity with its original file, details and workouts. Activities without
 /// GPS are saved too, for the statistics, but only GPS tracks go on the map.
 pub async fn sync_activities(
     pool: &Pool,
@@ -75,7 +75,7 @@ pub async fn sync_activities(
     let mut pending = Vec::new();
     for activity in &activities {
         if let Some(missing) = db::missing(pool, user_id, activity.id).await?
-            && (missing.track || missing.details)
+            && (missing.track || missing.details || missing.workouts)
         {
             pending.push((activity, missing));
         }
@@ -91,6 +91,11 @@ pub async fn sync_activities(
             if missing.details {
                 let details = client.activity_details(activity.id).await?;
                 db::save_details(pool, activity.id, &details.unwrap_or_else(|| json!({}))).await?;
+            }
+            if missing.workouts {
+                let workouts = client.activity_workouts(activity.id).await?;
+                db::save_workouts(pool, activity.id, &workouts.unwrap_or_else(|| json!([])))
+                    .await?;
             }
             Ok(())
         }

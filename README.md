@@ -34,8 +34,8 @@ secure if `PUBLIC_URL` starts with `https://`.
 
 Runmap copies everything the Garmin Personal API offers:
 
-- Every activity, with or without GPS: the summary, the details and the original
-  file. Only activities with GPS go on the map.
+- Every activity, with or without GPS: the summary, the details, the original
+  file and its workouts. Only activities with GPS go on the map.
 - Health data from the first activity on, and at least one year back: daily
   summaries, sleep, HRV, heart rate, stress, Body Battery, steps, intensity
   minutes, floors, SpO2, respiration, hydration, weight and body composition,
