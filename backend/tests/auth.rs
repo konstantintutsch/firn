@@ -317,6 +317,7 @@ async fn data_needs_a_session() {
         "/api/me",
         "/api/stats",
         "/api/activities",
+        "/api/activities/1",
         "/api/activity-types",
         "/api/sync",
         "/api/heatmap?zoom=1&west=-180&south=-90&east=180&north=90",

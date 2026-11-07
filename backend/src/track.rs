@@ -18,9 +18,35 @@ pub struct Point {
     pub lon: f64,
 }
 
+/// One recorded moment of an activity. Only FIT files record more than the position.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Sample {
+    /// `None` without a GPS fix.
+    pub position: Option<Point>,
+    /// Seconds since 1970.
+    pub timestamp: Option<f64>,
+    /// Since the start.
+    pub distance_m: Option<f64>,
+    pub elevation_m: Option<f64>,
+    pub heart_rate: Option<f64>,
+    pub speed_m_s: Option<f64>,
+    /// As the device records it: revolutions, or strides of one foot, per minute.
+    pub cadence: Option<f64>,
+    pub power_w: Option<f64>,
+    pub temperature_c: Option<f64>,
+}
+
 /// Extracts the track from a Garmin download: a ZIP with the original FIT file,
 /// or GPX or TCX for activities that were uploaded in those formats.
 pub fn parse_archive(zip: &[u8]) -> Result<Vec<Point>> {
+    Ok(parse_samples(zip)?
+        .into_iter()
+        .filter_map(|sample| sample.position)
+        .collect())
+}
+
+/// Every sample of a Garmin download, with or without a position.
+pub fn parse_samples(zip: &[u8]) -> Result<Vec<Sample>> {
     let mut archive = ZipArchive::new(Cursor::new(zip)).context("malformed ZIP")?;
     let mut points = Vec::new();
     let mut found_track_file = false;
@@ -51,11 +77,22 @@ pub fn parse_archive(zip: &[u8]) -> Result<Vec<Point>> {
         bail!("no FIT, GPX or TCX file in the archive");
     }
     // Devices without a GPS fix can record 0, 0, which is in the ocean off Africa.
-    points.retain(|point| point.lat != 0.0 || point.lon != 0.0);
+    for sample in &mut points {
+        if sample.position == Some(Point { lat: 0.0, lon: 0.0 }) {
+            sample.position = None;
+        }
+    }
     Ok(points)
 }
 
-type Parser = fn(&[u8]) -> Result<Vec<Point>>;
+type Parser = fn(&[u8]) -> Result<Vec<Sample>>;
+
+fn located(point: Point) -> Sample {
+    Sample {
+        position: Some(point),
+        ..Sample::default()
+    }
+}
 
 fn parser_for(name: &str) -> Option<Parser> {
     match name.rsplit_once('.')?.1 {
@@ -66,35 +103,68 @@ fn parser_for(name: &str) -> Option<Parser> {
     }
 }
 
-fn parse_fit(content: &[u8]) -> Result<Vec<Point>> {
-    let mut points = Vec::new();
+fn parse_fit(content: &[u8]) -> Result<Vec<Sample>> {
+    let mut samples = Vec::new();
     for record in fitparser::from_bytes(content).context("malformed FIT")? {
         if record.kind() != MesgNum::Record {
             continue;
         }
+        let mut sample = Sample::default();
         let (mut lat, mut lon) = (None, None);
+        let (mut altitude, mut enhanced_altitude) = (None, None);
+        let (mut speed, mut enhanced_speed) = (None, None);
+        let mut fractional_cadence = None;
         for field in record.fields() {
-            match (field.name(), field.value()) {
+            let value = field.value();
+            match (field.name(), value) {
                 ("position_lat", Value::SInt32(value)) => lat = Some(*value),
                 ("position_long", Value::SInt32(value)) => lon = Some(*value),
+                ("timestamp", Value::Timestamp(time)) => {
+                    sample.timestamp = Some(time.timestamp() as f64);
+                }
+                ("altitude", _) => altitude = number(value),
+                ("enhanced_altitude", _) => enhanced_altitude = number(value),
+                ("speed", _) => speed = number(value),
+                ("enhanced_speed", _) => enhanced_speed = number(value),
+                ("distance", _) => sample.distance_m = number(value),
+                ("heart_rate", _) => sample.heart_rate = number(value),
+                ("cadence", _) => sample.cadence = number(value),
+                ("fractional_cadence", _) => fractional_cadence = number(value),
+                ("power", _) => sample.power_w = number(value),
+                ("temperature", _) => sample.temperature_c = number(value),
                 _ => {}
             }
+        }
+        // Newer devices record the enhanced fields, which have a larger range.
+        sample.elevation_m = enhanced_altitude.or(altitude);
+        sample.speed_m_s = enhanced_speed.or(speed);
+        if let (Some(cadence), Some(fraction)) = (sample.cadence, fractional_cadence) {
+            sample.cadence = Some(cadence + fraction);
         }
         // Records without a GPS fix leave the position out or mark it as invalid.
         if let (Some(lat), Some(lon)) = (lat, lon)
             && lat != i32::MAX
             && lon != i32::MAX
         {
-            points.push(checked_point(
+            sample.position = Some(checked_point(
                 f64::from(lat) * DEGREES_PER_SEMICIRCLE,
                 f64::from(lon) * DEGREES_PER_SEMICIRCLE,
             )?);
         }
+        samples.push(sample);
     }
-    Ok(points)
+    Ok(samples)
 }
 
-fn parse_gpx(content: &[u8]) -> Result<Vec<Point>> {
+fn number(value: &Value) -> Option<f64> {
+    value
+        .clone()
+        .try_into()
+        .ok()
+        .filter(|number: &f64| number.is_finite())
+}
+
+fn parse_gpx(content: &[u8]) -> Result<Vec<Sample>> {
     let mut reader = Reader::from_reader(content);
     let mut buffer = Vec::new();
     let mut points = Vec::new();
@@ -119,7 +189,7 @@ fn parse_gpx(content: &[u8]) -> Result<Vec<Point>> {
                 let (Some(lat), Some(lon)) = (lat, lon) else {
                     bail!("track point without coordinates");
                 };
-                points.push(checked_point(lat, lon)?);
+                points.push(located(checked_point(lat, lon)?));
             }
             Event::Eof => return Ok(points),
             _ => {}
@@ -128,7 +198,7 @@ fn parse_gpx(content: &[u8]) -> Result<Vec<Point>> {
     }
 }
 
-fn parse_tcx(content: &[u8]) -> Result<Vec<Point>> {
+fn parse_tcx(content: &[u8]) -> Result<Vec<Sample>> {
     #[derive(Clone, Copy)]
     enum Coordinate {
         Lat,
@@ -163,7 +233,7 @@ fn parse_tcx(content: &[u8]) -> Result<Vec<Point>> {
                     let (Some(lat), Some(lon)) = (lat, lon) else {
                         bail!("position without coordinates");
                     };
-                    points.push(checked_point(lat, lon)?);
+                    points.push(located(checked_point(lat, lon)?));
                 }
             }
             Event::Eof => return Ok(points),

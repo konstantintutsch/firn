@@ -1,7 +1,7 @@
 mod common;
 
-use common::{fit_of, semicircles, zip_of};
-use runmap::track::{Point, parse_archive};
+use common::{FitRecord, fit_of, fit_of_records, semicircles, zip_of};
+use runmap::track::{Point, parse_archive, parse_samples};
 
 const GPX: &[u8] = br#"<?xml version="1.0"?>
     <gpx xmlns="http://www.topografix.com/GPX/1/1"><trk>
@@ -94,4 +94,45 @@ fn rejects_unusable_downloads() {
     assert!(parse_archive(&zip_of(&[("a.fit", b"not a fit file")])).is_err());
     assert!(parse_archive(&zip_of(&[("a.gpx", br#"<trkpt lat="91" lon="0"/>"#)])).is_err());
     assert!(parse_archive(&zip_of(&[("a.gpx", br#"<trkpt lat="1"/>"#)])).is_err());
+}
+
+#[test]
+fn reads_fit_metrics_in_their_units() {
+    let fit = fit_of_records(&[
+        FitRecord {
+            lat: semicircles(52.5),
+            lon: semicircles(13.4),
+            timestamp: 1_000_000_000,
+            altitude: (34 + 500) * 5,
+            heart_rate: 150,
+            distance: 12_345,
+            speed: 3_250,
+        },
+        FitRecord {
+            lat: i32::MAX,
+            lon: i32::MAX,
+            timestamp: 1_000_000_010,
+            altitude: (36 + 500) * 5,
+            heart_rate: 152,
+            distance: 15_000,
+            speed: 3_000,
+        },
+    ]);
+    let samples = parse_samples(&zip_of(&[("a.fit", &fit)])).unwrap();
+    assert_eq!(samples.len(), 2);
+    let [first, second] = [samples[0], samples[1]];
+    assert_close(first.position.unwrap(), 52.5, 13.4);
+    assert_eq!(first.elevation_m, Some(34.0));
+    assert_eq!(first.heart_rate, Some(150.0));
+    assert_eq!(first.distance_m, Some(123.45));
+    assert_eq!(first.speed_m_s, Some(3.25));
+    assert_eq!(first.power_w, None);
+    // FIT counts seconds from 1989-12-31.
+    assert_eq!(first.timestamp, Some(631_065_600.0 + 1_000_000_000.0));
+    assert_eq!(second.timestamp.unwrap() - first.timestamp.unwrap(), 10.0);
+    assert_eq!(second.position, None);
+    assert_eq!(second.elevation_m, Some(36.0));
+
+    // The track keeps only the samples with a position.
+    assert_eq!(parse_archive(&zip_of(&[("a.fit", &fit)])).unwrap().len(), 1);
 }

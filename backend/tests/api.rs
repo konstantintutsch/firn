@@ -674,6 +674,58 @@ async fn map_shows_new_runs_after_a_sync() {
 }
 
 #[tokio::test]
+async fn activity_has_its_summary_and_samples() {
+    let pool = common::test_pool().await;
+    add_two_activities(&pool).await;
+    let fit = common::fit_of_records(&[
+        common::FitRecord {
+            lat: common::semicircles(BERLIN.lat),
+            lon: common::semicircles(BERLIN.lon),
+            timestamp: 1_000_000_000,
+            altitude: (34 + 500) * 5,
+            heart_rate: 150,
+            distance: 0,
+            speed: 3_250,
+        },
+        common::FitRecord {
+            lat: i32::MAX,
+            lon: i32::MAX,
+            timestamp: 1_000_000_010,
+            altitude: (36 + 500) * 5,
+            heart_rate: 152,
+            distance: 3_250,
+            speed: 3_000,
+        },
+    ]);
+    let zip = common::zip_of(&[("1.fit", &fit)]);
+    db::save_track(&pool, 1, Some(&zip), &[BERLIN])
+        .await
+        .unwrap();
+
+    let (status, body) = get(&pool, "/api/activities/1").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["activity"]["name"], "Morning 100% loop");
+    assert_eq!(body["summary"]["description"], "Windy along the river");
+    let samples = &body["samples"];
+    assert_eq!(samples["time_s"], json!([0.0, 10.0]));
+    assert_eq!(samples["heart_rate"], json!([150.0, 152.0]));
+    assert_eq!(samples["elevation_m"], json!([34.0, 36.0]));
+    assert_eq!(samples["distance_m"], json!([0.0, 32.5]));
+    assert_eq!(samples["position"][1], Value::Null);
+    assert!((samples["position"][0][1].as_f64().unwrap() - BERLIN.lat).abs() < 1e-6);
+    assert!(samples.get("power_w").is_none());
+
+    // The second activity's file is not a ZIP, so it has no samples.
+    let (status, body) = get(&pool, "/api/activities/2").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["samples"], json!({}));
+    assert_eq!(body["activity"]["bounds"], Value::Null);
+
+    let (status, _) = get(&pool, "/api/activities/3").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn accounts_see_only_their_own_activities() {
     let pool = common::test_pool().await;
     add_run(&pool, 1, &[BERLIN, NEAR_BERLIN]).await;
@@ -687,6 +739,8 @@ async fn accounts_see_only_their_own_activities() {
         assert_eq!(status, StatusCode::OK);
         assert!(!body.to_string().contains("Run 1"), "{uri}");
     }
+    let (status, _) = get_with(&pool, "/api/activities/1", Some(&other_cookie)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
     let (_, theirs) = get_with(&pool, "/api/stats", Some(&other_cookie)).await;
     assert_eq!(theirs["activities"], 0);
     let (_, lines) = get_with(

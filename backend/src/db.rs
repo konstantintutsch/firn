@@ -410,6 +410,25 @@ pub async fn search_activities(
         .await?)
 }
 
+/// One activity of an account, with Garmin's summary and the original file.
+pub async fn activity_with_file(
+    pool: &Pool,
+    user_id: i64,
+    id: i64,
+) -> Result<Option<(ActivitySummary, Value, Option<Vec<u8>>)>> {
+    Ok(activities::table
+        .filter(activities::user_id.eq(user_id))
+        .filter(activities::id.eq(id))
+        .select((
+            ActivitySummary::as_select(),
+            activities::summary,
+            activities::original_zip,
+        ))
+        .first(&mut pool.get().await?)
+        .await
+        .optional()?)
+}
+
 /// Each activity type that has a track, with how many activities have it, most first.
 pub async fn activity_types(pool: &Pool, user_id: i64) -> Result<Vec<(String, i64)>> {
     Ok(activities::table

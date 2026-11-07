@@ -133,7 +133,50 @@ pub fn fit_of(positions: &[(i32, i32)]) -> Vec<u8> {
         data.extend(lat.to_le_bytes());
         data.extend(lon.to_le_bytes());
     }
+    fit_file(data)
+}
 
+/// A FIT record with the metrics a watch records along an activity, in FIT's units.
+pub struct FitRecord {
+    pub lat: i32,
+    pub lon: i32,
+    /// Seconds since 1989-12-31.
+    pub timestamp: u32,
+    /// Meters times 5, plus 500.
+    pub altitude: u16,
+    pub heart_rate: u8,
+    /// Centimeters.
+    pub distance: u32,
+    /// Millimeters per second.
+    pub speed: u16,
+}
+
+/// Encodes a minimal FIT file with one record message per record.
+pub fn fit_of_records(records: &[FitRecord]) -> Vec<u8> {
+    const UINT8: u8 = 0x02;
+    const UINT16: u8 = 0x84;
+    const UINT32: u8 = 0x86;
+    const SINT32: u8 = 0x85;
+    const RECORD_MESSAGE: u16 = 20;
+
+    let mut data = vec![0x40, 0, 0];
+    data.extend(RECORD_MESSAGE.to_le_bytes());
+    data.extend([7, 253, 4, UINT32, 0, 4, SINT32, 1, 4, SINT32, 2, 2, UINT16]);
+    data.extend([3, 1, UINT8, 5, 4, UINT32, 6, 2, UINT16]);
+    for record in records {
+        data.push(0);
+        data.extend(record.timestamp.to_le_bytes());
+        data.extend(record.lat.to_le_bytes());
+        data.extend(record.lon.to_le_bytes());
+        data.extend(record.altitude.to_le_bytes());
+        data.push(record.heart_rate);
+        data.extend(record.distance.to_le_bytes());
+        data.extend(record.speed.to_le_bytes());
+    }
+    fit_file(data)
+}
+
+fn fit_file(data: Vec<u8>) -> Vec<u8> {
     let mut file = vec![14, 0x20];
     file.extend(2132u16.to_le_bytes());
     file.extend((data.len() as u32).to_le_bytes());

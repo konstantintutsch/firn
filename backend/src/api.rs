@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
@@ -18,12 +18,15 @@ use crate::garmin::GarminClient;
 use crate::heatmap::{self, Position, Viewport};
 use crate::statistics;
 use crate::sync::{HealthRange, Report, sync_all};
+use crate::track::{self, Sample};
 
 const MAX_ZOOM: u8 = 22;
 /// About 1 cm. Fewer digits make large responses much smaller.
 const COORDINATE_SCALE: f64 = 1e7;
 const DEFAULT_SEARCH_LIMIT: i64 = 20;
 const MAX_SEARCH_LIMIT: i64 = 100;
+/// Enough to scrub along any activity, and few enough to keep the answer small.
+const MAX_SAMPLES: usize = 3000;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -34,6 +37,7 @@ const MAX_SEARCH_LIMIT: i64 = 100;
     paths(
         heatmap,
         activities,
+        activity,
         activity_types,
         stats,
         sync_status,
@@ -101,6 +105,7 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/api/heatmap", get(heatmap))
         .route("/api/activities", get(activities))
+        .route("/api/activities/{id}", get(activity))
         .route("/api/activity-types", get(activity_types))
         .route("/api/stats", get(stats))
         .route("/api/sync", get(sync_status).post(start_sync))
@@ -129,6 +134,7 @@ pub struct ErrorBody {
 pub enum ApiError {
     BadRequest(&'static str),
     Unauthorized,
+    NotFound(&'static str),
     Forbidden(&'static str),
     Conflict(&'static str),
     /// Garmin failed in a way the person can act on.
@@ -142,6 +148,7 @@ impl IntoResponse for ApiError {
             ApiError::BadRequest(message) => (StatusCode::BAD_REQUEST, message.to_owned()),
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "sign in first".to_owned()),
             ApiError::Forbidden(message) => (StatusCode::FORBIDDEN, message.to_owned()),
+            ApiError::NotFound(message) => (StatusCode::NOT_FOUND, message.to_owned()),
             ApiError::BadGateway(message) => (StatusCode::BAD_GATEWAY, message),
             ApiError::Conflict(message) => (StatusCode::CONFLICT, message.to_owned()),
             ApiError::Internal(error) => {
@@ -345,6 +352,22 @@ struct ActivityItem {
     bounds: Option<[f64; 4]>,
 }
 
+impl ActivityItem {
+    fn new(activity: db::ActivitySummary, bounds: Option<[f64; 4]>) -> Self {
+        ActivityItem {
+            bounds,
+            id: activity.id,
+            name: activity.name,
+            activity_type: activity.activity_type,
+            started_at: activity.started_at,
+            distance_m: activity.distance_m,
+            duration_s: activity.duration_s,
+            description: activity.description,
+            location: activity.location,
+        }
+    }
+}
+
 #[derive(Serialize, ToSchema)]
 struct ActivityList {
     /// Newest first.
@@ -388,23 +411,145 @@ async fn activities(
     Ok(Json(ActivityList {
         activities: found
             .into_iter()
-            .map(|activity| ActivityItem {
-                bounds: bounds.get(&activity.id).map(|bounds| {
+            .map(|activity| {
+                let bounds = bounds.get(&activity.id).map(|bounds| {
                     // Mercator y grows southward, so the largest y is the south edge.
                     let [west, south] = to_degrees([bounds.min[0], bounds.max[1]]);
                     let [east, north] = to_degrees([bounds.max[0], bounds.min[1]]);
                     [west, south, east, north]
-                }),
-                id: activity.id,
-                name: activity.name,
-                activity_type: activity.activity_type,
-                started_at: activity.started_at,
-                distance_m: activity.distance_m,
-                duration_s: activity.duration_s,
-                description: activity.description,
-                location: activity.location,
+                });
+                ActivityItem::new(activity, bounds)
             })
             .collect(),
+    }))
+}
+
+/// What the device recorded along an activity, as columns of the same length.
+/// A column is left out if the device did not record it, and a value is `null`
+/// where it is missing.
+#[derive(Serialize, ToSchema)]
+struct Samples {
+    /// Seconds since the first sample, including pauses.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    time_s: Option<Vec<Option<f64>>>,
+    /// Longitude and latitude pairs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<Vec<Option<Vec<f64>>>>)]
+    position: Option<Vec<Option<[f64; 2]>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    distance_m: Option<Vec<Option<f64>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    elevation_m: Option<Vec<Option<f64>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    heart_rate: Option<Vec<Option<f64>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    speed_m_s: Option<Vec<Option<f64>>>,
+    /// Revolutions, or strides of one foot, per minute.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cadence: Option<Vec<Option<f64>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    power_w: Option<Vec<Option<f64>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature_c: Option<Vec<Option<f64>>>,
+}
+
+impl Samples {
+    /// Keeps every nth sample, so that at most `MAX_SAMPLES` remain.
+    fn from_samples(samples: &[Sample]) -> Self {
+        let step = samples.len().div_ceil(MAX_SAMPLES).max(1);
+        let kept: Vec<&Sample> = samples.iter().step_by(step).collect();
+        let start = samples.iter().find_map(|sample| sample.timestamp);
+        let column = |value: fn(&Sample) -> Option<f64>| {
+            let values: Vec<Option<f64>> = kept
+                .iter()
+                .map(|sample| value(sample).map(|value| (value * 100.0).round() / 100.0))
+                .collect();
+            values.iter().any(Option::is_some).then_some(values)
+        };
+        let positions: Vec<Option<[f64; 2]>> = kept
+            .iter()
+            .map(|sample| {
+                sample.position.map(|point| {
+                    [point.lon, point.lat]
+                        .map(|degrees| (degrees * COORDINATE_SCALE).round() / COORDINATE_SCALE)
+                })
+            })
+            .collect();
+        Samples {
+            time_s: start.map(|start| {
+                kept.iter()
+                    .map(|sample| sample.timestamp.map(|time| time - start))
+                    .collect()
+            }),
+            position: positions.iter().any(Option::is_some).then_some(positions),
+            distance_m: column(|sample| sample.distance_m),
+            elevation_m: column(|sample| sample.elevation_m),
+            heart_rate: column(|sample| sample.heart_rate),
+            speed_m_s: column(|sample| sample.speed_m_s),
+            cadence: column(|sample| sample.cadence),
+            power_w: column(|sample| sample.power_w),
+            temperature_c: column(|sample| sample.temperature_c),
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+struct ActivityDetail {
+    activity: ActivityItem,
+    /// The activity exactly as Garmin listed it, with all its metrics.
+    #[schema(value_type = Object)]
+    summary: serde_json::Value,
+    samples: Samples,
+}
+
+/// One activity with all its metrics and what the device recorded along it.
+#[utoipa::path(
+    get,
+    path = "/api/activities/{id}",
+    params(("id" = i64, Path, description = "Garmin's activity ID")),
+    responses(
+        (status = 200, body = ActivityDetail),
+        (status = 401, description = "Not signed in", body = ErrorBody),
+        (status = 404, description = "No such activity", body = ErrorBody),
+    )
+)]
+async fn activity(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<i64>,
+) -> Result<Json<ActivityDetail>, ApiError> {
+    let (activity, summary, original_zip) = db::activity_with_file(&state.pool, user.id, id)
+        .await?
+        .ok_or(ApiError::NotFound("no such activity"))?;
+    let samples = match original_zip {
+        Some(zip) => tokio::task::spawn_blocking(move || track::parse_samples(&zip))
+            .await
+            .map_err(anyhow::Error::from)?
+            .unwrap_or_else(|error| {
+                // The file was read once already to save the track, so this should not happen.
+                tracing::warn!(id, "could not read the activity file: {error:#}");
+                Vec::new()
+            }),
+        None => Vec::new(),
+    };
+    let bounds = samples.iter().filter_map(|sample| sample.position).fold(
+        None,
+        |bounds: Option<[f64; 4]>, point| {
+            Some(match bounds {
+                None => [point.lon, point.lat, point.lon, point.lat],
+                Some([west, south, east, north]) => [
+                    west.min(point.lon),
+                    south.min(point.lat),
+                    east.max(point.lon),
+                    north.max(point.lat),
+                ],
+            })
+        },
+    );
+    Ok(Json(ActivityDetail {
+        activity: ActivityItem::new(activity, bounds),
+        summary,
+        samples: Samples::from_samples(&samples),
     }))
 }
 
