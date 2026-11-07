@@ -15,18 +15,13 @@
   --accent: #d9480f;
   --accent-fill: #d9480f;
   /* Liquid glass: a translucent tint over a blurred, saturated backdrop, lit along its edges. */
-  --glass: rgb(255 255 255 / 52%);
-  --glass-thin: rgb(255 255 255 / 38%);
-  --glass-selected: rgb(255 255 255 / 85%);
+  --glass: rgb(255 255 255 / 28%);
+  --fill: rgb(118 118 128 / 12%);
+  --glass-selected: rgb(255 255 255 / 60%);
   --glass-edge: rgb(255 255 255 / 70%);
   --glass-specular: rgb(255 255 255 / 90%);
   --glass-shade: rgb(255 255 255 / 25%);
   --glass-shadow: 0 8px 32px rgb(31 38 70 / 16%), 0 1px 3px rgb(31 38 70 / 10%);
-  --backdrop:
-    radial-gradient(60vmax 50vmax at 0% 0%, rgb(255 154 60 / 45%), transparent 70%),
-    radial-gradient(55vmax 45vmax at 100% 20%, rgb(232 54 111 / 30%), transparent 70%),
-    radial-gradient(60vmax 50vmax at 40% 100%, rgb(91 33 182 / 25%), transparent 70%),
-    var(--page);
   --map-icon-filter: none;
   accent-color: var(--accent);
   color-scheme: light;
@@ -47,18 +42,13 @@
     --series-3: #199e70;
     --series-4: #c98500;
     --accent: #ff8a4c;
-    --glass: rgb(30 32 42 / 52%);
-    --glass-thin: rgb(255 255 255 / 8%);
+    --glass: rgb(30 32 42 / 30%);
+    --fill: rgb(118 118 128 / 24%);
     --glass-selected: rgb(255 255 255 / 20%);
     --glass-edge: rgb(255 255 255 / 16%);
     --glass-specular: rgb(255 255 255 / 30%);
     --glass-shade: rgb(255 255 255 / 6%);
     --glass-shadow: 0 8px 32px rgb(0 0 0 / 40%), 0 1px 3px rgb(0 0 0 / 30%);
-    --backdrop:
-      radial-gradient(60vmax 50vmax at 0% 0%, rgb(255 120 40 / 22%), transparent 70%),
-      radial-gradient(55vmax 45vmax at 100% 20%, rgb(232 54 111 / 18%), transparent 70%),
-      radial-gradient(60vmax 50vmax at 40% 100%, rgb(110 50 220 / 22%), transparent 70%),
-      var(--page);
     --map-icon-filter: invert(1);
     color-scheme: dark;
   }
@@ -78,18 +68,13 @@
   --series-3: #199e70;
   --series-4: #c98500;
   --accent: #ff8a4c;
-  --glass: rgb(30 32 42 / 52%);
-  --glass-thin: rgb(255 255 255 / 8%);
+  --glass: rgb(30 32 42 / 30%);
+  --fill: rgb(118 118 128 / 24%);
   --glass-selected: rgb(255 255 255 / 20%);
   --glass-edge: rgb(255 255 255 / 16%);
   --glass-specular: rgb(255 255 255 / 30%);
   --glass-shade: rgb(255 255 255 / 6%);
   --glass-shadow: 0 8px 32px rgb(0 0 0 / 40%), 0 1px 3px rgb(0 0 0 / 30%);
-  --backdrop:
-    radial-gradient(60vmax 50vmax at 0% 0%, rgb(255 120 40 / 22%), transparent 70%),
-    radial-gradient(55vmax 45vmax at 100% 20%, rgb(232 54 111 / 18%), transparent 70%),
-    radial-gradient(60vmax 50vmax at 40% 100%, rgb(110 50 220 / 22%), transparent 70%),
-    var(--page);
   --map-icon-filter: invert(1);
   color-scheme: dark;
 }
@@ -106,13 +91,6 @@ body {
 #map {
   position: fixed;
   inset: 0;
-}
-
-/* Document pages sit on soft color, so the glass above them has something to refract. */
-.page,
-.sign-in {
-  background: var(--backdrop);
-  background-attachment: fixed;
 }
 
 .panel,
@@ -267,7 +245,7 @@ body {
 select {
   flex: 1;
   padding: 4px 10px;
-  background: var(--glass-thin);
+  background: var(--fill);
   border: 1px solid var(--glass-edge);
   border-radius: 999px;
   color: var(--ink);
@@ -319,7 +297,7 @@ select option {
 
 .panel-button {
   padding: 5px 12px;
-  background: var(--glass-thin);
+  background: var(--fill);
   border: 1px solid var(--glass-edge);
   border-radius: 999px;
   box-shadow: inset 0 1px 0 var(--glass-shade);
@@ -402,7 +380,7 @@ input {
   width: 100%;
   box-sizing: border-box;
   padding: 6px 10px;
-  background: var(--glass-thin);
+  background: var(--fill);
   border: 1px solid var(--glass-edge);
   border-radius: 10px;
   color: var(--ink);
@@ -579,7 +557,7 @@ a {
   width: 32px;
   height: 32px;
   padding: 0;
-  background: var(--glass-thin);
+  background: var(--fill);
   border: 1px solid var(--glass-edge);
   border-radius: 50%;
   box-shadow: inset 0 1px 0 var(--glass-shade);
@@ -700,6 +678,7 @@ a {
   display: grid;
   place-items: center;
   padding: 16px;
+  background: var(--page);
 }
 
 .sign-in[hidden] {
