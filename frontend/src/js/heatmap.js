@@ -23,6 +23,7 @@ const THEMES = {
   },
 };
 const THEME_STORAGE_KEY = "theme";
+const SYNC_POLL_MS = 1000;
 const SOURCE_ID = "runs";
 const HEAT_LAYER_ID = "runs-heat";
 const REFRESH_DELAY_MS = 150;
@@ -38,6 +39,8 @@ const statsElement = document.querySelector("#stats");
 const statusElement = document.querySelector("#status");
 const legendElement = document.querySelector("#legend");
 const themeToggle = document.querySelector("#theme-toggle");
+const syncButton = document.querySelector("#sync-button");
+const syncStatusElement = document.querySelector("#sync-status");
 const systemDark = matchMedia("(prefers-color-scheme: dark)");
 
 let theme = currentTheme();
@@ -61,6 +64,7 @@ let hasRuns = false;
 let cells = [];
 let gridZoom = Math.floor(map.getZoom());
 let isFirstStyle = true;
+let isSyncRunning = false;
 
 // Fires again after each theme change, because a new style drops source and layer.
 map.on("style.load", () => {
@@ -83,6 +87,7 @@ map.on("style.load", () => {
     isFirstStyle = false;
     loadStats();
     refresh();
+    pollSync();
   }
 });
 
@@ -191,9 +196,9 @@ async function loadStats() {
     hasRuns = runs > 0;
     if (hasRuns) {
       const km = Math.round(distance / 1000).toLocaleString();
-      statsElement.textContent = `${runs.toLocaleString()} ${runs === 1 ? "run" : "runs"} · ${km} km`;
+      statsElement.textContent = `${plural(runs, "run")} · ${km} km`;
     } else {
-      statusElement.innerHTML = "No runs saved yet. Run <code>just sync</code>.";
+      showStatus("No runs saved yet. Select Sync to save them from Garmin.");
     }
   } catch {
     showStatus("Could not load runs. Is the API running?");
@@ -202,4 +207,73 @@ async function loadStats() {
 
 function showStatus(message) {
   statusElement.textContent = message;
+}
+
+syncButton.addEventListener("click", async () => {
+  syncButton.disabled = true;
+  syncStatusElement.textContent = "Starting…";
+  try {
+    const response = await fetch("/api/sync", {
+      method: "POST",
+      headers: { "X-Requested-With": "runmap" },
+    });
+    if (response.ok) {
+      isSyncRunning = true;
+    } else if (response.status !== 409 || !(await isSyncActive())) {
+      const { error } = await response.json();
+      syncButton.disabled = false;
+      syncStatusElement.textContent = error;
+      return;
+    }
+    pollSync();
+  } catch {
+    syncButton.disabled = false;
+    syncStatusElement.textContent = "Could not start the sync. Is the API running?";
+  }
+});
+
+async function isSyncActive() {
+  const response = await fetch("/api/sync");
+  return response.ok && (await response.json()).state === "running";
+}
+
+/** Also runs on page load, to pick up a sync that is already running. */
+async function pollSync() {
+  let sync;
+  try {
+    const response = await fetch("/api/sync");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    sync = await response.json();
+  } catch {
+    setTimeout(pollSync, SYNC_POLL_MS);
+    return;
+  }
+
+  if (sync.state === "running") {
+    isSyncRunning = true;
+    syncButton.disabled = true;
+    syncStatusElement.textContent = syncProgress(sync);
+    setTimeout(pollSync, SYNC_POLL_MS);
+  } else if (isSyncRunning) {
+    isSyncRunning = false;
+    syncButton.disabled = false;
+    syncStatusElement.textContent = syncResult(sync);
+    loadStats();
+    refresh();
+  }
+}
+
+function syncProgress({ to_download: total, downloaded, failed }) {
+  if (total === 0) return "Looking for new runs…";
+  return `Saving run ${Math.min(downloaded + failed + 1, total)} of ${total}…`;
+}
+
+function syncResult({ state, error, downloaded, failed }) {
+  if (state === "failed") return error;
+  const saved = downloaded === 0 ? "No new runs." : `Saved ${plural(downloaded, "new run")}.`;
+  return failed === 0 ? saved : `${saved} ${plural(failed, "run")} failed. Sync again to retry.`;
+}
+
+function plural(count, noun) {
+  return `${count.toLocaleString()} ${noun}${count === 1 ? "" : "s"}`;
 }

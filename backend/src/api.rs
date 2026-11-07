@@ -1,7 +1,9 @@
 use std::f64::consts::PI;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::extract::{Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
@@ -10,6 +12,8 @@ use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::db::{self, Bounds, GridCell, Pool};
+use crate::garmin::GarminClient;
+use crate::sync::{Report, sync_runs};
 
 const MAX_ZOOM: u8 = 22;
 /// World width in pixels at zoom 0 for MapLibre's 512 px tiles.
@@ -26,16 +30,40 @@ const COORDINATE_SCALE: f64 = 1e7;
         title = "runmap",
         description = "Heatmap of runs saved from Garmin Connect"
     ),
-    paths(heatmap, stats)
+    paths(heatmap, stats, sync_status, start_sync)
 )]
 pub struct ApiDoc;
 
-pub fn router(pool: Pool) -> Router {
+pub struct GarminSettings {
+    pub base_url: String,
+    pub api_key: Option<String>,
+    pub download_pause: Duration,
+}
+
+#[derive(Clone)]
+pub struct AppState {
+    pool: Pool,
+    garmin: Arc<GarminSettings>,
+    sync: Arc<Mutex<SyncStatus>>,
+}
+
+impl AppState {
+    pub fn new(pool: Pool, garmin: GarminSettings) -> Self {
+        Self {
+            pool,
+            garmin: Arc::new(garmin),
+            sync: Arc::default(),
+        }
+    }
+}
+
+pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/api/heatmap", get(heatmap))
         .route("/api/stats", get(stats))
+        .route("/api/sync", get(sync_status).post(start_sync))
         .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()))
-        .with_state(pool)
+        .with_state(state)
 }
 
 #[derive(Serialize, ToSchema)]
@@ -45,6 +73,8 @@ struct ErrorBody {
 
 enum ApiError {
     BadRequest(&'static str),
+    Forbidden(&'static str),
+    Conflict(&'static str),
     Internal(anyhow::Error),
 }
 
@@ -52,6 +82,8 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, error) = match self {
             ApiError::BadRequest(message) => (StatusCode::BAD_REQUEST, message.to_owned()),
+            ApiError::Forbidden(message) => (StatusCode::FORBIDDEN, message.to_owned()),
+            ApiError::Conflict(message) => (StatusCode::CONFLICT, message.to_owned()),
             ApiError::Internal(error) => {
                 tracing::error!("{error:#}");
                 (
@@ -112,7 +144,7 @@ struct Heatmap {
     )
 )]
 async fn heatmap(
-    State(pool): State<Pool>,
+    State(state): State<AppState>,
     Query(query): Query<HeatmapQuery>,
 ) -> Result<Json<Heatmap>, ApiError> {
     if query.zoom > MAX_ZOOM {
@@ -138,7 +170,7 @@ async fn heatmap(
         east: query.east,
         north: query.north,
     };
-    let cells = db::heatmap_cells(&pool, cell_size, &bounds)
+    let cells = db::heatmap_cells(&state.pool, cell_size, &bounds)
         .await?
         .iter()
         .map(|cell| to_heat_cell(cell, cell_size))
@@ -172,10 +204,130 @@ struct Stats {
 
 /// Totals across all saved runs.
 #[utoipa::path(get, path = "/api/stats", responses((status = 200, body = Stats)))]
-async fn stats(State(pool): State<Pool>) -> Result<Json<Stats>, ApiError> {
-    let totals = db::totals(&pool).await?;
+async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, ApiError> {
+    let totals = db::totals(&state.pool).await?;
     Ok(Json(Stats {
         runs: totals.runs,
         distance_m: totals.distance_m,
     }))
+}
+
+#[derive(Clone, Copy, Default, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+enum SyncState {
+    #[default]
+    Idle,
+    Running,
+    Succeeded,
+    Failed,
+}
+
+/// Lives in memory: after a restart, the next sync finds what is still missing.
+#[derive(Clone, Default, Serialize, ToSchema)]
+struct SyncStatus {
+    state: SyncState,
+    /// Runs found on Garmin so far.
+    listed: usize,
+    /// Tracks that this sync has to download.
+    to_download: usize,
+    downloaded: usize,
+    /// Tracks that could not be saved. The next sync retries them.
+    failed: usize,
+    error: Option<String>,
+}
+
+impl SyncStatus {
+    fn running(report: &Report) -> Self {
+        Self {
+            state: SyncState::Running,
+            listed: report.listed,
+            to_download: report.to_download,
+            downloaded: report.downloaded,
+            failed: report.failed,
+            error: None,
+        }
+    }
+}
+
+/// Progress of the current or last sync.
+#[utoipa::path(get, path = "/api/sync", responses((status = 200, body = SyncStatus)))]
+async fn sync_status(State(state): State<AppState>) -> Json<SyncStatus> {
+    Json(state.sync.lock().unwrap().clone())
+}
+
+/// Starts saving all runs that are not saved yet, in the background.
+///
+/// Requires the `X-Requested-With` header. Browsers do not let other websites
+/// send it without permission, which this API never grants.
+#[utoipa::path(
+    post,
+    path = "/api/sync",
+    responses(
+        (status = 202, description = "The sync started", body = SyncStatus),
+        (status = 403, description = "The header is missing", body = ErrorBody),
+        (status = 409, description = "A sync is running or no API key is set", body = ErrorBody),
+    )
+)]
+async fn start_sync(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<(StatusCode, Json<SyncStatus>), ApiError> {
+    if !headers.contains_key("x-requested-with") {
+        return Err(ApiError::Forbidden("X-Requested-With header is required"));
+    }
+    let Some(api_key) = state.garmin.api_key.clone() else {
+        return Err(ApiError::Conflict(
+            "GARMIN_PERSONAL_API_KEY is not set. Add it to .env and run just up",
+        ));
+    };
+
+    let status = SyncStatus::running(&Report::default());
+    {
+        let mut current = state.sync.lock().unwrap();
+        if matches!(current.state, SyncState::Running) {
+            return Err(ApiError::Conflict("a sync is already running"));
+        }
+        *current = status.clone();
+    }
+
+    tokio::spawn(run_sync(state, api_key));
+    Ok((StatusCode::ACCEPTED, Json(status)))
+}
+
+async fn run_sync(state: AppState, api_key: String) {
+    let task = {
+        let state = state.clone();
+        tokio::spawn(async move {
+            let mut client = GarminClient::new(&state.garmin.base_url, &api_key)?;
+            sync_runs(
+                &state.pool,
+                &mut client,
+                state.garmin.download_pause,
+                |report| *state.sync.lock().unwrap() = SyncStatus::running(report),
+            )
+            .await
+        })
+    };
+
+    // Awaits a separate task, so that a panic cannot leave the state at running.
+    let result = task.await;
+    let mut status = state.sync.lock().unwrap();
+    match result {
+        Ok(Ok(report)) => {
+            *status = SyncStatus {
+                state: SyncState::Succeeded,
+                ..SyncStatus::running(&report)
+            };
+        }
+        Ok(Err(error)) => {
+            tracing::error!(%error, "sync failed");
+            status.state = SyncState::Failed;
+            status.error = Some(error.to_string());
+        }
+        Err(error) => {
+            tracing::error!(%error, "sync crashed");
+            status.state = SyncState::Failed;
+            status.error = Some("the sync crashed. See the logs".to_owned());
+        }
+    }
 }

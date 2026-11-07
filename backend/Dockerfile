@@ -21,4 +21,3 @@ RUN apt-get update \
 COPY --from=build /usr/local/bin/runmap /usr/local/bin/runmap
 USER runmap
 ENTRYPOINT ["runmap"]
-CMD ["serve"]

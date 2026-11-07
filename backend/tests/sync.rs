@@ -80,7 +80,7 @@ async fn mount_file(server: &MockServer, id: i64, expected_calls: u64) {
 }
 
 async fn run_sync(pool: &Pool, server: &MockServer) -> Result<Report, GarminError> {
-    sync_runs(pool, &mut common::client(server), Duration::ZERO).await
+    sync_runs(pool, &mut common::client(server), Duration::ZERO, |_| {}).await
 }
 
 async fn point_count(pool: &Pool, id: i64) -> i64 {
@@ -121,6 +121,7 @@ async fn saves_all_pages_and_keeps_raw_data() {
         report,
         Report {
             listed: 3,
+            to_download: 3,
             downloaded: 3,
             failed: 0
         }
@@ -182,6 +183,7 @@ async fn runs_without_gps_are_saved_without_a_download() {
         report,
         Report {
             listed: 2,
+            to_download: 0,
             downloaded: 0,
             failed: 0
         }
@@ -244,6 +246,7 @@ async fn broken_file_is_skipped_and_retried_later() {
         report,
         Report {
             listed: 2,
+            to_download: 2,
             downloaded: 1,
             failed: 1
         }
@@ -275,6 +278,7 @@ async fn forbidden_file_is_skipped_and_others_still_download() {
         report,
         Report {
             listed: 2,
+            to_download: 2,
             downloaded: 1,
             failed: 1
         }

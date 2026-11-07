@@ -18,10 +18,6 @@ down:
 logs *services:
     docker compose logs --follow {{services}}
 
-# Save all runs that are not saved yet. Needs GARMIN_PERSONAL_API_KEY in .env
-sync:
-    docker compose run --build --rm sync
-
 # Run the backend tests in a throwaway database
 test *args:
     docker compose --profile dev up --detach --wait test-db

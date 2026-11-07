@@ -23,6 +23,7 @@ services:
       target: runtime
     environment:
       DATABASE_URL: *database-url
+      GARMIN_PERSONAL_API_KEY: ${GARMIN_PERSONAL_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy
@@ -31,20 +32,6 @@ services:
         - path: backend
           action: rebuild
           ignore: [target/]
-
-  # Separate from api, so that the server never holds the Garmin API key.
-  sync:
-    profiles: [tools]
-    build:
-      context: backend
-      target: runtime
-    command: [sync]
-    environment:
-      DATABASE_URL: *database-url
-      GARMIN_PERSONAL_API_KEY: ${GARMIN_PERSONAL_API_KEY:-}
-    depends_on:
-      db:
-        condition: service_healthy
 
   web:
     build: frontend

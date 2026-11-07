@@ -7,9 +7,10 @@ use crate::track;
 /// The default page size of Garmin's activity search.
 const PAGE_SIZE: u32 = 99;
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Report {
     pub listed: usize,
+    pub to_download: usize,
     pub downloaded: usize,
     pub failed: usize,
 }
@@ -20,6 +21,7 @@ pub async fn sync_runs(
     pool: &Pool,
     client: &mut GarminClient,
     pause: Duration,
+    on_progress: impl Fn(&Report),
 ) -> Result<Report, GarminError> {
     let mut report = Report::default();
     let mut start = 0;
@@ -36,16 +38,26 @@ pub async fn sync_runs(
     report.listed = activities.len();
     tracing::info!(runs = report.listed, "listed runs");
 
+    let mut pending = Vec::new();
     for activity in &activities {
         if db::is_track_synced(pool, activity.id).await? {
             continue;
         }
-        if !activity.has_track {
+        if activity.has_track {
+            pending.push(activity);
+        } else {
             db::save_track(pool, activity.id, None, &[]).await?;
-            continue;
         }
+    }
+    report.to_download = pending.len();
+    on_progress(&report);
+
+    for activity in pending {
         match save_original(pool, client, activity).await {
-            Ok(false) => tracing::warn!(id = activity.id, "Garmin has no file for this run"),
+            Ok(false) => {
+                report.to_download -= 1;
+                tracing::warn!(id = activity.id, "Garmin has no file for this run");
+            }
             Ok(true) => {
                 report.downloaded += 1;
                 tracing::info!(id = activity.id, done = report.downloaded, "saved track");
@@ -61,6 +73,7 @@ pub async fn sync_runs(
                 tracing::warn!(id = activity.id, %error, "skipped track, next sync retries it");
             }
         }
+        on_progress(&report);
         tokio::time::sleep(pause).await;
     }
     Ok(report)

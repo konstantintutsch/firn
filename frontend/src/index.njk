@@ -19,10 +19,14 @@
     <section class="panel">
       <div class="panel-header">
         <h1>Runmap</h1>
-        <button id="theme-toggle" type="button"></button>
+        <div class="panel-actions">
+          <button id="sync-button" class="panel-button" type="button">Sync</button>
+          <button id="theme-toggle" class="panel-button" type="button"></button>
+        </div>
       </div>
       <p id="stats"></p>
       <p id="status" role="status"></p>
+      <p id="sync-status" role="status"></p>
       <div class="legend" id="legend" hidden>
         <div class="legend-ramp"></div>
         <div class="legend-labels"><span>Fewer runs</span><span>More runs</span></div>

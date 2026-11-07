@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use runmap::api::{AppState, GarminSettings};
 use runmap::db::{self, Pool};
 use runmap::garmin::GarminClient;
 use std::io::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
 use wiremock::MockServer;
 use zip::write::SimpleFileOptions;
 
@@ -30,6 +32,17 @@ pub async fn test_pool() -> Pool {
 }
 
 pub const API_KEY: &str = "test-key";
+
+pub fn state(pool: Pool, base_url: &str, api_key: Option<&str>) -> AppState {
+    AppState::new(
+        pool,
+        GarminSettings {
+            base_url: base_url.to_owned(),
+            api_key: api_key.map(str::to_owned),
+            download_pause: Duration::ZERO,
+        },
+    )
+}
 
 pub fn client(server: &MockServer) -> GarminClient {
     GarminClient::new(&server.uri(), API_KEY).unwrap()

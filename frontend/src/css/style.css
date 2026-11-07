@@ -64,7 +64,12 @@ body {
   gap: 8px;
 }
 
-#theme-toggle {
+.panel-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.panel-button {
   padding: 3px 9px;
   background: transparent;
   border: 1px solid var(--line);
@@ -75,8 +80,13 @@ body {
   cursor: pointer;
 }
 
-#theme-toggle:hover {
+.panel-button:hover:not(:disabled) {
   background: var(--line);
+}
+
+.panel-button:disabled {
+  color: var(--ink-muted);
+  cursor: progress;
 }
 
 h1 {
@@ -99,13 +109,10 @@ p:empty {
   font-variant-numeric: tabular-nums;
 }
 
-code {
-  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--ink);
-}
-
-#status {
+#status,
+#sync-status {
   color: var(--ink-muted);
+  overflow-wrap: anywhere;
 }
 
 .legend {
