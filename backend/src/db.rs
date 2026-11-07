@@ -15,7 +15,9 @@ use serde_json::Value;
 
 use crate::garmin::Activity;
 use crate::heatmap::Track;
-use crate::schema::{activities, daily_metrics, garmin_documents, sessions, track_points, users};
+use crate::schema::{
+    activities, activity_images, daily_metrics, garmin_documents, sessions, track_points, users,
+};
 use crate::track::Point;
 
 pub type Pool = deadpool::Pool<AsyncPgConnection>;
@@ -99,26 +101,131 @@ pub struct Missing {
     pub track: bool,
     pub details: bool,
     pub workouts: bool,
+    pub images: bool,
 }
 
 /// `None` if the activity belongs to another account.
 pub async fn missing(pool: &Pool, user_id: i64, id: i64) -> Result<Option<Missing>> {
-    let row: Option<(Option<DateTime<Utc>>, bool, bool)> = activities::table
+    let row: Option<(Option<DateTime<Utc>>, bool, bool, bool)> = activities::table
         .find(id)
         .filter(activities::user_id.eq(user_id))
         .select((
             activities::track_synced_at,
             activities::details.is_not_null(),
             activities::workouts.is_not_null(),
+            activities::images_synced_at.is_not_null(),
         ))
         .first(&mut pool.get().await?)
         .await
         .optional()?;
-    Ok(row.map(|(synced_at, has_details, has_workouts)| Missing {
-        track: synced_at.is_none(),
-        details: !has_details,
-        workouts: !has_workouts,
-    }))
+    Ok(row.map(
+        |(synced_at, has_details, has_workouts, has_images)| Missing {
+            track: synced_at.is_none(),
+            details: !has_details,
+            workouts: !has_workouts,
+            images: !has_images,
+        },
+    ))
+}
+
+/// Marks the images of activities as done whose saved details list none, so that
+/// a sync does not wait for each of them.
+pub async fn skip_activities_without_images(pool: &Pool, user_id: i64) -> Result<()> {
+    diesel::update(
+        activities::table
+            .filter(activities::user_id.eq(user_id))
+            .filter(activities::images_synced_at.is_null())
+            .filter(activities::details.is_not_null())
+            .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
+                "coalesce(details #> '{metadataDTO,activityImages}', '[]') = '[]'",
+            )),
+    )
+    .set(activities::images_synced_at.eq(diesel::dsl::now))
+    .execute(&mut pool.get().await?)
+    .await?;
+    Ok(())
+}
+
+pub async fn details(pool: &Pool, id: i64) -> Result<Option<Value>> {
+    Ok(activities::table
+        .find(id)
+        .select(activities::details)
+        .first::<Option<Value>>(&mut pool.get().await?)
+        .await
+        .optional()?
+        .flatten())
+}
+
+pub struct Image {
+    pub id: String,
+    pub content_type: String,
+    pub data: Vec<u8>,
+}
+
+/// Replaces the images of an activity atomically and marks them as done.
+pub async fn save_images(pool: &Pool, id: i64, images: &[Image]) -> Result<()> {
+    let rows: Vec<_> = images
+        .iter()
+        .enumerate()
+        .map(|(seq, image)| {
+            (
+                activity_images::activity_id.eq(id),
+                activity_images::image_id.eq(&image.id),
+                activity_images::seq.eq(seq as i32),
+                activity_images::content_type.eq(&image.content_type),
+                activity_images::data.eq(&image.data),
+            )
+        })
+        .collect();
+    let mut connection = pool.get().await?;
+    connection
+        .transaction::<_, diesel::result::Error, _>(async |connection| {
+            diesel::delete(activity_images::table.filter(activity_images::activity_id.eq(id)))
+                .execute(&mut *connection)
+                .await?;
+            if !rows.is_empty() {
+                diesel::insert_into(activity_images::table)
+                    .values(&rows)
+                    .on_conflict_do_nothing()
+                    .execute(&mut *connection)
+                    .await?;
+            }
+            diesel::update(activities::table.find(id))
+                .set(activities::images_synced_at.eq(diesel::dsl::now))
+                .execute(&mut *connection)
+                .await?;
+            Ok(())
+        })
+        .await?;
+    Ok(())
+}
+
+/// The IDs of an activity's images, in Garmin's order.
+pub async fn image_ids(pool: &Pool, id: i64) -> Result<Vec<String>> {
+    Ok(activity_images::table
+        .filter(activity_images::activity_id.eq(id))
+        .order(activity_images::seq)
+        .select(activity_images::image_id)
+        .load(&mut pool.get().await?)
+        .await?)
+}
+
+/// One image of an account's activity, with its media type.
+pub async fn image(
+    pool: &Pool,
+    user_id: i64,
+    id: i64,
+    image_id: &str,
+) -> Result<Option<(String, Vec<u8>)>> {
+    Ok(activity_images::table
+        .inner_join(activities::table)
+        .filter(activities::user_id.eq(user_id))
+        .filter(activity_images::activity_id.eq(id))
+        .filter(activity_images::image_id.eq(image_id))
+        .select((activity_images::content_type, activity_images::data))
+        .first(&mut pool.get().await?)
+        .await
+        .optional()?)
 }
 
 /// `details` is an empty object if Garmin had none, so that no sync asks again.

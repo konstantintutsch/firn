@@ -191,13 +191,38 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* The photos in one row that scrolls sideways. */
+.detail-images {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+}
+
+.detail-images a {
+  flex: none;
+  scroll-snap-align: start;
+}
+
+.detail-images img {
+  display: block;
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  corner-shape: var(--corner);
+  background: var(--fill);
+}
+
 .detail-profile {
   margin-top: 12px;
 }
 
 /* Segmented controls: one track with the chosen option lifted out of it. */
 .profile-tabs,
-.range-picker {
+.range-picker,
+.theme-picker {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 2px;
@@ -208,22 +233,26 @@ body {
 }
 
 .profile-tabs .panel-button,
-.range-picker .panel-button {
+.range-picker .panel-button,
+.theme-picker .panel-button {
   background: transparent;
   border-radius: var(--radius-sm);
   color: var(--ink-muted);
 }
 
 .profile-tabs .panel-button:hover:not(:disabled),
-.range-picker .panel-button:hover:not(:disabled) {
+.range-picker .panel-button:hover:not(:disabled),
+.theme-picker .panel-button:hover:not(:disabled) {
   background: transparent;
   color: var(--ink);
 }
 
 .profile-tabs [aria-pressed="true"],
 .range-picker [aria-pressed="true"],
+.theme-picker [aria-pressed="true"],
 .profile-tabs [aria-pressed="true"]:hover:not(:disabled),
-.range-picker [aria-pressed="true"]:hover:not(:disabled) {
+.range-picker [aria-pressed="true"]:hover:not(:disabled),
+.theme-picker [aria-pressed="true"]:hover:not(:disabled) {
   background: var(--surface);
   box-shadow: 0 1px 3px rgb(15 23 42 / 12%);
   color: var(--accent);
@@ -757,12 +786,6 @@ a {
   }
 }
 
-/* The toggle shows the theme it switches to. */
-#theme-toggle[data-next="light"] .icon-moon,
-#theme-toggle[data-next="dark"] .icon-sun {
-  display: none;
-}
-
 .nav {
   position: fixed;
   bottom: max(16px, env(safe-area-inset-bottom));
@@ -952,6 +975,14 @@ a {
   margin-top: 4px;
 }
 
+.settings-page .card + .card {
+  margin-top: 10px;
+}
+
+.theme-picker {
+  margin-top: 14px;
+}
+
 #sign-out {
   margin-top: 16px;
 }
@@ -1051,7 +1082,7 @@ a.activity:hover {
   margin-top: 0;
   padding: 0 16px;
   border-top: 0;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   corner-shape: var(--corner);
   box-sizing: border-box;
 }
@@ -1177,6 +1208,12 @@ a.activity:hover {
   stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
+}
+
+/* A ring of the card's color sets a lone point apart from the grid behind it. */
+.chart-point-alone {
+  stroke: var(--surface);
+  stroke-width: 1.5;
 }
 
 .chart-crosshair {

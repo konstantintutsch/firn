@@ -44,6 +44,14 @@
         </form>
         <p id="settings-message" role="status"></p>
       </section>
+      <section class="card">
+        <h2 data-i18n>Appearance</h2>
+        <div id="theme-picker" class="theme-picker" role="group" aria-label="Theme" data-i18n-attrs="aria-label">
+          <button class="panel-button" type="button" data-theme-choice="system" data-i18n>System</button>
+          <button class="panel-button" type="button" data-theme-choice="light" data-i18n>Light mode</button>
+          <button class="panel-button" type="button" data-theme-choice="dark" data-i18n>Dark mode</button>
+        </div>
+      </section>
       <button id="sign-out" class="panel-button" type="button" data-i18n>Sign out</button>
     </main>
     {% include "nav.njk" %}

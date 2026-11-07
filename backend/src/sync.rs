@@ -2,10 +2,10 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use chrono::{Days, NaiveDate};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::db::{self, Pool};
-use crate::garmin::{Activity, GarminClient, GarminError};
+use crate::garmin::{self, Activity, GarminClient, GarminError};
 use crate::track;
 use crate::wellness::{self, KINDS, Kind, Period};
 
@@ -24,7 +24,7 @@ pub struct Report {
     pub health_failed: usize,
 }
 
-/// Saves every activity, its original file, details and workouts, then the health data.
+/// Saves every activity, its original file, details, workouts and images, then the health data.
 /// Safe to interrupt and rerun: finished work is skipped.
 pub async fn sync_all(
     pool: &Pool,
@@ -48,7 +48,7 @@ pub async fn sync_all(
     Ok(report)
 }
 
-/// Saves every activity with its original file, details and workouts. Activities without
+/// Saves every activity with its original file, details, workouts and images. Activities without
 /// GPS are saved too, for the statistics, but only GPS tracks go on the map.
 pub async fn sync_activities(
     pool: &Pool,
@@ -71,11 +71,12 @@ pub async fn sync_activities(
     }
     report.listed = activities.len();
     tracing::info!(user_id, activities = report.listed, "listed activities");
+    db::skip_activities_without_images(pool, user_id).await?;
 
     let mut pending = Vec::new();
     for activity in &activities {
         if let Some(missing) = db::missing(pool, user_id, activity.id).await?
-            && (missing.track || missing.details || missing.workouts)
+            && (missing.track || missing.details || missing.workouts || missing.images)
         {
             pending.push((activity, missing));
         }
@@ -88,14 +89,22 @@ pub async fn sync_activities(
             if missing.track {
                 save_original(pool, client, activity).await?;
             }
+            let mut details = None;
             if missing.details {
-                let details = client.activity_details(activity.id).await?;
-                db::save_details(pool, activity.id, &details.unwrap_or_else(|| json!({}))).await?;
+                let fetched = client
+                    .activity_details(activity.id)
+                    .await?
+                    .unwrap_or_else(|| json!({}));
+                db::save_details(pool, activity.id, &fetched).await?;
+                details = Some(fetched);
             }
             if missing.workouts {
                 let workouts = client.activity_workouts(activity.id).await?;
                 db::save_workouts(pool, activity.id, &workouts.unwrap_or_else(|| json!([])))
                     .await?;
+            }
+            if missing.images {
+                save_images(pool, client, activity.id, details).await?;
             }
             Ok(())
         }
@@ -146,6 +155,51 @@ async fn save_original(
         Vec::new()
     };
     db::save_track(pool, activity.id, Some(&zip), &points).await?;
+    Ok(())
+}
+
+/// Downloads the photos that the details list. `fresh` are details fetched just now.
+async fn save_images(
+    pool: &Pool,
+    client: &mut GarminClient,
+    id: i64,
+    fresh: Option<Value>,
+) -> Result<(), GarminError> {
+    let details = match fresh {
+        Some(details) => details,
+        None => {
+            let saved = db::details(pool, id).await?.unwrap_or_default();
+            if garmin::activity_images(&saved).is_empty() {
+                saved
+            } else {
+                // The links in saved details expire after a day, so this asks for new ones.
+                let details = client
+                    .activity_details(id)
+                    .await?
+                    .unwrap_or_else(|| json!({}));
+                db::save_details(pool, id, &details).await?;
+                details
+            }
+        }
+    };
+    let mut saved = Vec::new();
+    for image in garmin::activity_images(&details) {
+        let (data, content_type) = match client.download_image(&image.url).await {
+            Ok(download) => download,
+            // Garmin lists older images with links that do not work, and retrying does not help.
+            Err(error @ (GarminError::Forbidden | GarminError::NotFound)) => {
+                tracing::warn!(id, image = image.id, %error, "skipped image");
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        saved.push(db::Image {
+            id: image.id,
+            content_type,
+            data,
+        });
+    }
+    db::save_images(pool, id, &saved).await?;
     Ok(())
 }
 

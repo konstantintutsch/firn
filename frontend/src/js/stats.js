@@ -89,7 +89,16 @@ const HEALTH_CHARTS = [
       ["vigorous_intensity_minutes", "Vigorous"],
     ],
   },
-  { title: "Floors climbed", subtitle: "Per day", kind: "columns", format: number(), metrics: [["floors", "Floors"]] },
+  {
+    title: "Floors",
+    subtitle: "Per day",
+    kind: "columns",
+    format: number(),
+    metrics: [
+      ["floors", "Climbed"],
+      ["floors_descended", "Descended"],
+    ],
+  },
   {
     title: "Calories",
     subtitle: "Per day",

@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use axum::extract::{Path, Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
@@ -38,6 +38,7 @@ const MAX_SAMPLES: usize = 3000;
         heatmap,
         activities,
         activity,
+        activity_image,
         activity_types,
         stats,
         sync_status,
@@ -106,6 +107,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/heatmap", get(heatmap))
         .route("/api/activities", get(activities))
         .route("/api/activities/{id}", get(activity))
+        .route(
+            "/api/activities/{id}/images/{image_id}",
+            get(activity_image),
+        )
         .route("/api/activity-types", get(activity_types))
         .route("/api/stats", get(stats))
         .route("/api/sync", get(sync_status).post(start_sync))
@@ -501,6 +506,8 @@ struct ActivityDetail {
     #[schema(value_type = Object)]
     summary: serde_json::Value,
     samples: Samples,
+    /// The URLs of the photos added to the activity on Garmin Connect, in Garmin's order.
+    images: Vec<String>,
 }
 
 /// One activity with all its metrics and what the device recorded along it.
@@ -547,11 +554,54 @@ async fn activity(
             })
         },
     );
+    let images = db::image_ids(&state.pool, id)
+        .await?
+        .into_iter()
+        .map(|image_id| format!("/api/activities/{id}/images/{image_id}"))
+        .collect();
     Ok(Json(ActivityDetail {
         activity: ActivityItem::new(activity, bounds),
         summary,
         samples: Samples::from_samples(&samples),
+        images,
     }))
+}
+
+/// A photo added to an activity on Garmin Connect.
+#[utoipa::path(
+    get,
+    path = "/api/activities/{id}/images/{image_id}",
+    params(
+        ("id" = i64, Path, description = "Garmin's activity ID"),
+        ("image_id" = String, Path, description = "Garmin's image ID"),
+    ),
+    responses(
+        (status = 200, description = "The image", content_type = "image/jpeg"),
+        (status = 401, description = "Not signed in", body = ErrorBody),
+        (status = 404, description = "No such image", body = ErrorBody),
+    )
+)]
+async fn activity_image(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path((id, image_id)): Path<(i64, String)>,
+) -> Result<Response, ApiError> {
+    let (content_type, data) = db::image(&state.pool, user.id, id, &image_id)
+        .await?
+        .ok_or(ApiError::NotFound("no such image"))?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, content_type),
+            // An image never changes under its ID.
+            (
+                header::CACHE_CONTROL,
+                "private, max-age=31536000, immutable".to_owned(),
+            ),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_owned()),
+        ],
+        data,
+    )
+        .into_response())
 }
 
 #[derive(Serialize, ToSchema)]

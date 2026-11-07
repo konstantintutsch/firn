@@ -72,29 +72,79 @@ pub const KINDS: &[Kind] = &[
         period: Period::Range,
         path: "/usersummary-service/v2/dailysummaries",
         dates: Dates::RangeQuery,
+        // The v2 summaries nest their values, like `movement.steps.value`. The flat
+        // names of the older summaries come first, so that a moved key is still found.
         metrics: &[
-            metric("steps", &["totalSteps"]),
-            metric("step_goal", &["dailyStepGoal", "stepGoal"]),
-            metric("distance_m", &["totalDistanceMeters", "totalDistance"]),
-            metric("resting_heart_rate", &["restingHeartRate"]),
-            metric("min_heart_rate", &["minHeartRate"]),
-            metric("max_heart_rate", &["maxHeartRate"]),
+            metric("steps", &["totalSteps", "movement.steps.value"]),
+            metric(
+                "step_goal",
+                &["dailyStepGoal", "stepGoal", "movement.steps.goal"],
+            ),
+            metric(
+                "distance_m",
+                &[
+                    "totalDistanceMeters",
+                    "totalDistance",
+                    "movement.steps.distanceInMeters",
+                ],
+            ),
+            metric(
+                "resting_heart_rate",
+                &["restingHeartRate", "heartRate.restingValue"],
+            ),
+            metric("min_heart_rate", &["minHeartRate", "heartRate.minValue"]),
+            metric("max_heart_rate", &["maxHeartRate", "heartRate.maxValue"]),
             metric(
                 "stress",
-                &["averageStressLevel", "allDayStress.averageStressLevel"],
+                &[
+                    "averageStressLevel",
+                    "allDayStress.averageStressLevel",
+                    "stress.avgLevel",
+                ],
             ),
-            metric("calories", &["totalKilocalories"]),
-            metric("active_calories", &["activeKilocalories"]),
-            metric("floors", &["floorsAscended"]),
-            metric("moderate_intensity_minutes", &["moderateIntensityMinutes"]),
-            metric("vigorous_intensity_minutes", &["vigorousIntensityMinutes"]),
-            metric("body_battery_high", &["bodyBatteryHighestValue"]),
-            metric("body_battery_low", &["bodyBatteryLowestValue"]),
-            metric("body_battery_charged", &["bodyBatteryChargedValue"]),
-            metric("body_battery_drained", &["bodyBatteryDrainedValue"]),
-            metric("spo2", &["averageSpo2"]),
-            metric("lowest_spo2", &["lowestSpo2"]),
-            metric("respiration", &["avgWakingRespirationValue"]),
+            metric("calories", &["totalKilocalories", "calories.burnedTotal"]),
+            metric(
+                "active_calories",
+                &["activeKilocalories", "calories.burnedActive"],
+            ),
+            metric(
+                "floors",
+                &["floorsAscended", "movement.floorsAscended.value"],
+            ),
+            metric(
+                "floors_descended",
+                &["floorsDescended", "movement.floorsDescended.value"],
+            ),
+            metric(
+                "moderate_intensity_minutes",
+                &["moderateIntensityMinutes", "intensityMinutes.moderate"],
+            ),
+            metric(
+                "vigorous_intensity_minutes",
+                &["vigorousIntensityMinutes", "intensityMinutes.vigorous"],
+            ),
+            metric(
+                "body_battery_high",
+                &["bodyBatteryHighestValue", "bodyBattery.maxValue"],
+            ),
+            metric(
+                "body_battery_low",
+                &["bodyBatteryLowestValue", "bodyBattery.minValue"],
+            ),
+            metric(
+                "body_battery_charged",
+                &["bodyBatteryChargedValue", "bodyBattery.chargedValue"],
+            ),
+            metric(
+                "body_battery_drained",
+                &["bodyBatteryDrainedValue", "bodyBattery.drainedValue"],
+            ),
+            metric("spo2", &["averageSpo2", "pulseOx.avgValue"]),
+            metric("lowest_spo2", &["lowestSpo2", "pulseOx.minValue"]),
+            metric(
+                "respiration",
+                &["avgWakingRespirationValue", "respiration.avgValue"],
+            ),
         ],
     },
     Kind {
@@ -507,6 +557,33 @@ mod tests {
             json!({"calendarDate": "2026-01-01", "stats": {"wellness": {"totalSteps": 9000}}});
         let found = kind("daily_summaries").unwrap().extract(&data, None);
         assert_eq!(found, [(day("2026-01-01"), "steps", 9000.0)]);
+    }
+
+    #[test]
+    fn reads_the_nested_values_of_v2_summaries() {
+        let data = json!({"data": [{
+            "calendarDate": "2026-11-01",
+            "movement": {
+                "steps": {"goal": 10000, "value": 6799, "distanceInMeters": 7604.0},
+                "floorsAscended": {"goal": 10, "value": 10, "distanceInMeters": 32.22},
+                "floorsDescended": {"value": 11, "distanceInMeters": 35.81},
+            },
+            "heartRate": {"minValue": 48, "maxValue": 214, "restingValue": 52},
+            "bodyBattery": {"minValue": 20, "maxValue": 77, "chargedValue": 70, "drainedValue": 49},
+        }]});
+        let found = kind("daily_summaries").unwrap().extract(&data, None);
+        let day = day("2026-11-01");
+        for expected in [
+            (day, "steps", 6799.0),
+            (day, "step_goal", 10000.0),
+            (day, "floors", 10.0),
+            (day, "floors_descended", 11.0),
+            (day, "resting_heart_rate", 52.0),
+            (day, "body_battery_high", 77.0),
+            (day, "body_battery_low", 20.0),
+        ] {
+            assert!(found.contains(&expected), "missing {expected:?}");
+        }
     }
 
     #[test]

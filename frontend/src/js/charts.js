@@ -12,6 +12,8 @@ const MAX_COLUMN_WIDTH = 24;
 const COLUMN_GAP = 2;
 const RADIUS = 4;
 const DAY_MS = 86_400_000;
+/** Points further apart than this are not joined by a line. */
+const MAX_LINE_GAP_MS = 2 * DAY_MS;
 
 const charts = new Set();
 let resizeTimer = null;
@@ -212,19 +214,19 @@ function drawLines(state, svg, inner) {
 
   for (const { slot, values: points } of series) {
     // Breaks the line where days are missing, instead of drawing across gaps.
+    const joins = (index) => index > 0 && points[index][0] - points[index - 1][0] <= MAX_LINE_GAP_MS;
     let path = "";
-    let previous = null;
-    for (const [time, value] of points) {
-      const command = previous !== null && time - previous <= 2 * DAY_MS ? "L" : "M";
-      path += `${command}${x(time).toFixed(1)},${y(value).toFixed(1)}`;
-      previous = time;
-    }
+    points.forEach(([time, value], index) => {
+      path += `${joins(index) ? "L" : "M"}${x(time).toFixed(1)},${y(value).toFixed(1)}`;
+    });
     element("path", { d: path, class: "chart-line", stroke: `var(--series-${slot})` }, svg);
-    if (points.length <= 60) {
-      for (const [time, value] of points) {
-        element("circle", { cx: x(time), cy: y(value), r: 2.5, fill: `var(--series-${slot})` }, svg);
-      }
-    }
+    points.forEach(([time, value], index) => {
+      // A point that no line reaches gets a larger dot, so that it does not get lost.
+      const alone = !joins(index) && !(index + 1 < points.length && joins(index + 1));
+      if (!alone && points.length > 60) return;
+      const attributes = { cx: x(time), cy: y(value), r: alone ? 4 : 2.5, fill: `var(--series-${slot})` };
+      element("circle", alone ? { ...attributes, class: "chart-point-alone" } : attributes, svg);
+    });
   }
 
   const crosshair = element("line", { y1: inner.top, y2: inner.bottom, class: "chart-crosshair", visibility: "hidden" }, svg);

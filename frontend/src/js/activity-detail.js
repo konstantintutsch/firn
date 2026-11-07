@@ -92,6 +92,18 @@ function summaryMetrics(type) {
   ];
 }
 
+/** Garmin's event types that say something. Others, like "uncategorized", are left out. */
+const EVENT_TYPES = {
+  race: "Race",
+  training: "Training",
+  specialEvent: "Special event",
+  transportation: "Transportation",
+  geocaching: "Geocaching",
+  fitness: "Fitness",
+  recreation: "Recreation",
+  touring: "Touring",
+};
+
 const FASTEST_SPLITS = [
   ["fastestSplit_1000", "1 km"],
   ["fastestSplit_1609", "1 mile"],
@@ -185,6 +197,7 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
   const colorField = document.querySelector("#track-color-field");
   const colorSelect = document.querySelector("#track-color");
   const statusElement = document.querySelector("#detail-status");
+  const imagesElement = document.querySelector("#detail-images");
 
   let detail = null;
   let metrics = [];
@@ -375,18 +388,41 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     if (!zonesElement.hidden) bars(zonesElement.querySelector("div"), zones, duration);
   }
 
+  /** The photos from Garmin Connect, each opening at full size. */
+  function renderImages(images) {
+    imagesElement.hidden = images.length === 0;
+    imagesElement.replaceChildren(
+      ...images.map((url) => {
+        const link = html("a");
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noreferrer";
+        const image = html("img");
+        image.src = url;
+        image.alt = t("Photo of the activity");
+        image.loading = "lazy";
+        link.append(image);
+        return link;
+      }),
+    );
+  }
+
   /** Shows a loaded activity from `/api/activities/{id}`. */
   function show(loaded) {
     detail = loaded;
-    const { activity, summary, samples } = detail;
+    const { activity, summary, samples, images } = detail;
     metrics = trackMetrics(activity.activity_type, samples);
     x = samples.distance_m ?? samples.time_s ?? null;
 
     titleElement.textContent = activity.name || typeName(activity.activity_type);
-    metaElement.textContent = `${typeName(activity.activity_type)} · ${activityDetails(activity)}`;
+    const event = EVENT_TYPES[summary.eventType?.typeKey];
+    metaElement.textContent = [typeName(activity.activity_type), event && t(event), activityDetails(activity)]
+      .filter(Boolean)
+      .join(" · ");
     descriptionElement.textContent = activity.description ?? "";
     statusElement.textContent = "";
     renderMetrics(summary, activity.activity_type);
+    renderImages(images ?? []);
 
     profileTabs.replaceChildren(
       ...metrics.map(({ key, label }) => {
@@ -429,6 +465,7 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     titleElement.textContent = activity.name || (activity.activity_type ? typeName(activity.activity_type) : "");
     metaElement.textContent = "";
     descriptionElement.textContent = "";
+    renderImages([]);
     metricsElement.replaceChildren();
     splitsElement.hidden = true;
     zonesElement.hidden = true;

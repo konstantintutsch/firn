@@ -17,35 +17,43 @@ export function onThemeChange(listener) {
   themeListeners.push(listener);
 }
 
-function setUpThemeToggle() {
-  const toggle = document.querySelector("#theme-toggle");
-  let theme = currentTheme();
-  const update = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    toggle.dataset.next = next;
-    const label = t(`Switch to ${next} mode`);
-    toggle.setAttribute("aria-label", label);
-    toggle.title = label;
-  };
-  const apply = () => {
-    const next = currentTheme();
-    if (next === theme) return;
-    theme = next;
-    update();
-    for (const listener of themeListeners) listener(theme);
-  };
-  toggle.addEventListener("click", () => {
-    const next = theme === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = next;
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, next);
-    } catch {
-      // Without storage the choice still applies until the page is reloaded.
+let theme = currentTheme();
+
+/** Tells the listeners if the theme changed, by a choice or with the system's. */
+function notifyTheme() {
+  const next = currentTheme();
+  if (next === theme) return;
+  theme = next;
+  for (const listener of themeListeners) listener(theme);
+}
+
+systemDark.addEventListener("change", notifyTheme);
+
+/** Wires the choice between the system's, the light and the dark theme on the settings page. */
+function setUpThemePicker() {
+  const buttons = [...document.querySelectorAll("#theme-picker [data-theme-choice]")];
+  const show = () => {
+    const chosen = document.documentElement.dataset.theme ?? "system";
+    for (const button of buttons) {
+      button.setAttribute("aria-pressed", String(button.dataset.themeChoice === chosen));
     }
-    apply();
-  });
-  systemDark.addEventListener("change", apply);
-  update();
+  };
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      const choice = button.dataset.themeChoice;
+      try {
+        if (choice === "system") localStorage.removeItem(THEME_STORAGE_KEY);
+        else localStorage.setItem(THEME_STORAGE_KEY, choice);
+      } catch {
+        // Without storage the choice still applies until the page is reloaded.
+      }
+      if (choice === "system") delete document.documentElement.dataset.theme;
+      else document.documentElement.dataset.theme = choice;
+      show();
+      notifyTheme();
+    });
+  }
+  show();
 }
 
 /** Sends a request that changes something, with the header the API requires. */
@@ -79,7 +87,6 @@ let account = null;
  * sign-in screen and never resolves, so the page waits there.
  */
 export async function requireAccount() {
-  setUpThemeToggle();
   const failed = new URLSearchParams(location.search).get("login") === "failed";
   if (failed) history.replaceState(null, "", location.pathname + location.hash);
 
@@ -120,6 +127,7 @@ function showSettings(message = "") {
 
 /** Wires the settings page. Other pages send people here with `?key=missing` to add a key before syncing. */
 export function setUpSettings() {
+  setUpThemePicker();
   const form = document.querySelector("#key-form");
   const input = form.elements.api_key;
   const message = document.querySelector("#settings-message");

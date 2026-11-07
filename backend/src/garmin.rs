@@ -7,7 +7,7 @@ use std::time::Duration;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::{DateTime, NaiveDateTime, Utc};
-use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderValue};
+use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue};
 use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use serde::Deserialize;
 use serde_json::Value;
@@ -117,6 +117,46 @@ impl Activity {
     }
 }
 
+/// A photo that someone added to an activity on Garmin Connect.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActivityImage {
+    pub id: String,
+    /// The largest size. Expires a day after Garmin sent it.
+    pub url: String,
+}
+
+/// The photos in an activity's details, in Garmin's order.
+pub fn activity_images(details: &Value) -> Vec<ActivityImage> {
+    let Some(images) = details
+        .pointer("/metadataDTO/activityImages")
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+    images
+        .iter()
+        .filter_map(|image| {
+            let url = ["url", "mediumUrl", "smallUrl"]
+                .iter()
+                .find_map(|key| image.get(key)?.as_str())?;
+            Some(ActivityImage {
+                id: image.get("imageId")?.as_str()?.to_owned(),
+                url: url.to_owned(),
+            })
+        })
+        .collect()
+}
+
+/// Image types that browsers show and that cannot carry scripts, unlike SVG.
+const IMAGE_TYPES: &[&str] = &[
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "image/heic",
+    "image/avif",
+];
+
 pub struct GarminClient {
     http: Client,
     base_url: String,
@@ -176,6 +216,27 @@ impl GarminClient {
             })
             .await?;
         Ok(response.bytes().await?.to_vec())
+    }
+
+    /// An image behind one of Garmin's expiring links, with its media type. Sends
+    /// no token: the link itself grants access, and it leads to another host.
+    pub async fn download_image(&self, url: &str) -> Result<(Vec<u8>, String), GarminError> {
+        let response = self.http.get(url).send().await?;
+        match response.status() {
+            status if status.is_success() => {}
+            StatusCode::FORBIDDEN => return Err(GarminError::Forbidden),
+            StatusCode::NOT_FOUND => return Err(GarminError::NotFound),
+            status => return Err(GarminError::Status(status)),
+        }
+        let content_type = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(|value| value.split(';').next().unwrap_or_default().trim())
+            .filter(|value| IMAGE_TYPES.contains(value))
+            .unwrap_or("image/jpeg")
+            .to_owned();
+        Ok((response.bytes().await?.to_vec(), content_type))
     }
 
     /// Details of one activity, like laps, heart rate and training effect.
@@ -304,6 +365,29 @@ mod tests {
     fn opaque_token_is_not_treated_as_expiring() {
         assert!(!expires_soon("opaque", Utc::now()));
         assert!(!expires_soon(&jwt(json!({"exp": "soon"})), Utc::now()));
+    }
+
+    #[test]
+    fn reads_the_largest_size_of_each_image() {
+        let details = json!({"metadataDTO": {"activityImages": [
+            {"imageId": "a", "url": "https://images/a-larg.jpg", "smallUrl": "https://images/a-small.jpg"},
+            {"imageId": "b", "mediumUrl": "https://images/b-mdfd.jpg"},
+            {"url": "https://images/no-id.jpg"},
+        ]}});
+        assert_eq!(
+            activity_images(&details),
+            [
+                ActivityImage {
+                    id: "a".into(),
+                    url: "https://images/a-larg.jpg".into()
+                },
+                ActivityImage {
+                    id: "b".into(),
+                    url: "https://images/b-mdfd.jpg".into()
+                },
+            ]
+        );
+        assert!(activity_images(&json!({})).is_empty());
     }
 
     #[test]

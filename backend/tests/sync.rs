@@ -621,3 +621,88 @@ async fn activity_without_workouts_is_not_asked_again() {
     run_sync(&pool, &server).await.unwrap();
     run_sync(&pool, &server).await.unwrap();
 }
+
+#[tokio::test]
+async fn saves_activity_images_without_sending_the_token() {
+    let (pool, server) = setup().await;
+    mount_list(&server, &[vec![activity(1, "running", true)]]).await;
+    mount_file(&server, 1, 1).await;
+    let image_url = format!("{}/activity_images/a-larg.jpg?signature=1", server.uri());
+    Mock::given(method("GET"))
+        .and(path("/activity-service/activity/1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "metadataDTO": {"activityImages": [{"imageId": "a", "url": image_url}]}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/activity_images/a-larg.jpg"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "image/jpeg")
+                .set_body_bytes(b"jpeg".to_vec()),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    run_sync(&pool, &server).await.unwrap();
+    // Nothing is left to download, so a second sync asks for nothing.
+    assert_eq!(run_sync(&pool, &server).await.unwrap().to_download, 0);
+
+    let requests = server.received_requests().await.unwrap();
+    let image_request = requests
+        .iter()
+        .find(|request| request.url.path() == "/activity_images/a-larg.jpg")
+        .unwrap();
+    assert!(!image_request.headers.contains_key("authorization"));
+    let user_id = common::user(&pool).await;
+    assert_eq!(db::image_ids(&pool, 1).await.unwrap(), ["a"]);
+    assert_eq!(
+        db::image(&pool, user_id, 1, "a").await.unwrap(),
+        Some(("image/jpeg".to_owned(), b"jpeg".to_vec()))
+    );
+}
+
+#[tokio::test]
+async fn saved_details_without_images_need_no_request() {
+    let (pool, server) = setup().await;
+    mount_list(&server, &[vec![activity(1, "running", true)]]).await;
+    mount_file(&server, 1, 1).await;
+    run_sync(&pool, &server).await.unwrap();
+    // Activities saved before images were synced have details but no images yet.
+    diesel::update(activities::table.find(1))
+        .set(activities::images_synced_at.eq(None::<chrono::DateTime<chrono::Utc>>))
+        .execute(&mut pool.get().await.unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(run_sync(&pool, &server).await.unwrap().to_download, 0);
+}
+
+#[tokio::test]
+async fn image_that_garmin_refuses_is_skipped_for_good() {
+    let (pool, server) = setup().await;
+    mount_list(&server, &[vec![activity(1, "running", true)]]).await;
+    mount_file(&server, 1, 1).await;
+    let image_url = format!("{}/activity_images/old-larg.jpg", server.uri());
+    Mock::given(method("GET"))
+        .and(path("/activity-service/activity/1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "metadataDTO": {"activityImages": [{"imageId": "old", "url": image_url}]}
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/activity_images/old-larg.jpg"))
+        .respond_with(ResponseTemplate::new(403))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let report = run_sync(&pool, &server).await.unwrap();
+    assert_eq!((report.downloaded, report.failed), (1, 0));
+    assert_eq!(run_sync(&pool, &server).await.unwrap().to_download, 0);
+    assert!(db::image_ids(&pool, 1).await.unwrap().is_empty());
+}

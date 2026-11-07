@@ -18,6 +18,17 @@ diesel::table! {
         user_id -> Nullable<Int8>,
         details -> Nullable<Jsonb>,
         workouts -> Nullable<Jsonb>,
+        images_synced_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    activity_images (activity_id, image_id) {
+        activity_id -> Int8,
+        image_id -> Text,
+        seq -> Int4,
+        content_type -> Text,
+        data -> Bytea,
     }
 }
 
@@ -73,6 +84,7 @@ diesel::table! {
 }
 
 diesel::joinable!(activities -> users (user_id));
+diesel::joinable!(activity_images -> activities (activity_id));
 diesel::joinable!(daily_metrics -> users (user_id));
 diesel::joinable!(garmin_documents -> users (user_id));
 diesel::joinable!(sessions -> users (user_id));
@@ -80,6 +92,7 @@ diesel::joinable!(track_points -> activities (activity_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     activities,
+    activity_images,
     daily_metrics,
     garmin_documents,
     sessions,
