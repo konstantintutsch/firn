@@ -67,3 +67,12 @@ authelia-secrets:
     $authelia certificate rsa generate --common-name authelia.localhost --sans authelia.localhost \
         --path.ca /secrets --directory /secrets --file.certificate tls.crt --file.private-key tls.key
     $authelia pair rsa generate --directory /secrets --file.private-key jwks.key --file.public-key jwks.pub
+
+# Start a separate Runmap with made-up data at http://localhost:8090, for screenshots and trying changes
+demo:
+    docker compose -f dev/demo/docker-compose.yaml up --build --detach --wait
+    dev/demo/seed.sh
+
+# Stop the demo and delete its made-up data
+demo-down:
+    docker compose -f dev/demo/docker-compose.yaml down --volumes

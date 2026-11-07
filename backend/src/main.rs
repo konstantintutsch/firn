@@ -13,11 +13,6 @@ use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
 
-/// Pause between track downloads, to stay gentle on Garmin's servers.
-const DOWNLOAD_PAUSE: Duration = Duration::from_millis(500);
-/// How far back health data goes at least, for accounts with few activities.
-const HEALTH_HISTORY_DAYS: u64 = 365;
-
 /// Saves Garmin activities and serves them as a heatmap.
 #[derive(Parser)]
 struct Cli {
@@ -36,6 +31,15 @@ struct Cli {
     /// A PEM file with certificates to trust for the provider, like a local test CA.
     #[arg(long, env = "OIDC_CA_CERT")]
     oidc_ca_cert: Option<PathBuf>,
+    /// Where the Garmin Personal API is. Only changed to try Runmap with made-up data.
+    #[arg(long, env = "GARMIN_BASE_URL", default_value = DEFAULT_BASE_URL)]
+    garmin_base_url: String,
+    /// Pause between Garmin requests in milliseconds, to stay gentle on Garmin's servers.
+    #[arg(long, env = "DOWNLOAD_PAUSE_MS", default_value_t = 500)]
+    download_pause_ms: u64,
+    /// How far back health data goes at least, for accounts with few activities.
+    #[arg(long, env = "HEALTH_HISTORY_DAYS", default_value_t = 365)]
+    health_history_days: u64,
 }
 
 /// Secrets are not command-line options: those end up in the shell history.
@@ -83,10 +87,10 @@ async fn main() -> Result<()> {
     let state = AppState::new(
         pool,
         GarminSettings {
-            base_url: DEFAULT_BASE_URL.to_owned(),
+            base_url: cli.garmin_base_url,
             api_key: secret_env("GARMIN_PERSONAL_API_KEY"),
-            download_pause: DOWNLOAD_PAUSE,
-            health_history_days: HEALTH_HISTORY_DAYS,
+            download_pause: Duration::from_millis(cli.download_pause_ms),
+            health_history_days: cli.health_history_days,
         },
         Auth::new(oidc, secret_box),
     );

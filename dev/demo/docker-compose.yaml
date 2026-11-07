@@ -1,0 +1,53 @@
+# A separate Runmap with made-up data, for screenshots and trying changes out.
+# It has its own database and never touches the data of `just up`. Start it
+# with `just demo`, at http://localhost:8090.
+name: runmap-demo
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: runmap
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: runmap
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U runmap -d runmap]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  fake-garmin:
+    image: python:3.13-alpine
+    command: [python, -u, /app/fake_garmin.py]
+    volumes:
+      - ./fake_garmin.py:/app/fake_garmin.py:ro
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/fitnessage-service/fitnessage/v2/x')"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  backend:
+    build:
+      context: ../../backend
+      target: runtime
+    environment:
+      DATABASE_URL: postgres://runmap:demo@db/runmap
+      APP_SECRET: a-public-secret-that-only-the-demo-uses
+      GARMIN_BASE_URL: http://fake-garmin:8000
+      DOWNLOAD_PAUSE_MS: 0
+      PUBLIC_URL: http://localhost:8090
+    depends_on:
+      db:
+        condition: service_healthy
+      fake-garmin:
+        condition: service_healthy
+
+  frontend:
+    build: ../../frontend
+    ports:
+      - 127.0.0.1:8090:80
+    depends_on:
+      - backend
