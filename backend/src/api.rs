@@ -49,6 +49,7 @@ struct CachedTracks {
     paths(
         heatmap,
         activities,
+        health,
         activity,
         activity_file,
         resync_activity,
@@ -160,8 +161,33 @@ impl AppState {
     }
 }
 
+/// Whether the backend runs and reaches its database, for container health checks.
+#[utoipa::path(
+    get,
+    path = "/api/health",
+    responses(
+        (status = 204, description = "Healthy"),
+        (status = 503, description = "The database cannot be reached"),
+    )
+)]
+async fn health(State(state): State<AppState>) -> StatusCode {
+    match db::ping(&state.pool).await {
+        Ok(()) => StatusCode::NO_CONTENT,
+        Err(error) => {
+            tracing::warn!("health check failed: {error:#}");
+            StatusCode::SERVICE_UNAVAILABLE
+        }
+    }
+}
+
+/// All routes. With `docs`, also the API documentation at /api/docs.
 pub fn router(state: AppState) -> Router {
-    Router::new()
+    router_with(state, true)
+}
+
+pub fn router_with(state: AppState, docs: bool) -> Router {
+    let router = Router::new()
+        .route("/api/health", get(health))
         .route("/api/heatmap", get(heatmap))
         .route("/api/activities", get(activities))
         .route("/api/activities/{id}", get(activity))
@@ -195,8 +221,14 @@ pub fn router(state: AppState) -> Router {
             get(statistics::activity_statistics),
         )
         .route("/api/statistics/health", get(statistics::health_statistics))
-        .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()))
         .with_state(state)
+        // Logs each request with its status and duration, at debug level.
+        .layer(tower_http::trace::TraceLayer::new_for_http());
+    if docs {
+        router.merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()))
+    } else {
+        router
+    }
 }
 
 #[derive(Serialize, ToSchema)]

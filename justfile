@@ -28,10 +28,11 @@ test *args:
 fmt:
     docker compose run --build --rm --no-deps tools cargo fmt
 
-# Check the backend formatting and lints
+# Check the backend formatting and lints, and the frontend lints
 lint:
     docker compose run --build --rm --no-deps tools cargo fmt --check
     docker compose run --build --rm --no-deps tools cargo clippy --all-targets -- --deny warnings
+    docker compose run --rm node sh -c 'npm ci --no-audit --no-fund --silent && npm run lint'
 
 # Create a new migration
 migration name:

@@ -936,6 +936,13 @@ pub async fn activity_records(pool: &Pool, filter: &Filter) -> Result<Vec<Activi
         .await?)
 }
 
+pub async fn ping(pool: &Pool) -> Result<()> {
+    diesel::sql_query("SELECT 1")
+        .execute(&mut pool.get().await?)
+        .await?;
+    Ok(())
+}
+
 /// The data of one of the account's Garmin documents, like its heart rate zones.
 pub async fn document(
     pool: &Pool,

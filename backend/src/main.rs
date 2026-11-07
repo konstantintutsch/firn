@@ -44,6 +44,12 @@ struct Cli {
     /// How far back health data goes at least, for accounts with few activities.
     #[arg(long, env = "HEALTH_HISTORY_DAYS", default_value_t = 365)]
     health_history_days: u64,
+    /// Serves the API documentation at /api/docs.
+    #[arg(long, env = "API_DOCS", default_value_t = true, action = clap::ArgAction::Set)]
+    api_docs: bool,
+    /// Logs as JSON lines instead of text, for log collectors.
+    #[arg(long, env = "LOG_JSON", default_value_t = false, action = clap::ArgAction::Set)]
+    log_json: bool,
     /// Syncs every account with a Garmin key every this many hours. 0 turns it off.
     #[arg(long, env = "SYNC_INTERVAL_HOURS", default_value_t = 0)]
     sync_interval_hours: u64,
@@ -59,13 +65,22 @@ fn secret_env(name: &str) -> Option<String> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .init();
-
+    // `runmap healthcheck` asks the running backend, for the container's health
+    // check, since the image has no curl.
+    if std::env::args().nth(1).as_deref() == Some("healthcheck") {
+        return healthcheck().await;
+    }
     let cli = Cli::parse();
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    if cli.log_json {
+        tracing_subscriber::fmt()
+            .json()
+            .with_env_filter(filter)
+            .init();
+    } else {
+        tracing_subscriber::fmt().with_env_filter(filter).init();
+    }
+
     let pool = db::connect(&cli.database_url)?;
     db::migrate(&pool).await?;
     let files = FileStore::new(&cli.data_dir);
@@ -113,7 +128,7 @@ async fn main() -> Result<()> {
 
     let listener = TcpListener::bind(cli.bind).await?;
     tracing::info!(bind = %cli.bind, "listening");
-    axum::serve(listener, api::router(state))
+    axum::serve(listener, api::router_with(state, cli.api_docs))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())
@@ -126,4 +141,23 @@ async fn shutdown_signal() {
         _ = terminate.recv() => {}
         _ = tokio::signal::ctrl_c() => {}
     }
+}
+
+async fn healthcheck() -> Result<()> {
+    let bind: SocketAddr = std::env::var("BIND_ADDRESS")
+        .unwrap_or_else(|_| "0.0.0.0:3000".to_owned())
+        .parse()
+        .context("invalid BIND_ADDRESS")?;
+    let url = format!("http://127.0.0.1:{}/api/health", bind.port());
+    let response = reqwest::Client::new()
+        .get(&url)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await?;
+    anyhow::ensure!(
+        response.status().is_success(),
+        "{url} answered {}",
+        response.status()
+    );
+    Ok(())
 }

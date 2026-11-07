@@ -1,6 +1,6 @@
-# Builds the backend and frontend images, and pushes them to the container
-# registry of this Gitea instance as <owner>/<repository>/<component>. Pull
-# requests only build, to check that the images work.
+# Checks the code, then builds the backend and frontend images, and pushes them
+# to the container registry of this Gitea instance as <owner>/<repository>/<component>.
+# Pull requests only check and build, to see that the images work.
 #
 # Set up:
 # - Secret REGISTRY_TOKEN: an access token with the write:package scope.
@@ -26,7 +26,43 @@ on:
   workflow_dispatch:
 
 jobs:
+  # The same checks as `just lint` and `just test`, against a throwaway database.
+  backend:
+    runs-on: ubuntu-latest
+    container: rust:1.99-bookworm
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: test
+        options: >-
+          --health-cmd pg_isready --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://postgres:test@postgres/postgres
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup component add rustfmt clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- --deny warnings
+      - run: cargo test --locked
+
+  frontend:
+    runs-on: ubuntu-latest
+    container: node:24-alpine
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
   image:
+    needs: [backend, frontend]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

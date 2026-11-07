@@ -87,7 +87,6 @@ const GERMAN = {
   "Longest time": "Längste Zeit",
   "Current streak": "Aktuelle Serie",
   "Longest streak": "Längste Serie",
-  day: "Tag",
   days: "Tage",
   Calendar: "Kalender",
   "Distance per day, darker is more": "Distanz pro Tag, dunkler ist mehr",

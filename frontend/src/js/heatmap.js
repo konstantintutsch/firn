@@ -9,7 +9,6 @@ import {
   requireAccount,
   setUpSync,
   t,
-  typeName,
 } from "/js/account.js";
 import { setUpActivityDetail } from "/js/activity-detail.js";
 import { setUpFilters } from "/js/filters.js";

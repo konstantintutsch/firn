@@ -1172,3 +1172,10 @@ async fn deleting_the_account_removes_its_data_and_files() {
     .await;
     assert_eq!(status, StatusCode::OK);
 }
+
+#[tokio::test]
+async fn health_needs_no_session() {
+    let pool = common::test_pool().await;
+    let (status, _) = get_with(&pool, "/api/health", None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
