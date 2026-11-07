@@ -1482,6 +1482,24 @@ a.activity:hover {
   white-space: nowrap;
 }
 
+/* Unlike the charts' pop-ups, this one holds links to the activities. */
+.chart-tooltip.calendar-tooltip {
+  pointer-events: auto;
+}
+
+a.chart-tooltip-row {
+  margin-inline: -6px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+}
+
+a.chart-tooltip-row:hover,
+a.chart-tooltip-row:focus-visible {
+  background: var(--fill-hover);
+}
+
 .calendar-tooltip .chart-tooltip-row {
   justify-content: space-between;
   gap: 12px;

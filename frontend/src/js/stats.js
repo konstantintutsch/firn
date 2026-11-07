@@ -533,6 +533,12 @@ function calendar(container, dated, buckets) {
   tooltip.className = "chart-tooltip calendar-tooltip";
   tooltip.hidden = true;
   tooltip.setAttribute("aria-live", "polite");
+  tooltip.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      svg.focus();
+      show(null);
+    }
+  });
 
   const days = [];
   for (let week = 0, date = new Date(start); week < WEEKS; week++) {
@@ -571,8 +577,9 @@ function calendar(container, dated, buckets) {
     heading.textContent = label;
     tooltip.replaceChildren(heading);
     for (const activity of entry?.activities ?? []) {
-      const row = document.createElement("div");
+      const row = document.createElement("a");
       row.className = "chart-tooltip-row";
+      row.href = `/?${new URLSearchParams({ activity: activity.id })}`;
       const name = document.createElement("span");
       name.textContent = activity.name || typeName(activity.activity_type);
       const value = document.createElement("span");
@@ -601,19 +608,47 @@ function calendar(container, dated, buckets) {
     tooltip.style.top = `${roomAbove ? above : box.bottom - outer.top + 6}px`;
   }
 
+  // The pop-up stays a moment after the pointer leaves the day, so that it can
+  // reach the activities in it, and as long as the pointer is on it.
+  let hideTimer = null;
+  let switchTimer = null;
+  const hideSoon = () => {
+    clearTimeout(switchTimer);
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      if (!wrapper.contains(document.activeElement)) show(null);
+    }, 300);
+  };
   svg.addEventListener("pointermove", (event) => {
+    clearTimeout(hideTimer);
     const index = event.target.dataset?.index;
-    if (index != null && days[index] !== active) show(Number(index));
+    if (index == null || days[index] === active) {
+      clearTimeout(switchTimer);
+      return;
+    }
+    // Waits a moment before another day takes over, so that the way to the pop-up
+    // can cross other days. The first day shows at once.
+    clearTimeout(switchTimer);
+    if (active == null || tooltip.hidden) show(Number(index));
+    else switchTimer = setTimeout(() => show(Number(index)), 150);
   });
-  svg.addEventListener("pointerleave", () => {
-    if (document.activeElement !== svg) show(null);
+  svg.addEventListener("pointerleave", hideSoon);
+  tooltip.addEventListener("pointerenter", () => {
+    clearTimeout(hideTimer);
+    clearTimeout(switchTimer);
   });
+  tooltip.addEventListener("pointerleave", hideSoon);
   svg.addEventListener("focus", () => show(days.indexOf(active ?? days.at(-1))));
-  svg.addEventListener("blur", () => show(null));
+  // Tab goes on from the day to the activities in the pop-up, which keeps it open.
+  wrapper.addEventListener("focusout", (event) => {
+    if (!wrapper.contains(event.relatedTarget)) show(null);
+  });
   svg.addEventListener("keydown", (event) => {
     const step = { ArrowUp: -1, ArrowDown: 1, ArrowLeft: -7, ArrowRight: 7 }[event.key];
     if (step == null) {
       if (event.key === "Escape") show(null);
+      // Enter opens the day's first activity.
+      if (event.key === "Enter") tooltip.querySelector("a")?.click();
       return;
     }
     event.preventDefault();
