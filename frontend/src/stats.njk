@@ -32,13 +32,10 @@
           <button class="panel-button" type="button" data-days="365" data-i18n>1 year</button>
           <button class="panel-button" type="button" data-days="all" data-i18n>All</button>
         </div>
-        <div class="range period-dates">
-          <label><span data-i18n>From</span> <input name="from" type="date" form="filters"></label>
-          <label><span data-i18n>To</span> <input name="to" type="date" form="filters"></label>
+        <div class="statistics-filters">
+          {% include "filters.njk" %}
         </div>
       </div>
-      {% set filterDates = false %}
-      {% include "filters.njk" %}
       <p id="statistics-status" role="status"></p>
       <section id="activity-section" hidden>
         <h2 data-i18n>Activities</h2>

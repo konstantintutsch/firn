@@ -108,6 +108,7 @@ body {
 
 .tile,
 .card,
+.statistics-filters .filters,
 .activity-list {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -319,6 +320,12 @@ select:focus-visible {
   background: var(--surface);
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Date fields are otherwise as wide as their text, which can be wider than half a panel. */
+input[type="date"] {
+  min-width: 0;
+  padding-inline: 10px;
 }
 
 input[type="checkbox"] {
@@ -607,8 +614,7 @@ p:empty {
   margin-top: 12px;
 }
 
-#filters label,
-.period-dates label {
+#filters label {
   display: grid;
   gap: 4px;
   color: var(--ink-muted);
@@ -1014,21 +1020,50 @@ a.activity:hover {
   font-weight: 600;
 }
 
+/*
+ * The period and, beside it, the filters in a box as wide as the map's panel.
+ * The box opens over the charts, so they do not jump down.
+ */
 .period {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
-  align-items: end;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 10px 16px;
   margin-top: 8px;
 }
 
-.period-dates {
-  flex: 1 1 280px;
-  max-width: 360px;
+.statistics-filters {
+  position: relative;
+  width: 300px;
+  height: 44px;
 }
 
-.statistics .filters {
-  max-width: 480px;
+.statistics-filters .filters {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  max-height: calc(100dvh - var(--nav-space) - 120px);
+  overflow-y: auto;
+  margin-top: 0;
+  padding: 0 16px;
+  border-top: 0;
+  border-radius: var(--radius-lg);
+  corner-shape: var(--corner);
+  box-sizing: border-box;
+}
+
+.statistics-filters .filters summary {
+  min-height: 42px;
+  padding: 0;
+}
+
+.statistics-filters .filters[open] {
+  padding-bottom: 14px;
+  box-shadow: var(--shadow);
 }
 
 #health-note {
@@ -1294,8 +1329,13 @@ a.activity:hover {
     max-height: 45dvh;
   }
 
-  .panel.has-detail {
+  /* The filters take the whole height, while an activity leaves room to see its track. */
+  .panel:not(.has-detail):has(.filters[open]) {
     max-height: calc(100dvh - var(--nav-space) - 12px);
+  }
+
+  .panel.has-detail {
+    max-height: 55dvh;
   }
 
   .panel-body {
@@ -1321,6 +1361,16 @@ a.activity:hover {
 
   .page-header {
     padding-top: 16px;
+  }
+
+  .range-picker,
+  .statistics-filters {
+    width: 100%;
+  }
+
+  .range-picker .panel-button {
+    flex: 1;
+    padding-inline: 4px;
   }
 }
 

@@ -53,6 +53,8 @@ const SEARCH_DELAY_MS = 350;
 const MIN_PLACE_QUERY_LENGTH = 3;
 const PLACE_ZOOM = 14;
 const FIT_PADDING = 60;
+/** Phones show the panel across the top of the map instead of beside it. */
+const phone = matchMedia("(max-width: 640px)");
 const NOT_LOADED = "Could not load activities. Is the API running?";
 /** The controls' texts that MapLibre lets us replace. */
 const MAP_TEXTS = {
@@ -246,11 +248,28 @@ async function loadDetail(id, fit) {
     detail.show(loaded);
     if (fit && loaded.activity.bounds) {
       const [west, south, east, north] = loaded.activity.bounds;
-      map.fitBounds([[west, south], [east, north]], { padding: FIT_PADDING });
+      map.fitBounds([[west, south], [east, north]], { padding: fitPadding() });
     }
   } catch (error) {
     if (error.name !== "AbortError") detail.fail(t(NOT_LOADED));
   }
+}
+
+/** Keeps what the map moves to clear of the panel, so that it is not hidden underneath. */
+function fitPadding() {
+  const panel = panelElement.getBoundingClientRect();
+  const nav = document.querySelector(".nav").getBoundingClientRect();
+  const padding = { top: FIT_PADDING, right: FIT_PADDING, bottom: FIT_PADDING, left: FIT_PADDING };
+  if (phone.matches) {
+    padding.top = panel.bottom + FIT_PADDING / 2;
+    padding.right = padding.left = FIT_PADDING / 2;
+    padding.bottom = innerHeight - nav.top + FIT_PADDING / 2;
+  } else {
+    padding.left = panel.right + FIT_PADDING;
+  }
+  // A map smaller than the padding cannot fit anything, so it falls back to the plain margin.
+  if (padding.top + padding.bottom >= innerHeight || padding.left + padding.right >= innerWidth) return FIT_PADDING;
+  return padding;
 }
 
 function viewportQuery() {
@@ -339,7 +358,7 @@ function goToPlace({ geometry, properties: { extent } }) {
   if (extent) {
     // Photon lists the extent as west, north, east, south.
     const [west, north, east, south] = extent;
-    map.fitBounds([[west, south], [east, north]], { padding: FIT_PADDING, maxZoom: PLACE_ZOOM });
+    map.fitBounds([[west, south], [east, north]], { padding: fitPadding(), maxZoom: PLACE_ZOOM });
   } else {
     map.flyTo({ center: geometry.coordinates, zoom: PLACE_ZOOM });
   }
@@ -349,7 +368,7 @@ function goToActivity(activity) {
   select(activity);
   if (activity.bounds) {
     const [west, south, east, north] = activity.bounds;
-    map.fitBounds([[west, south], [east, north]], { padding: FIT_PADDING });
+    map.fitBounds([[west, south], [east, north]], { padding: fitPadding() });
   }
 }
 

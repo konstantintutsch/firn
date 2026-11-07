@@ -56,10 +56,9 @@ export function setUpFilters({ withoutGps = false, onChange }) {
     }
   }
 
-  /** Counts only the fields in the panel, not dates that a page shows elsewhere. */
   function updateCount() {
     const fields = [...form.elements].filter(
-      (element) => form.contains(element) && element.name && element.type !== "checkbox" && element.value.trim() !== "",
+      (element) => element.name && element.type !== "checkbox" && element.value.trim() !== "",
     );
     const count = fields.length + checkedTypes.length;
     filterCount.textContent = count > 0 ? String(count) : "";
@@ -71,9 +70,7 @@ export function setUpFilters({ withoutGps = false, onChange }) {
     onChange();
   }
 
-  // Fields can sit outside the form with a `form` attribute, so their events do not reach it.
-  document.addEventListener("input", (event) => {
-    if (event.target.form !== form) return;
+  form.addEventListener("input", (event) => {
     if (event.target.name === "from" || event.target.name === "to") days = null;
     clearTimeout(timer);
     timer = setTimeout(changed, FILTER_DELAY_MS);
