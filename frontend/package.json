@@ -1,0 +1,14 @@
+{
+  "name": "runmap-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "eleventy"
+  },
+  "dependencies": {
+    "maplibre-gl": "6.16.0"
+  },
+  "devDependencies": {
+    "@11ty/eleventy": "3.1.8"
+  }
+}

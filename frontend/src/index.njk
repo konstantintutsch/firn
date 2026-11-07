@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Runmap</title>
+    <link rel="stylesheet" href="/vendor/maplibre-gl.css">
+    <link rel="stylesheet" href="/css/style.css">
+  </head>
+  <body>
+    <main id="map" aria-label="Heatmap of all runs"></main>
+    <section class="panel">
+      <h1>Runmap</h1>
+      <p id="stats"></p>
+      <p id="status" role="status"></p>
+      <div class="legend" id="legend" hidden>
+        <div class="legend-ramp"></div>
+        <div class="legend-labels"><span>Fewer runs</span><span>More runs</span></div>
+      </div>
+    </section>
+    <script type="module" src="/js/heatmap.js"></script>
+  </body>
+</html>

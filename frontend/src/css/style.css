@@ -1,0 +1,82 @@
+:root {
+  --ink: #f2efe9;
+  --ink-muted: #a9a59c;
+  --panel: rgb(18 20 26 / 88%);
+  --line: rgb(255 255 255 / 12%);
+  --ramp: linear-gradient(90deg, #5b2a86, #c2366b, #f4743b, #fbd25d, #fff7d6);
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: #12141a;
+  color: var(--ink);
+  font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+#map {
+  position: fixed;
+  inset: 0;
+}
+
+.panel {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  width: min(240px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 14px 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+}
+
+h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+p {
+  margin: 4px 0 0;
+}
+
+p:empty {
+  display: none;
+}
+
+#stats {
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+code {
+  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--ink);
+}
+
+#status {
+  color: var(--ink-muted);
+}
+
+.legend {
+  margin-top: 12px;
+}
+
+.legend-ramp {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--ramp);
+}
+
+.legend-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}

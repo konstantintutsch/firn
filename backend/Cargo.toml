@@ -1,0 +1,30 @@
+[package]
+name = "runmap"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+axum = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive", "env"] }
+base64 = "0.22"
+diesel = { version = "2.3", features = ["postgres_backend", "chrono", "serde_json"] }
+diesel-async = { version = "0.9", features = ["postgres", "deadpool", "migrations"] }
+diesel_migrations = "2.3"
+quick-xml = "0.38"
+reqwest = { version = "0.13", features = ["json", "form", "query", "cookies"] }
+rpassword = "7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+utoipa = { version = "6", features = ["axum_extras", "chrono"] }
+utoipa-swagger-ui = { version = "10", features = ["axum", "vendored"] }
+
+[dev-dependencies]
+http-body-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
+wiremock = "0.6"
