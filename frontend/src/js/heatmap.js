@@ -10,6 +10,7 @@ import {
   t,
   typeName,
 } from "/js/account.js";
+import { setUpActivityDetail } from "/js/activity-detail.js";
 import { language } from "/js/i18n.js";
 
 const THEMES = {
@@ -65,9 +66,8 @@ const statusElement = document.querySelector("#status");
 const legendElement = document.querySelector("#legend");
 const searchInput = document.querySelector("#search");
 const searchResults = document.querySelector("#search-results");
-const selectionElement = document.querySelector("#selection");
-const selectionName = document.querySelector("#selection-name");
-const selectionClear = document.querySelector("#selection-clear");
+const panelElement = document.querySelector(".panel");
+const browseElement = document.querySelector("#browse");
 const filtersForm = document.querySelector("#filters");
 const filterCount = document.querySelector("#filter-count");
 const typesField = document.querySelector("#types-field");
@@ -102,6 +102,33 @@ let filterTimer = null;
 let selectedId = null;
 let lines = [];
 let isFirstStyle = true;
+let pendingDetail = null;
+
+/** The legend shows the heat, or the colors of the metric that the selected track has. */
+const legend = {
+  isColored: false,
+  show(gradient, low, high) {
+    this.isColored = true;
+    document.querySelector("#legend-ramp").style.background = gradient;
+    document.querySelector("#legend-low").textContent = low;
+    document.querySelector("#legend-high").textContent = high;
+    legendElement.hidden = false;
+  },
+  reset() {
+    this.isColored = false;
+    document.querySelector("#legend-ramp").style.background = "";
+    document.querySelector("#legend-low").textContent = t("Fewer activities");
+    document.querySelector("#legend-high").textContent = t("More activities");
+    legendElement.hidden = lines.length === 0;
+  },
+};
+
+const detail = setUpActivityDetail(map, {
+  heatLayers: [HEAT_LAYER_ID, DOT_LAYER_ID],
+  beforeLayer: layerAboveHeat,
+  legend,
+  onClose: () => select(null),
+});
 
 // Fires again after each theme change, because a new style drops source and layer.
 map.on("style.load", () => {
@@ -138,6 +165,7 @@ map.on("style.load", () => {
     },
     beforeLayer,
   );
+  detail.addLayers();
   if (isFirstStyle) {
     isFirstStyle = false;
     loadStats();
@@ -179,7 +207,7 @@ async function refresh() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     ({ lines } = await response.json());
     map.getSource(SOURCE_ID)?.setData(toGeoJson(lines));
-    legendElement.hidden = lines.length === 0;
+    if (!legend.isColored) legendElement.hidden = lines.length === 0;
   } catch (error) {
     if (error.name !== "AbortError") showStatus(t(NOT_LOADED));
   }
@@ -190,14 +218,30 @@ async function showLinkedActivity() {
   const id = new URLSearchParams(location.search).get("activity");
   if (!id) return;
   history.replaceState(null, "", location.pathname + location.hash);
+  if (/^\d+$/.test(id)) select({ id: Number(id) }, { fit: true });
+  else showStatus(t("Could not find this activity."));
+}
+
+/** Loads all of an activity, and with `fit` then moves the map to its track. */
+async function loadDetail(id, fit) {
+  pendingDetail?.abort();
+  const request = new AbortController();
+  pendingDetail = request;
   try {
-    const response = await fetch(`/api/activities?${new URLSearchParams({ id, limit: 1 })}`);
+    const response = await fetch(`/api/activities/${id}`, { signal: request.signal });
+    if (response.status === 404) {
+      detail.fail(t("Could not find this activity."));
+      return;
+    }
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const [activity] = (await response.json()).activities;
-    if (activity) goToActivity(activity);
-    else showStatus(t("Could not find this activity."));
-  } catch {
-    showStatus(t(NOT_LOADED));
+    const loaded = await response.json();
+    detail.show(loaded);
+    if (fit && loaded.activity.bounds) {
+      const [west, south, east, north] = loaded.activity.bounds;
+      map.fitBounds([[west, south], [east, north]], { padding: FIT_PADDING });
+    }
+  } catch (error) {
+    if (error.name !== "AbortError") detail.fail(t(NOT_LOADED));
   }
 }
 
@@ -314,12 +358,16 @@ function applyFilters() {
   searchNow();
 }
 
-function select(activity) {
+/** Shows one activity with its details, or all of them again with `null`. */
+function select(activity, { fit = false } = {}) {
   selectedId = activity?.id ?? null;
-  selectionElement.hidden = activity == null;
-  selectionName.textContent = activity ? activityTitle(activity) : "";
+  pendingDetail?.abort();
+  panelElement.classList.toggle("has-detail", activity != null);
+  browseElement.hidden = activity != null;
+  detail.open(activity);
   loadStats();
   refresh();
+  if (activity) loadDetail(activity.id, fit);
 }
 
 function placeDetails({ properties: { city, state, country, name } }) {
@@ -469,7 +517,6 @@ searchResults.addEventListener("keydown", (event) => {
   }
 });
 
-selectionClear.addEventListener("click", () => select(null));
 
 filtersForm.addEventListener("input", () => {
   clearTimeout(filterTimer);

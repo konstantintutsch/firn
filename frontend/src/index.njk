@@ -22,13 +22,39 @@
         <input id="search" type="search" placeholder="Search places and activities" aria-label="Search places and activities" data-i18n-attrs="placeholder aria-label" autocomplete="off">
         <div id="search-results" class="search-results" hidden></div>
       </div>
-      <p id="selection" hidden>
-        <span id="selection-name"></span>
-        <button id="selection-clear" class="panel-button" type="button" data-i18n>Show all</button>
-      </p>
-      <p id="stats"></p>
       <p id="status" role="status"></p>
       <p id="sync-status" role="status"></p>
+      <section id="detail" class="detail" hidden>
+        <div class="detail-header">
+          <div>
+            <h2 id="detail-title"></h2>
+            <p id="detail-meta" class="muted"></p>
+          </div>
+          <button id="detail-close" class="icon-button" type="button" aria-label="Show all activities" title="Show all activities" data-i18n-attrs="aria-label title">{% icon "close" %}</button>
+        </div>
+        <p id="detail-description" class="detail-description"></p>
+        <p id="detail-status" class="muted" role="status"></p>
+        <div id="detail-profile" class="detail-profile" hidden>
+          <div id="profile-tabs" class="profile-tabs" role="group" aria-label="Profile" data-i18n-attrs="aria-label"></div>
+          <div id="profile-chart" class="profile-chart"></div>
+          <div id="profile-readout" class="profile-readout" aria-live="polite"></div>
+        </div>
+        <label id="track-color-field" class="track-color" hidden>
+          <span data-i18n>Track color</span>
+          <select id="track-color"></select>
+        </label>
+        <dl id="detail-metrics" class="metrics"></dl>
+        <section id="detail-splits" hidden>
+          <h3 data-i18n>Fastest splits</h3>
+          <dl class="metrics"></dl>
+        </section>
+        <section id="detail-zones" hidden>
+          <h3 data-i18n>Heart rate zones</h3>
+          <div></div>
+        </section>
+      </section>
+      <div id="browse">
+      <p id="stats"></p>
       <details class="filters">
         <summary><span data-i18n>Filters</span> <span id="filter-count"></span></summary>
         <form id="filters">
@@ -54,9 +80,10 @@
           <button class="panel-button" type="reset" data-i18n>Clear filters</button>
         </form>
       </details>
+      </div>
       <div class="legend" id="legend" hidden>
-        <div class="legend-ramp"></div>
-        <div class="legend-labels"><span data-i18n>Fewer activities</span><span data-i18n>More activities</span></div>
+        <div id="legend-ramp" class="legend-ramp"></div>
+        <div class="legend-labels"><span id="legend-low" data-i18n>Fewer activities</span><span id="legend-high" data-i18n>More activities</span></div>
       </div>
     </section>
     {% include "nav.njk" %}

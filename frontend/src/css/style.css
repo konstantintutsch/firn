@@ -82,6 +82,162 @@ body {
   backdrop-filter: blur(6px);
 }
 
+.panel.has-detail {
+  width: min(380px, calc(100vw - 32px));
+}
+
+#browse[hidden],
+.detail[hidden],
+.detail section[hidden],
+.detail-profile[hidden],
+.track-color[hidden] {
+  display: none;
+}
+
+.detail {
+  margin-top: 12px;
+}
+
+.detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.detail-header .icon-button {
+  flex: none;
+}
+
+.detail h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.detail h3 {
+  margin: 14px 0 4px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+#detail-meta {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-description {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.detail-profile {
+  margin-top: 10px;
+}
+
+.profile-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.profile-tabs [aria-pressed="true"] {
+  background: var(--line);
+}
+
+.profile-chart {
+  margin-top: 6px;
+}
+
+.profile-chart svg {
+  display: block;
+  overflow: visible;
+  touch-action: pan-y;
+}
+
+.profile-line {
+  stroke: var(--series-1);
+}
+
+.profile-area {
+  fill: var(--series-1);
+  opacity: 0.15;
+}
+
+.profile-dot {
+  fill: var(--series-1);
+}
+
+.profile-readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-height: 34px;
+  margin-top: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.readout-item {
+  display: grid;
+}
+
+.readout-item small {
+  font-size: 11px;
+}
+
+.track-color {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+select {
+  flex: 1;
+  padding: 3px 6px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+select option {
+  background: var(--page);
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  margin: 10px 0 0;
+}
+
+.metrics div {
+  min-width: 0;
+}
+
+.metrics dt {
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+
+.metrics dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+#detail-zones .bars {
+  margin-top: 4px;
+}
+
 .panel-header {
   display: flex;
   align-items: center;

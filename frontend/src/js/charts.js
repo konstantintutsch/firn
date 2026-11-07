@@ -35,7 +35,7 @@ function html(name, className, text) {
 }
 
 /** Round tick values that cover `min` to `max`. */
-function niceTicks(min, max, count = 4) {
+export function niceTicks(min, max, count = 4) {
   if (min === max) {
     const pad = Math.abs(min) * 0.1 || 1;
     min -= pad;
