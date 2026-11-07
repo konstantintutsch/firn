@@ -1156,6 +1156,47 @@ a {
   display: none;
 }
 
+.list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+.sort select {
+  font: inherit;
+  color: var(--ink);
+}
+
+/* The filters open over the list, not pushing it down. */
+.list-toolbar .statistics-filters {
+  z-index: 2;
+  width: min(300px, 100%);
+}
+
+.month-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px 4px;
+  font-size: 13px;
+}
+
+.month-heading span {
+  color: var(--ink-muted);
+}
+
 .activity {
   display: grid;
   gap: 2px;

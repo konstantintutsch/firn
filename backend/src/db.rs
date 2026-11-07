@@ -550,19 +550,42 @@ pub struct ActivitySummary {
 }
 
 /// The newest activities that match, after skipping the `offset` newest.
+#[derive(Debug, Clone, Copy)]
+pub enum Order {
+    Newest,
+    Oldest,
+    /// The longest distance first.
+    Distance,
+    /// The longest time first.
+    Duration,
+}
+
 pub async fn search_activities(
     pool: &Pool,
     filter: &Filter,
+    order: Order,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<ActivitySummary>> {
-    Ok(filter
-        .apply(
-            activities::table
-                .select(ActivitySummary::as_select())
-                .into_boxed(),
-        )
-        .order((activities::started_at.desc(), activities::id.desc()))
+    let query = filter.apply(
+        activities::table
+            .select(ActivitySummary::as_select())
+            .into_boxed(),
+    );
+    // The ID keeps pages apart where the values are the same.
+    let query = match order {
+        Order::Newest => query.order((activities::started_at.desc(), activities::id.desc())),
+        Order::Oldest => query.order((activities::started_at.asc(), activities::id.asc())),
+        Order::Distance => query.order((
+            activities::distance_m.desc().nulls_last(),
+            activities::id.desc(),
+        )),
+        Order::Duration => query.order((
+            activities::duration_s.desc().nulls_last(),
+            activities::id.desc(),
+        )),
+    };
+    Ok(query
         .limit(limit)
         .offset(offset)
         .load(&mut pool.get().await?)

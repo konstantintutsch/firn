@@ -1091,3 +1091,38 @@ async fn activity_links_its_neighbors_and_has_its_zones() {
     // A ride has no zones of its own here, so it gets the default ones.
     assert_eq!(second["heart_rate_zones"][0], 100.0);
 }
+
+#[tokio::test]
+async fn search_sorts_and_can_include_activities_without_gps() {
+    let pool = common::test_pool().await;
+    add_two_activities(&pool).await;
+    add_activity(
+        &pool,
+        3,
+        json!({"activityName": "Gym", "activityType": {"typeKey": "strength_training"}, "distance": null}),
+        &[],
+    )
+    .await;
+
+    assert_eq!(ordered_ids(&pool, "").await, [2, 1]);
+    assert_eq!(ordered_ids(&pool, "sort=oldest").await, [1, 2]);
+    assert_eq!(ordered_ids(&pool, "sort=distance").await, [2, 1]);
+    assert_eq!(ordered_ids(&pool, "without_gps=true").await, [3, 2, 1]);
+    assert_eq!(
+        ordered_ids(&pool, "without_gps=true&sort=distance").await,
+        [2, 1, 3]
+    );
+    let (status, _) = get(&pool, "/api/activities?sort=random").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+async fn ordered_ids(pool: &Pool, query: &str) -> Vec<i64> {
+    let (status, body) = get(pool, &format!("/api/activities?{query}")).await;
+    assert_eq!(status, StatusCode::OK, "{query}: {body}");
+    body["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|activity| activity["id"].as_i64().unwrap())
+        .collect()
+}

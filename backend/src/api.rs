@@ -422,6 +422,11 @@ struct SearchQuery {
     limit: Option<i64>,
     /// How many of the newest matching activities to skip, for the next page. Defaults to 0.
     offset: Option<i64>,
+    /// Also finds activities without GPS. Defaults to false.
+    #[serde(default)]
+    without_gps: bool,
+    /// `newest` (the default), `oldest`, `distance` or `duration`, the longest first.
+    sort: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -457,7 +462,7 @@ impl ActivityItem {
 
 #[derive(Serialize, ToSchema)]
 struct ActivityList {
-    /// Newest first.
+    /// In the requested order, newest first by default.
     activities: Vec<ActivityItem>,
 }
 
@@ -486,8 +491,22 @@ async fn activities(
     if offset < 0 {
         return Err(ApiError::BadRequest("offset must not be negative"));
     }
-    let found =
-        db::search_activities(&state.pool, &filter.into_filter(user.id), limit, offset).await?;
+    let order = match search.sort.as_deref() {
+        None | Some("newest") => db::Order::Newest,
+        Some("oldest") => db::Order::Oldest,
+        Some("distance") => db::Order::Distance,
+        Some("duration") => db::Order::Duration,
+        Some(_) => {
+            return Err(ApiError::BadRequest(
+                "sort must be newest, oldest, distance or duration",
+            ));
+        }
+    };
+    let filter = Filter {
+        without_gps: search.without_gps,
+        ..filter.into_filter(user.id)
+    };
+    let found = db::search_activities(&state.pool, &filter, order, limit, offset).await?;
     let tracks = state.tracks(user.id).await?;
     let wanted: HashSet<i64> = found.iter().map(|activity| activity.id).collect();
     let bounds: HashMap<i64, Viewport> = tracks

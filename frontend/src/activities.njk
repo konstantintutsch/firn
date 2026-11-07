@@ -22,6 +22,19 @@
         {% icon "search" %}
         <input id="activity-search" type="search" placeholder="Search activities" aria-label="Search activities" data-i18n-attrs="placeholder aria-label" autocomplete="off">
       </div>
+      <div class="list-toolbar">
+        <label class="sort"><span data-i18n>Sort</span>
+          <select id="activity-sort">
+            <option value="newest" data-i18n>Newest first</option>
+            <option value="oldest" data-i18n>Oldest first</option>
+            <option value="distance" data-i18n>Longest distance</option>
+            <option value="duration" data-i18n>Longest time</option>
+          </select>
+        </label>
+        <div class="statistics-filters">
+          {% include "filters.njk" %}
+        </div>
+      </div>
       <p id="activity-status" role="status"></p>
       <ul id="activity-list" class="activity-list"></ul>
       <button id="activity-more" class="panel-button" type="button" hidden data-i18n>Load more</button>
