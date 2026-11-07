@@ -158,6 +158,43 @@ async fn saves_all_pages_and_keeps_raw_data() {
 }
 
 #[tokio::test]
+async fn activity_of_another_account_is_left_unchanged() {
+    let (pool, server) = setup().await;
+    mount_list(&server, &[vec![activity(1, "running", true)]]).await;
+    mount_file(&server, 1, 1).await;
+    run_sync(&pool, &server).await.unwrap();
+
+    let other = common::user_named(&pool, "other").await;
+    let renamed = runmap::garmin::Activity {
+        id: 1,
+        name: "Renamed".to_owned(),
+        activity_type: "cycling".to_owned(),
+        started_at: chrono::Utc::now(),
+        distance_m: None,
+        duration_s: None,
+        has_track: true,
+        summary: json!({}),
+    };
+    db::upsert_activities(&pool, other, &[renamed])
+        .await
+        .unwrap();
+
+    let (name, activity_type, owner): (String, String, Option<i64>) = activities::table
+        .find(1)
+        .select((
+            activities::name,
+            activities::activity_type,
+            activities::user_id,
+        ))
+        .first(&mut pool.get().await.unwrap())
+        .await
+        .unwrap();
+    assert_eq!(name, "Run 1");
+    assert_eq!(activity_type, "running");
+    assert_eq!(owner, Some(common::user(&pool).await));
+}
+
+#[tokio::test]
 async fn second_sync_downloads_only_new_runs() {
     let (pool, server) = setup().await;
     mount_list(&server, &[vec![activity(1, "running", true)]]).await;

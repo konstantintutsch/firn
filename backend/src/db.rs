@@ -59,7 +59,7 @@ struct NewActivity<'a> {
 }
 
 /// Inserts or updates activity metadata. Never touches a run's saved track, and
-/// never moves an activity that another account saved already.
+/// never changes or moves an activity that another account saved already.
 pub async fn upsert_activities(pool: &Pool, user_id: i64, activities: &[Activity]) -> Result<()> {
     let rows: Vec<_> = activities
         .iter()
@@ -74,7 +74,7 @@ pub async fn upsert_activities(pool: &Pool, user_id: i64, activities: &[Activity
             summary: &activity.summary,
         })
         .collect();
-    diesel::insert_into(activities::table)
+    let upsert = diesel::insert_into(activities::table)
         .values(&rows)
         .on_conflict(activities::id)
         .do_update()
@@ -90,9 +90,16 @@ pub async fn upsert_activities(pool: &Pool, user_id: i64, activities: &[Activity
             >(
                 "coalesce(activities.user_id, excluded.user_id)"
             )),
-        ))
-        .execute(&mut pool.get().await?)
-        .await?;
+        ));
+    // Only ON CONFLICT … WHERE has this `filter`; QueryDsl's does not apply here.
+    diesel::query_dsl::methods::FilterDsl::filter(
+        upsert,
+        activities::user_id
+            .is_null()
+            .or(activities::user_id.eq(user_id)),
+    )
+    .execute(&mut pool.get().await?)
+    .await?;
     Ok(())
 }
 
