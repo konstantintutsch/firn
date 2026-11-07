@@ -28,6 +28,14 @@ pub struct Viewport {
 }
 
 impl Viewport {
+    /// Whether the two overlap or touch.
+    pub fn intersects(&self, other: &Viewport) -> bool {
+        self.min[0] <= other.max[0]
+            && other.min[0] <= self.max[0]
+            && self.min[1] <= other.max[1]
+            && other.min[1] <= self.max[1]
+    }
+
     pub fn from_degrees(west: f64, south: f64, east: f64, north: f64) -> Self {
         // Mercator y grows southward, so the viewport's smallest y is its north edge.
         Self {
@@ -383,6 +391,17 @@ mod tests {
         assert!(lines.iter().all(|line| line.weight == 1.0));
         let runs = runs_per_cell(&tracks, &WORLD, MIN_COUNT_CELL);
         assert!(runs.values().all(|runs| runs.len() == 1));
+    }
+
+    #[test]
+    fn viewports_intersect_when_they_overlap_or_touch() {
+        let viewport = |min: Position, max: Position| Viewport { min, max };
+        let a = viewport([0.0, 0.0], [1.0, 1.0]);
+        assert!(a.intersects(&viewport([0.5, 0.5], [2.0, 2.0])));
+        assert!(a.intersects(&viewport([1.0, 0.0], [2.0, 1.0])));
+        assert!(a.intersects(&viewport([0.2, 0.2], [0.3, 0.3])));
+        assert!(!a.intersects(&viewport([1.1, 0.0], [2.0, 1.0])));
+        assert!(!a.intersects(&viewport([0.0, 1.1], [1.0, 2.0])));
     }
 
     #[test]

@@ -14,7 +14,7 @@ use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use serde_json::Value;
 
 use crate::garmin::Activity;
-use crate::heatmap::Track;
+use crate::heatmap::{self, Track, Viewport};
 use crate::schema::{
     activities, activity_images, daily_metrics, garmin_documents, sessions, track_points, users,
 };
@@ -346,8 +346,15 @@ pub async fn load_tracks(pool: &Pool, user_id: i64) -> Result<Vec<ActivityTrack>
             _ => tracks.push(ActivityTrack {
                 id: activity_id,
                 track: vec![[x, y]],
+                bounds: Viewport {
+                    min: [x, y],
+                    max: [x, y],
+                },
             }),
         }
+    }
+    for activity in &mut tracks {
+        activity.bounds = heatmap::bounds(&activity.track).expect("a track has a point");
     }
     Ok(tracks)
 }
@@ -355,6 +362,8 @@ pub async fn load_tracks(pool: &Pool, user_id: i64) -> Result<Vec<ActivityTrack>
 pub struct ActivityTrack {
     pub id: i64,
     pub track: Track,
+    /// Around the whole track, so that the heatmap can skip tracks outside the viewport.
+    pub bounds: Viewport,
 }
 
 /// Limits which activities count. All set fields must match.

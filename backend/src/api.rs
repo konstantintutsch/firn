@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::task::AbortHandle;
 
@@ -29,6 +29,13 @@ const DEFAULT_SEARCH_LIMIT: i64 = 20;
 const MAX_SEARCH_LIMIT: i64 = 100;
 /// Enough to scrub along any activity, and few enough to keep the answer small.
 const MAX_SAMPLES: usize = 3000;
+/// Accounts whose tracks stay in memory. More would be rare on one server.
+const MAX_CACHED_ACCOUNTS: usize = 32;
+
+struct CachedTracks {
+    tracks: Arc<tokio::sync::OnceCell<Arc<Vec<ActivityTrack>>>>,
+    used: Instant,
+}
 
 #[derive(OpenApi)]
 #[openapi(
@@ -80,7 +87,7 @@ pub struct AppState {
     sync_tasks: Arc<Mutex<HashMap<i64, AbortHandle>>>,
     /// By account. Loaded on the first request and again after a sync, because the
     /// heatmap walks every track on every request, which would be slow from the database.
-    tracks: Arc<tokio::sync::Mutex<HashMap<i64, Arc<Vec<ActivityTrack>>>>>,
+    tracks: Arc<Mutex<HashMap<i64, CachedTracks>>>,
 }
 
 impl AppState {
@@ -110,14 +117,36 @@ impl AppState {
         }
     }
 
+    /// Loads each account's tracks once. Loading for one account never waits for another.
     async fn tracks(&self, user_id: i64) -> anyhow::Result<Arc<Vec<ActivityTrack>>> {
-        let mut tracks = self.tracks.lock().await;
-        if let Some(tracks) = tracks.get(&user_id) {
-            return Ok(tracks.clone());
-        }
-        let loaded = Arc::new(db::load_tracks(&self.pool, user_id).await?);
-        tracks.insert(user_id, loaded.clone());
-        Ok(loaded)
+        let cell = {
+            let mut cache = self.tracks.lock().unwrap();
+            if !cache.contains_key(&user_id) && cache.len() >= MAX_CACHED_ACCOUNTS {
+                // The account that went longest without a request makes room.
+                if let Some(oldest) = cache
+                    .iter()
+                    .min_by_key(|(_, cached)| cached.used)
+                    .map(|(id, _)| *id)
+                {
+                    cache.remove(&oldest);
+                }
+            }
+            let cached = cache.entry(user_id).or_insert_with(|| CachedTracks {
+                tracks: Arc::default(),
+                used: Instant::now(),
+            });
+            cached.used = Instant::now();
+            cached.tracks.clone()
+        };
+        let tracks = cell
+            .get_or_try_init(|| async { db::load_tracks(&self.pool, user_id).await.map(Arc::new) })
+            .await?;
+        Ok(tracks.clone())
+    }
+
+    /// Makes the next request load the account's tracks again, after a sync changed them.
+    fn forget_tracks(&self, user_id: i64) {
+        self.tracks.lock().unwrap().remove(&user_id);
     }
 }
 
@@ -337,6 +366,7 @@ async fn heatmap(
     let lines = tokio::task::spawn_blocking(move || {
         let tracks: Vec<&[Position]> = tracks
             .iter()
+            .filter(|activity| activity.bounds.intersects(&viewport))
             .filter(|activity| matching.contains(&activity.id))
             .map(|activity| activity.track.as_slice())
             .collect();
@@ -435,10 +465,11 @@ async fn activities(
     let found =
         db::search_activities(&state.pool, &filter.into_filter(user.id), limit, offset).await?;
     let tracks = state.tracks(user.id).await?;
+    let wanted: HashSet<i64> = found.iter().map(|activity| activity.id).collect();
     let bounds: HashMap<i64, Viewport> = tracks
         .iter()
-        .filter(|saved| found.iter().any(|activity| activity.id == saved.id))
-        .filter_map(|saved| Some((saved.id, heatmap::bounds(&saved.track)?)))
+        .filter(|saved| wanted.contains(&saved.id))
+        .map(|saved| (saved.id, saved.bounds))
         .collect();
 
     Ok(Json(ActivityList {
@@ -915,7 +946,7 @@ async fn run_sync(state: AppState, user_id: i64, api_key: String) {
     let result = task.await;
     state.sync_tasks.lock().unwrap().remove(&user_id);
     // Before the status changes, because that is what makes the page reload the map.
-    state.tracks.lock().await.remove(&user_id);
+    state.forget_tracks(user_id);
 
     let saved = {
         let mut statuses = state.sync.lock().unwrap();
