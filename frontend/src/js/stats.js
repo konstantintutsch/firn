@@ -1,5 +1,5 @@
 import { bars, chart, forgetCharts } from "/js/charts.js";
-import { requireAccount, setUpSync, typeName } from "/js/account.js";
+import { requireAccount, setUpSync, t, typeName } from "/js/account.js";
 
 const DAY_MS = 86_400_000;
 const DEFAULT_DAYS = "90";
@@ -23,7 +23,7 @@ const pace = (minutes) => {
   const seconds = Math.round(minutes * 60);
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} /km`;
 };
-const unit = (digits, suffix) => (value) => `${number(digits)(value)} ${suffix}`;
+const unit = (digits, suffix) => (value) => `${number(digits)(value)} ${t(suffix)}`;
 
 /** The health charts, each shown only if Garmin had data for one of its metrics. */
 const HEALTH_CHARTS = [
@@ -168,7 +168,7 @@ async function load() {
   const query = new URLSearchParams();
   if (days !== "all") query.set("from", localDay(Date.now() - (Number(days) - 1) * DAY_MS));
 
-  statusElement.textContent = "Loading…";
+  statusElement.textContent = t("Loading…");
   let activities, metrics;
   try {
     const [activityResponse, healthResponse] = await Promise.all([
@@ -179,7 +179,7 @@ async function load() {
     ({ activities } = await activityResponse.json());
     ({ metrics } = await healthResponse.json());
   } catch (error) {
-    if (error.name !== "AbortError") statusElement.textContent = "Could not load statistics. Is the API running?";
+    if (error.name !== "AbortError") statusElement.textContent = t("Could not load statistics. Is the API running?");
     return;
   }
 
@@ -188,7 +188,7 @@ async function load() {
   const hasHealth = Object.keys(metrics).length > 0;
   statusElement.textContent =
     activities.length === 0 && !hasHealth
-      ? "Nothing saved for this period. Select Sync to save your data from Garmin."
+      ? t("Nothing saved for this period. Select Sync to save your data from Garmin.")
       : "";
   renderActivities(activities, buckets);
   renderHealth(metrics, buckets);
@@ -221,7 +221,7 @@ function makeBuckets(first, last) {
       date.setDate(date.getDate() + 1);
     } else if (size === "week") {
       const short = date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-      buckets.push({ time, label: `Week of ${short}, ${date.getFullYear()}`, short });
+      buckets.push({ time, label: t("Week of {day}, {year}", { day: short, year: date.getFullYear() }), short });
       date.setDate(date.getDate() + 7);
     } else {
       buckets.push({
@@ -259,12 +259,12 @@ function card(container, title, subtitle) {
   const element = document.createElement("article");
   element.className = "card";
   const heading = document.createElement("h3");
-  heading.textContent = title;
+  heading.textContent = t(title);
   element.append(heading);
   if (subtitle) {
     const text = document.createElement("p");
     text.className = "muted";
-    text.textContent = subtitle;
+    text.textContent = t(subtitle);
     element.append(text);
   }
   const body = document.createElement("div");
@@ -280,7 +280,7 @@ function tiles(container, items) {
       tile.className = "tile";
       const name = document.createElement("span");
       name.className = "muted";
-      name.textContent = label;
+      name.textContent = t(label);
       const figure = document.createElement("strong");
       figure.textContent = value;
       tile.append(name, figure);
@@ -343,32 +343,32 @@ function renderActivities(activities, buckets) {
   const others = dated.filter((activity) => !topTypes.includes(activity.activity_type) && activity.distance_m);
   if (others.length > 0) {
     distanceSeries.push({
-      name: "Other",
+      name: t("Other"),
       slot: topTypes.length + 1,
       values: intoBuckets(buckets, others.map((activity) => [activity.time, activity.distance_m / 1000]), true),
     });
   }
   if (distanceSeries.length > 0) {
-    chart(card(container, "Distance", `Per ${buckets.size}, by activity type`), {
+    chart(card(container, "Distance", t("Per {size}, by activity type", { size: t(buckets.size) })), {
       kind: "columns",
       stacked: true,
       buckets,
       series: distanceSeries,
       format: unit(1, "km"),
-      label: "Distance per period by activity type",
+      label: t("Distance per period by activity type"),
     });
   }
 
-  chart(card(container, "Training time", `Per ${buckets.size}`), {
+  chart(card(container, "Training time", t("Per {size}", { size: t(buckets.size) })), {
     kind: "columns",
     buckets,
     series: [{
-      name: "Time",
+      name: t("Time"),
       slot: 1,
       values: intoBuckets(buckets, dated.map((activity) => [activity.time, (activity.duration_s ?? 0) / 3600]), true),
     }],
     format: hours,
-    label: "Training time per period",
+    label: t("Training time per period"),
   });
 
   const typeBars = [...byType.entries()]
@@ -384,12 +384,12 @@ function renderActivities(activities, buckets) {
     chart(card(container, "Running pace", "Average per run, lower is faster"), {
       kind: "line",
       series: [{
-        name: "Pace",
+        name: t("Pace"),
         slot: 1,
         values: averagePerDay(runs.map((run) => [run.time, run.duration_s / 60 / (run.distance_m / 1000)])),
       }],
       format: pace,
-      label: "Running pace over time",
+      label: t("Running pace over time"),
     });
   }
 
@@ -398,12 +398,12 @@ function renderActivities(activities, buckets) {
 
   const loads = dated.filter((activity) => activity.training_load != null);
   if (loads.length > 0) {
-    chart(card(container, "Training load", `Total per ${buckets.size}`), {
+    chart(card(container, "Training load", t("Total per {size}", { size: t(buckets.size) })), {
       kind: "columns",
       buckets,
-      series: [{ name: "Load", slot: 1, values: intoBuckets(buckets, loads.map((activity) => [activity.time, activity.training_load]), true) }],
+      series: [{ name: t("Load"), slot: 1, values: intoBuckets(buckets, loads.map((activity) => [activity.time, activity.training_load]), true) }],
       format: number(),
-      label: "Training load per period",
+      label: t("Training load per period"),
     });
   }
 }
@@ -413,9 +413,9 @@ function lineFromActivities(container, activities, key, title, subtitle, format)
   if (points.length < 2) return;
   chart(card(container, title, subtitle), {
     kind: "line",
-    series: [{ name: title, slot: 1, values: averagePerDay(points) }],
+    series: [{ name: t(title), slot: 1, values: averagePerDay(points) }],
     format,
-    label: title,
+    label: t(title),
   });
 }
 
@@ -442,7 +442,7 @@ function renderHealth(metrics, buckets) {
     ["Stress", "stress", number()],
   ]
     .filter(([, key]) => series[key]?.length)
-    .map(([label, key, format]) => [`${label}, average`, format(average(series[key]))]);
+    .map(([label, key, format]) => [t("{label}, average", { label: t(label) }), format(average(series[key]))]);
   tiles(document.querySelector("#health-tiles"), tileItems);
 
   for (const definition of HEALTH_CHARTS) {
@@ -453,13 +453,16 @@ function renderHealth(metrics, buckets) {
       .map(([key, name], index) => ({ key, name, slot: index + 1 }))
       .filter(({ key }) => series[key]?.length)
       .map(({ key, name, slot }) => ({
-        name,
+        name: t(name),
         slot,
         values: definition.kind === "line" ? series[key] : intoBuckets(buckets, series[key], definition.sum),
       }));
+    const size = t(buckets.size);
     const subtitle =
       definition.kind === "columns" && buckets.size !== "day" && !definition.sum
-        ? `${definition.subtitle ?? ""}, averaged per ${buckets.size}`.replace(/^, a/, "A")
+        ? definition.subtitle
+          ? t("{subtitle}, averaged per {size}", { subtitle: t(definition.subtitle), size })
+          : t("Averaged per {size}", { size })
         : definition.subtitle;
     chart(card(container, definition.title, subtitle), {
       kind: definition.kind,
@@ -467,7 +470,7 @@ function renderHealth(metrics, buckets) {
       buckets,
       series: chartSeries,
       format: definition.format,
-      label: definition.title,
+      label: t(definition.title),
     });
   }
   if (container.childElementCount === 0) healthSection.hidden = true;

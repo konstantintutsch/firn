@@ -1,12 +1,7 @@
 <div class="panel-header">
   <h1>Runmap</h1>
   <div class="panel-actions">
-    <button id="sync-button" class="panel-button" type="button">Sync</button>
-    <button id="account-button" class="panel-button" type="button" hidden>Settings</button>
-    <button id="theme-toggle" class="panel-button" type="button"></button>
+    <button id="sync-button" class="icon-button" type="button" aria-label="Sync" title="Sync" data-i18n-attrs="aria-label title">{% icon "sync" %}</button>
+    <button id="theme-toggle" class="icon-button" type="button">{% icon "sun" %}{% icon "moon" %}</button>
   </div>
 </div>
-<nav class="tabs" aria-label="Pages">
-  <a href="/" {% if page.url == "/" %}aria-current="page"{% endif %}>Map</a>
-  <a href="/stats/" {% if page.url == "/stats/" %}aria-current="page"{% endif %}>Statistics</a>
-</nav>

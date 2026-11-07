@@ -12,6 +12,7 @@
   --series-2: #eb6834;
   --series-3: #1baf7a;
   --series-4: #eda100;
+  --nav-space: 112px;
   color-scheme: light;
 }
 
@@ -70,7 +71,8 @@ body {
   top: 16px;
   left: 16px;
   width: min(280px, calc(100vw - 32px));
-  max-height: calc(100dvh - 32px);
+  /* Leaves room for the navigation bar below. */
+  max-height: calc(100dvh - var(--nav-space));
   overflow-y: auto;
   box-sizing: border-box;
   padding: 14px 16px;
@@ -310,23 +312,113 @@ a {
   color: var(--ink-muted);
 }
 
-.tabs {
-  display: flex;
-  gap: 4px;
-  margin-top: 8px;
+.icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.tabs a {
-  padding: 2px 8px;
-  border-radius: 6px;
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.icon-button .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--line);
+}
+
+.icon-button:disabled {
   color: var(--ink-muted);
-  text-decoration: none;
+  cursor: progress;
 }
 
-.tabs a:hover,
-.tabs a[aria-current="page"] {
+#sync-button:disabled .icon {
+  animation: spin 1.2s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #sync-button:disabled .icon {
+    animation: none;
+  }
+}
+
+/* The toggle shows the theme it switches to. */
+#theme-toggle[data-next="light"] .icon-moon,
+#theme-toggle[data-next="dark"] .icon-sun {
+  display: none;
+}
+
+.nav {
+  position: fixed;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: 50%;
+  z-index: 5;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  transform: translateX(-50%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 14%);
+  backdrop-filter: blur(6px);
+}
+
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 64px;
+  padding: 6px 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 11px;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.nav-item[hidden] {
+  display: none;
+}
+
+.nav-item:hover,
+.nav-item[aria-current="page"] {
   background: var(--line);
   color: var(--ink);
+}
+
+.nav-item:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
 }
 
 .sign-in {
@@ -418,7 +510,53 @@ a {
 .statistics {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 8px 16px 32px;
+  padding: 8px 16px var(--nav-space);
+}
+
+.activity-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 12px 16px var(--nav-space);
+}
+
+.page-header:has(+ .activity-page) {
+  max-width: 720px;
+}
+
+.activity-list {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity {
+  display: grid;
+  gap: 1px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--ink);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+a.activity:hover,
+a.activity:focus-visible {
+  background: var(--line);
+}
+
+.activity strong {
+  font-weight: 600;
+}
+
+.activity-type,
+.activity small {
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-list li + li {
+  border-top: 1px solid var(--line);
 }
 
 .statistics h2 {

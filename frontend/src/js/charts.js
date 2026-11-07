@@ -3,6 +3,8 @@
  * tooltip and a table of the values. Colors come from the --series-* tokens.
  */
 
+import { t } from "/js/i18n.js";
+
 const SVG = "http://www.w3.org/2000/svg";
 const HEIGHT = 200;
 const MARGIN = { top: 10, right: 12, bottom: 24, left: 44 };
@@ -112,12 +114,12 @@ export function forgetCharts(root) {
 
 function dataTable({ kind, series, buckets, format }) {
   const details = html("details", "chart-data");
-  details.append(html("summary", null, "Show values"));
+  details.append(html("summary", null, t("Show values")));
   details.addEventListener("toggle", () => {
     if (!details.open || details.querySelector("table")) return;
     const table = html("table");
     const head = html("tr");
-    head.append(html("th", null, kind === "line" ? "Day" : "Period"));
+    head.append(html("th", null, t(kind === "line" ? "Day" : "Period")));
     for (const { name } of series) head.append(html("th", null, name));
     table.append(head);
     const rows = kind === "line" ? lineRows(series) : buckets.map((bucket, index) => [
@@ -320,7 +322,7 @@ function drawColumns(state, svg, inner) {
     const rows = series
       .filter(({ values }) => values[index] != null)
       .map(({ name, slot, values }) => ({ name, slot, value: format(values[index]) }));
-    if (stacked && series.length > 1) rows.push({ name: "Total", value: format(totals[index]) });
+    if (stacked && series.length > 1) rows.push({ name: t("Total"), value: format(totals[index]) });
     return { x: inner.left + band * (index + 0.5), title: buckets[index].label, rows };
   }, () => highlight.setAttribute("visibility", "hidden"));
 }

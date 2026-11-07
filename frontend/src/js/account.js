@@ -1,5 +1,9 @@
 /** The signed-in account, the settings dialog and the theme, shared by all pages. */
 
+import { plural, t, typeName } from "/js/i18n.js";
+
+export { plural, t, typeName };
+
 const THEME_STORAGE_KEY = "theme";
 const systemDark = matchMedia("(prefers-color-scheme: dark)");
 const themeListeners = [];
@@ -17,8 +21,11 @@ function setUpThemeToggle() {
   const toggle = document.querySelector("#theme-toggle");
   let theme = currentTheme();
   const update = () => {
-    toggle.textContent = theme === "dark" ? "Light" : "Dark";
-    toggle.setAttribute("aria-label", `Switch to ${theme === "dark" ? "light" : "dark"} mode`);
+    const next = theme === "dark" ? "light" : "dark";
+    toggle.dataset.next = next;
+    const label = t(`Switch to ${next} mode`);
+    toggle.setAttribute("aria-label", label);
+    toggle.title = label;
   };
   const apply = () => {
     const next = currentTheme();
@@ -52,7 +59,8 @@ export function send(url, options = {}) {
 /** The API's error message, or a fallback if the answer has none. */
 export async function errorMessage(response, fallback) {
   try {
-    return (await response.json()).error ?? fallback;
+    const { error } = await response.json();
+    return error ? t(error) : fallback;
   } catch {
     return fallback;
   }
@@ -80,15 +88,15 @@ export async function requireAccount() {
   try {
     response = await fetch("/api/me");
   } catch {
-    showSignIn("Could not reach the API. Is it running?");
+    showSignIn(t("Could not reach the API. Is it running?"));
     return new Promise(() => {});
   }
   if (response.status === 401) {
-    showSignIn(failed ? "Signing in did not work. Try again." : "");
+    showSignIn(failed ? t("Signing in did not work. Try again.") : "");
     return new Promise(() => {});
   }
   if (!response.ok) {
-    showSignIn(await errorMessage(response, "Could not load your account."));
+    showSignIn(await errorMessage(response, t("Could not load your account.")));
     return new Promise(() => {});
   }
   account = await response.json();
@@ -103,10 +111,10 @@ export function hasGarminKey() {
 export function openSettings(message = "") {
   const dialog = document.querySelector("#settings");
   document.querySelector("#settings-account").textContent =
-    account?.name || account?.email || "Signed in";
+    account?.name || account?.email || t("Signed in");
   document.querySelector("#key-status").textContent = hasGarminKey()
-    ? "A Garmin key is saved."
-    : "No Garmin key is saved yet. Add one to sync your data.";
+    ? t("A Garmin key is saved.")
+    : t("No Garmin key is saved yet. Add one to sync your data.");
   document.querySelector("#key-remove").hidden = !hasGarminKey();
   document.querySelector("#settings-message").textContent = message;
   dialog.showModal();
@@ -125,7 +133,7 @@ function setUpSettings() {
     event.preventDefault();
     const submit = form.querySelector("button[type=submit]");
     submit.disabled = true;
-    message.textContent = "Checking the key with Garmin…";
+    message.textContent = t("Checking the key with Garmin…");
     try {
       const response = await send("/api/me/garmin-key", {
         method: "PUT",
@@ -135,12 +143,12 @@ function setUpSettings() {
       if (response.ok) {
         account.has_garmin_key = true;
         input.value = "";
-        openSettings("Saved. Select Sync to save your data.");
+        openSettings(t("Saved. Select Sync to save your data."));
       } else {
-        message.textContent = await errorMessage(response, "Could not save the key.");
+        message.textContent = await errorMessage(response, t("Could not save the key."));
       }
     } catch {
-      message.textContent = "Could not reach the API. Is it running?";
+      message.textContent = t("Could not reach the API. Is it running?");
     } finally {
       submit.disabled = false;
     }
@@ -150,9 +158,9 @@ function setUpSettings() {
     const response = await send("/api/me/garmin-key", { method: "DELETE" });
     if (response.ok) {
       account.has_garmin_key = false;
-      openSettings("Removed. Your saved data stays.");
+      openSettings(t("Removed. Your saved data stays."));
     } else {
-      message.textContent = await errorMessage(response, "Could not remove the key.");
+      message.textContent = await errorMessage(response, t("Could not remove the key."));
     }
   });
 
@@ -162,14 +170,16 @@ function setUpSettings() {
   });
 }
 
-export function plural(count, noun) {
-  const word = count === 1 ? noun : noun.replace(/y$/, "ie") + "s";
-  return `${count.toLocaleString()} ${word}`;
+export function activityTitle({ name, activity_type: type }) {
+  return name || typeName(type);
 }
 
-export function typeName(type) {
-  const words = type.replaceAll("_", " ");
-  return words.charAt(0).toUpperCase() + words.slice(1);
+export function activityDetails({ started_at: started, distance_m: distance, duration_s: duration, location }) {
+  const parts = [new Date(started).toLocaleDateString()];
+  if (distance != null) parts.push(`${(distance / 1000).toFixed(1)} km`);
+  if (duration != null) parts.push(`${Math.round(duration / 60)} min`);
+  if (location) parts.push(location);
+  return parts.join(" · ");
 }
 
 /** Describes the progress of a sync, for the sync status line. */
@@ -177,21 +187,26 @@ export function syncProgress(sync) {
   const { to_download: total, downloaded, failed } = sync;
   if (sync.health_to_fetch > 0) {
     const done = sync.health_fetched + sync.health_failed;
-    return `Saving health data ${Math.min(done + 1, sync.health_to_fetch)} of ${sync.health_to_fetch}…`;
+    return t("Saving health data {current} of {total}…", {
+      current: Math.min(done + 1, sync.health_to_fetch),
+      total: sync.health_to_fetch,
+    });
   }
-  if (total === 0) return "Looking for new activities…";
-  return `Saving activity ${Math.min(downloaded + failed + 1, total)} of ${total}…`;
+  if (total === 0) return t("Looking for new activities…");
+  return t("Saving activity {current} of {total}…", { current: Math.min(downloaded + failed + 1, total), total });
 }
 
 export function syncResult({ state, error, downloaded, failed, health_failed: healthFailed }) {
-  if (state === "failed") return error;
+  if (state === "failed") return t(error);
   const saved =
-    downloaded === 0 ? "No new activities." : `Saved ${plural(downloaded, "new activity")}.`;
+    downloaded === 0
+      ? t("No new activities.")
+      : t("Saved {count}.", { count: plural(downloaded, "new activity", "new activities") });
   const problems = [];
-  if (failed > 0) problems.push(plural(failed, "activity"));
-  if (healthFailed > 0) problems.push(plural(healthFailed, "health data request"));
-  if (problems.length === 0) return `${saved} Health data is up to date.`;
-  return `${saved} ${problems.join(" and ")} failed. Sync again to retry.`;
+  if (failed > 0) problems.push(plural(failed, "activity", "activities"));
+  if (healthFailed > 0) problems.push(plural(healthFailed, "health data request", "health data requests"));
+  if (problems.length === 0) return t("{saved} Health data is up to date.", { saved });
+  return t("{saved} {problems} failed. Sync again to retry.", { saved, problems: problems.join(` ${t("and")} `) });
 }
 
 const SYNC_POLL_MS = 1000;
@@ -236,24 +251,24 @@ export function setUpSync(onFinished) {
 
   button.addEventListener("click", async () => {
     if (!hasGarminKey()) {
-      openSettings("Add your Garmin key first.");
+      openSettings(t("Add your Garmin key first."));
       return;
     }
     button.disabled = true;
-    status.textContent = "Starting…";
+    status.textContent = t("Starting…");
     try {
       const response = await send("/api/sync", { method: "POST" });
       if (response.ok) {
         isRunning = true;
       } else if (response.status !== 409 || !(await isActive())) {
         button.disabled = false;
-        status.textContent = await errorMessage(response, "Could not start the sync.");
+        status.textContent = await errorMessage(response, t("Could not start the sync."));
         return;
       }
       poll();
     } catch {
       button.disabled = false;
-      status.textContent = "Could not start the sync. Is the API running?";
+      status.textContent = t("Could not start the sync. Is the API running?");
     }
   });
 

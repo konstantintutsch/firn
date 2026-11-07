@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Runmap activities</title>
+    <script>
+      // Applies a saved theme before the first paint, to avoid a flash of the wrong one.
+      try {
+        const theme = localStorage.getItem("theme");
+        if (theme) document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
+    <link rel="stylesheet" href="/css/style.css">
+  </head>
+  <body class="page">
+    <header class="page-header">
+      {% include "header.njk" %}
+      <p id="sync-status" role="status"></p>
+    </header>
+    <main class="activity-page">
+      <input id="activity-search" type="search" placeholder="Search activities" aria-label="Search activities" data-i18n-attrs="placeholder aria-label" autocomplete="off">
+      <p id="activity-status" role="status"></p>
+      <ul id="activity-list" class="activity-list"></ul>
+      <button id="activity-more" class="panel-button" type="button" hidden data-i18n>Load more</button>
+    </main>
+    {% include "nav.njk" %}
+    {% include "account.njk" %}
+    <script type="module" src="/js/activities.js"></script>
+  </body>
+</html>

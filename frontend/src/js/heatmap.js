@@ -1,5 +1,16 @@
 import * as maplibregl from "/vendor/maplibre-gl.mjs";
-import { currentTheme, onThemeChange, plural, requireAccount, setUpSync, typeName } from "/js/account.js";
+import {
+  activityDetails,
+  activityTitle,
+  currentTheme,
+  onThemeChange,
+  plural,
+  requireAccount,
+  setUpSync,
+  t,
+  typeName,
+} from "/js/account.js";
+import { language } from "/js/i18n.js";
 
 const THEMES = {
   light: {
@@ -40,6 +51,14 @@ const MIN_PLACE_QUERY_LENGTH = 3;
 const PLACE_ZOOM = 14;
 const FIT_PADDING = 60;
 const NOT_LOADED = "Could not load activities. Is the API running?";
+/** The controls' texts that MapLibre lets us replace. */
+const MAP_TEXTS = {
+  "GeolocateControl.FindMyLocation": "Find my location",
+  "GeolocateControl.LocationNotAvailable": "Location not available",
+  "NavigationControl.ZoomIn": "Zoom in",
+  "NavigationControl.ZoomOut": "Zoom out",
+  "AttributionControl.ToggleAttribution": "Toggle attribution",
+};
 
 const statsElement = document.querySelector("#stats");
 const statusElement = document.querySelector("#status");
@@ -66,8 +85,13 @@ const map = new maplibregl.Map({
   maxZoom: 18,
   renderWorldCopies: false,
   hash: true,
+  locale: Object.fromEntries(Object.entries(MAP_TEXTS).map(([key, text]) => [key, t(text)])),
 });
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+map.addControl(
+  new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }),
+  "top-right",
+);
 
 let pendingRequest = null;
 let refreshTimer = null;
@@ -124,6 +148,7 @@ map.on("style.load", () => {
       loadTypes();
       refresh();
     });
+    showLinkedActivity();
   }
 });
 
@@ -156,7 +181,23 @@ async function refresh() {
     map.getSource(SOURCE_ID)?.setData(toGeoJson(lines));
     legendElement.hidden = lines.length === 0;
   } catch (error) {
-    if (error.name !== "AbortError") showStatus(NOT_LOADED);
+    if (error.name !== "AbortError") showStatus(t(NOT_LOADED));
+  }
+}
+
+/** Goes to the activity that the activity list linked to, as in `/?activity=1`. */
+async function showLinkedActivity() {
+  const id = new URLSearchParams(location.search).get("activity");
+  if (!id) return;
+  history.replaceState(null, "", location.pathname + location.hash);
+  try {
+    const response = await fetch(`/api/activities?${new URLSearchParams({ id, limit: 1 })}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const [activity] = (await response.json()).activities;
+    if (activity) goToActivity(activity);
+    else showStatus(t("Could not find this activity."));
+  } catch {
+    showStatus(t(NOT_LOADED));
   }
 }
 
@@ -223,17 +264,17 @@ async function loadStats() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const { activities, distance_m: distance } = await response.json();
     const km = Math.round(distance / 1000).toLocaleString();
-    statsElement.textContent = `${plural(activities, "activity")} · ${km} km`;
+    statsElement.textContent = `${plural(activities, "activity", "activities")} · ${km} km`;
     if (activities > 0) {
       showStatus("");
     } else if (query.size > 0) {
-      showStatus("No activities match these filters.");
+      showStatus(t("No activities match these filters."));
     } else {
       statsElement.textContent = "";
-      showStatus("No activities saved yet. Select Sync to save them from Garmin.");
+      showStatus(t("No activities saved yet. Select Sync to save them from Garmin."));
     }
   } catch (error) {
-    if (error.name !== "AbortError") showStatus(NOT_LOADED);
+    if (error.name !== "AbortError") showStatus(t(NOT_LOADED));
   }
 }
 
@@ -279,18 +320,6 @@ function select(activity) {
   selectionName.textContent = activity ? activityTitle(activity) : "";
   loadStats();
   refresh();
-}
-
-function activityTitle({ name, activity_type: type }) {
-  return name || typeName(type);
-}
-
-function activityDetails({ started_at: started, distance_m: distance, duration_s: duration, location }) {
-  const parts = [new Date(started).toLocaleDateString()];
-  if (distance != null) parts.push(`${(distance / 1000).toFixed(1)} km`);
-  if (duration != null) parts.push(`${Math.round(duration / 60)} min`);
-  if (location) parts.push(location);
-  return parts.join(" · ");
 }
 
 function placeDetails({ properties: { city, state, country, name } }) {
@@ -362,13 +391,13 @@ async function searchNow() {
 
   const sections = [
     ...resultSection(
-      "Places",
+      t("Places"),
       (places.value ?? []).map((place) =>
         resultButton(place.properties.name ?? text, placeDetails(place), () => goToPlace(place)),
       ),
     ),
     ...resultSection(
-      "Activities",
+      t("Activities"),
       (activities.value ?? []).map((activity) =>
         resultButton(activityTitle(activity), activityDetails(activity), () => goToActivity(activity)),
       ),
@@ -379,8 +408,8 @@ async function searchNow() {
     empty.className = "search-heading";
     empty.textContent =
       activities.status === "rejected" && places.status === "rejected"
-        ? "Could not search. Is the API running?"
-        : "Nothing found.";
+        ? t("Could not search. Is the API running?")
+        : t("Nothing found.");
     sections.push(empty);
   }
   searchResults.replaceChildren(...sections);
@@ -399,7 +428,7 @@ async function searchActivities(text, signal) {
 
 async function searchPlaces(text, signal) {
   if (text.length < MIN_PLACE_QUERY_LENGTH) return [];
-  const query = new URLSearchParams({ q: text, limit: PLACE_LIMIT, lang: "en" });
+  const query = new URLSearchParams({ q: text, limit: PLACE_LIMIT, lang: language });
   const response = await fetch(`${PLACE_SEARCH_URL}?${query}`, { signal });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return (await response.json()).features;
