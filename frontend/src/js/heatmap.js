@@ -17,21 +17,21 @@ const THEMES = {
   light: {
     styleUrl: "https://tiles.openfreemap.org/styles/positron",
     heatStops: [
-      0, "#5eead4",
-      0.3, "#14b8a6",
-      0.55, "#0d9488",
-      0.8, "#115e59",
-      1, "#042f2e",
+      0, "#f06414",
+      0.3, "#e03c14",
+      0.55, "#d6246e",
+      0.8, "#7b1fa2",
+      1, "#2e1065",
     ],
   },
   dark: {
     styleUrl: "https://tiles.openfreemap.org/styles/dark",
     heatStops: [
-      0, "#115e59",
-      0.3, "#0f766e",
-      0.55, "#14b8a6",
-      0.8, "#5eead4",
-      1, "#f0fdfa",
+      0, "#8e3fc4",
+      0.3, "#d13a78",
+      0.55, "#f4743b",
+      0.8, "#fbd25d",
+      1, "#fff7d6",
     ],
   },
 };
