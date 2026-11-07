@@ -14,12 +14,12 @@
   --nav-space: 112px;
   --accent: #d9480f;
   --accent-fill: #d9480f;
-  /* Liquid glass: a milky tint over a softly blurred, brightened backdrop, lit along its rim. */
-  --glass: rgb(255 255 255 / 18%);
-  --glass-filter: blur(5px) saturate(110%) brightness(1.12);
+  /* Liquid glass: a faint tint over a lightly blurred backdrop, lit along its rim. */
+  --glass: rgb(255 255 255 / 5%);
+  --glass-filter: blur(2px) saturate(120%) brightness(1.04);
   --glass-rim: rgb(255 255 255 / 75%);
   --glass-rim-dim: rgb(255 255 255 / 35%);
-  --glass-glow: rgb(255 255 255 / 20%);
+  --glass-glow: rgb(255 255 255 / 10%);
   --glass-outline: rgb(0 0 0 / 10%);
   --fill: rgb(118 118 128 / 12%);
   --glass-selected: rgb(255 255 255 / 60%);
@@ -47,8 +47,8 @@
     --series-3: #199e70;
     --series-4: #c98500;
     --accent: #ff8a4c;
-    --glass: rgb(40 42 50 / 30%);
-    --glass-filter: blur(5px) saturate(110%) brightness(0.9);
+    --glass: rgb(0 0 0 / 8%);
+    --glass-filter: blur(2px) saturate(120%) brightness(0.96);
     --glass-rim: rgb(255 255 255 / 40%);
     --glass-rim-dim: rgb(255 255 255 / 16%);
     --glass-glow: rgb(255 255 255 / 8%);
@@ -78,8 +78,8 @@
   --series-3: #199e70;
   --series-4: #c98500;
   --accent: #ff8a4c;
-  --glass: rgb(40 42 50 / 30%);
-  --glass-filter: blur(5px) saturate(110%) brightness(0.9);
+  --glass: rgb(0 0 0 / 8%);
+  --glass-filter: blur(2px) saturate(120%) brightness(0.96);
   --glass-rim: rgb(255 255 255 / 40%);
   --glass-rim-dim: rgb(255 255 255 / 16%);
   --glass-glow: rgb(255 255 255 / 8%);
@@ -683,7 +683,8 @@ a {
   gap: 2px;
   padding: 5px;
   transform: translateX(-50%);
-  border-radius: 999px;
+  border-radius: 28px;
+  corner-shape: squircle;
 }
 
 .nav-item {
@@ -695,7 +696,8 @@ a {
   padding: 7px 10px;
   background: transparent;
   border: 0;
-  border-radius: 999px;
+  border-radius: 23px;
+  corner-shape: squircle;
   color: var(--ink-muted);
   font: inherit;
   font-size: 11px;
