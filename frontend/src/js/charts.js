@@ -3,9 +3,9 @@
  * tooltip and a table of the values. Colors come from the --series-* tokens.
  */
 
+import { html, svgElement } from "/js/format.js";
 import { language, t } from "/js/i18n.js";
 
-const SVG = "http://www.w3.org/2000/svg";
 const HEIGHT = 200;
 const MARGIN = { top: 10, right: 12, bottom: 24, left: 44 };
 const MAX_COLUMN_WIDTH = 24;
@@ -22,19 +22,7 @@ addEventListener("resize", () => {
   resizeTimer = setTimeout(() => charts.forEach((chart) => chart.draw()), 150);
 });
 
-function element(name, attributes = {}, parent = null) {
-  const node = document.createElementNS(SVG, name);
-  for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
-  parent?.append(node);
-  return node;
-}
 
-function html(name, className, text) {
-  const node = document.createElement(name);
-  if (className) node.className = className;
-  if (text != null) node.textContent = text;
-  return node;
-}
 
 /** Round tick values that cover `min` to `max`. */
 export function niceTicks(min, max, count = 4) {
@@ -158,7 +146,7 @@ function draw(state) {
   const width = plot.clientWidth;
   if (width === 0) return;
   plot.querySelector("svg")?.remove();
-  const svg = element("svg", {
+  const svg = svgElement("svg", {
     width,
     height: HEIGHT,
     viewBox: `0 0 ${width} ${HEIGHT}`,
@@ -179,8 +167,8 @@ function draw(state) {
 function drawYAxis(svg, inner, ticks, y, format) {
   for (const tick of ticks) {
     const ty = y(tick);
-    element("line", { x1: inner.left, x2: inner.right, y1: ty, y2: ty, class: "chart-grid" }, svg);
-    const label = element("text", { x: inner.left - 6, y: ty, class: "chart-tick", "text-anchor": "end", "dominant-baseline": "middle" }, svg);
+    svgElement("line", { x1: inner.left, x2: inner.right, y1: ty, y2: ty, class: "chart-grid" }, svg);
+    const label = svgElement("text", { x: inner.left - 6, y: ty, class: "chart-tick", "text-anchor": "end", "dominant-baseline": "middle" }, svg);
     label.textContent = format(tick);
   }
 }
@@ -213,7 +201,7 @@ function drawLines(state, svg, inner) {
   const labels = Math.max(2, Math.floor((inner.right - inner.left) / 90));
   for (let index = 0; index < labels; index++) {
     const time = minTime + (span * index) / (labels - 1);
-    const label = element("text", {
+    const label = svgElement("text", {
       x: x(time),
       y: HEIGHT - 6,
       class: "chart-tick",
@@ -230,19 +218,19 @@ function drawLines(state, svg, inner) {
     points.forEach(([time, value], index) => {
       path += `${joins(index) ? "L" : "M"}${x(time).toFixed(1)},${y(value).toFixed(1)}`;
     });
-    element("path", { d: path, class: "chart-line", stroke: `var(--series-${slot})` }, svg);
+    svgElement("path", { d: path, class: "chart-line", stroke: `var(--series-${slot})` }, svg);
     points.forEach(([time, value], index) => {
       // A point that no line reaches gets a larger dot, so that it does not get lost.
       const alone = !joins(index) && !(index + 1 < points.length && joins(index + 1));
       if (!alone && points.length > 60) return;
       const attributes = { cx: x(time), cy: y(value), r: alone ? 4 : 2.5, fill: `var(--series-${slot})` };
-      element("circle", alone ? { ...attributes, class: "chart-point-alone" } : attributes, svg);
+      svgElement("circle", alone ? { ...attributes, class: "chart-point-alone" } : attributes, svg);
     });
   }
 
-  const crosshair = element("line", { y1: inner.top, y2: inner.bottom, class: "chart-crosshair", visibility: "hidden" }, svg);
+  const crosshair = svgElement("line", { y1: inner.top, y2: inner.bottom, class: "chart-crosshair", visibility: "hidden" }, svg);
   const dots = series.map(({ slot }) =>
-    element("circle", { r: 4, fill: `var(--series-${slot})`, class: "chart-dot", visibility: "hidden" }, svg),
+    svgElement("circle", { r: 4, fill: `var(--series-${slot})`, class: "chart-dot", visibility: "hidden" }, svg),
   );
   const sortedTimes = [...new Set(times)].sort((a, b) => a - b);
   const lookups = series.map(({ values: points }) => new Map(points));
@@ -313,20 +301,20 @@ function drawColumns(state, svg, inner) {
       const bottom = y(base) - (stacked && base > 0 ? COLUMN_GAP : 0);
       const height = Math.max(0, bottom - top);
       const isTop = !stacked || seriesIndex === lastSegment(series, index);
-      element("path", {
+      svgElement("path", {
         d: isTop ? columnPath(left, top, columnWidth - (stacked ? 0 : 1), height) : `M${left},${top}h${columnWidth}v${height}h${-columnWidth}Z`,
         fill: `var(--series-${slot})`,
       }, svg);
       if (stacked) base += value;
     });
     if (index % labelEvery === 0) {
-      const label = element("text", { x: center, y: HEIGHT - 6, class: "chart-tick", "text-anchor": "middle" }, svg);
+      const label = svgElement("text", { x: center, y: HEIGHT - 6, class: "chart-tick", "text-anchor": "middle" }, svg);
       label.textContent = bucket.short ?? bucket.label;
     }
   });
-  element("line", { x1: inner.left, x2: inner.right, y1: inner.bottom, y2: inner.bottom, class: "chart-baseline" }, svg);
+  svgElement("line", { x1: inner.left, x2: inner.right, y1: inner.bottom, y2: inner.bottom, class: "chart-baseline" }, svg);
 
-  const highlight = element("rect", { y: inner.top, height: inner.bottom - inner.top, width: band, class: "chart-highlight", visibility: "hidden" }, svg);
+  const highlight = svgElement("rect", { y: inner.top, height: inner.bottom - inner.top, width: band, class: "chart-highlight", visibility: "hidden" }, svg);
   svg.prepend(highlight);
   hover(state, svg, (px) => {
     const index = Math.min(buckets.length - 1, Math.max(0, Math.floor((px - inner.left) / band)));

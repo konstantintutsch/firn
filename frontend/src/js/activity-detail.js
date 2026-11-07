@@ -4,8 +4,8 @@
  */
 
 import { bars } from "/js/charts.js";
-import { language } from "/js/i18n.js";
 import { activityDetails, errorMessage, send, t, typeName } from "/js/account.js";
+import { duration, html, number, pace, unit } from "/js/format.js";
 import { profile } from "/js/profile.js";
 import { DISTANCE_M, distanceUnit, elevationUnit, paceUnit, speedUnit, toDistance, toElevation, toPace, toSpeed } from "/js/units.js";
 
@@ -23,22 +23,7 @@ const SMOOTHING = 2;
 /** Slower than this counts as standing still, which has no pace. */
 const MIN_SPEED_M_S = 0.5;
 
-const twoDigits = (value) => String(value).padStart(2, "0");
-const number = (digits = 0) => (value) =>
-  value.toLocaleString(language, { maximumFractionDigits: digits, minimumFractionDigits: digits });
-const unit = (digits, suffix) => (value) => `${number(digits)(value)} ${t(suffix)}`;
 
-function duration(seconds) {
-  const total = Math.round(seconds);
-  const [hours, minutes] = [Math.floor(total / 3600), Math.floor((total % 3600) / 60)];
-  return hours > 0 ? `${hours}:${twoDigits(minutes)}:${twoDigits(total % 60)}` : `${minutes}:${twoDigits(total % 60)}`;
-}
-
-/** Minutes per kilometer or mile, as minutes and seconds. */
-function pace(minutes) {
-  const seconds = Math.round(minutes * 60);
-  return `${Math.floor(seconds / 60)}:${twoDigits(seconds % 60)} ${paceUnit}`;
-}
 
 const paceOfSpeed = (speed) => pace(toPace(speed));
 const kmh = (speed) => unit(1, speedUnit)(toSpeed(speed));
@@ -240,12 +225,6 @@ function writeStorage(key, value) {
   }
 }
 
-function html(name, className, text) {
-  const node = document.createElement(name);
-  if (className) node.className = className;
-  if (text != null) node.textContent = text;
-  return node;
-}
 
 /**
  * Wires the detail panel to the map. `heatLayers` are hidden while the track is

@@ -1,8 +1,9 @@
 import { bars, chart, forgetCharts } from "/js/charts.js";
+import { duration, number, pace, unit } from "/js/format.js";
 import { language } from "/js/i18n.js";
 import { plural, requireAccount, setUpSync, t, typeName } from "/js/account.js";
 import { localDay, setUpFilters } from "/js/filters.js";
-import { distanceUnit, elevationUnit, paceUnit, toDistance, toElevation } from "/js/units.js";
+import { distanceUnit, elevationUnit, toDistance, toElevation } from "/js/units.js";
 
 const DAY_MS = 86_400_000;
 /** Activity types that get their own color in the distance chart. The rest are "Other". */
@@ -15,17 +16,10 @@ const healthSection = document.querySelector("#health-section");
 const healthNote = document.querySelector("#health-note");
 const rangeButtons = [...document.querySelectorAll(".range-picker button")];
 
-const number = (digits = 0) => (value) =>
-  value.toLocaleString(language, { maximumFractionDigits: digits, minimumFractionDigits: digits });
 const hours = (value) => {
   const minutes = Math.round(value * 60);
   return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")} h`;
 };
-const pace = (minutes) => {
-  const seconds = Math.round(minutes * 60);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} ${paceUnit}`;
-};
-const unit = (digits, suffix) => (value) => `${number(digits)(value)} ${t(suffix)}`;
 
 /** The health charts, each shown only if Garmin had data for one of its metrics. */
 const HEALTH_CHARTS = [
@@ -603,7 +597,7 @@ function records(container, dated) {
     const value = document.createElement("dd");
     const link = document.createElement("a");
     link.href = `/?${new URLSearchParams({ activity: fastest.id })}`;
-    link.textContent = clock(fastest.fastest_splits[meters]);
+    link.textContent = duration(fastest.fastest_splits[meters]);
     const when = document.createElement("small");
     when.textContent = new Date(fastest.time).toLocaleDateString(language);
     value.append(link, when);
@@ -626,19 +620,12 @@ function records(container, dated) {
     chart(card(container, "Times over 5 and 10 km", "The fastest stretch of each activity, lower is faster"), {
       kind: "line",
       series,
-      format: (minutes) => clock(minutes * 60),
+      format: (minutes) => duration(minutes * 60),
       label: t("Times over 5 and 10 km"),
     });
   }
 }
 
-/** Seconds as hours, minutes and seconds. */
-function clock(seconds) {
-  const total = Math.round(seconds);
-  const [h, m, s] = [Math.floor(total / 3600), Math.floor((total % 3600) / 60), total % 60];
-  const two = (value) => String(value).padStart(2, "0");
-  return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
-}
 
 /** The distance so far in each year, on the same calendar, to compare the years. */
 function yearOverYear(container, dated) {

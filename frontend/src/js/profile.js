@@ -4,19 +4,13 @@
  */
 
 import { niceTicks } from "/js/charts.js";
+import { svgElement } from "/js/format.js";
 
-const SVG = "http://www.w3.org/2000/svg";
 const HEIGHT = 140;
 const MARGIN = { top: 8, right: 8, bottom: 20, left: 48 };
 /** The share of samples at each end that may fall outside the axis, like a pause in a run. */
 const OUTLIERS = 0.02;
 
-function element(name, attributes = {}, parent = null) {
-  const node = document.createElementNS(SVG, name);
-  for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
-  parent?.append(node);
-  return node;
-}
 
 /**
  * Draws the profile into `container` and redraws it when the container resizes.
@@ -40,7 +34,7 @@ export function profile(container, { x, values, xFormat, format, invert = false,
     container.replaceChildren();
     const width = container.clientWidth;
     if (width === 0 || indices.length < 2) return;
-    const svg = element("svg", { width, height: HEIGHT, viewBox: `0 0 ${width} ${HEIGHT}`, role: "img", "aria-label": label });
+    const svg = svgElement("svg", { width, height: HEIGHT, viewBox: `0 0 ${width} ${HEIGHT}`, role: "img", "aria-label": label });
     container.append(svg);
     const inner = { left: MARGIN.left, right: width - MARGIN.right, top: MARGIN.top, bottom: HEIGHT - MARGIN.bottom };
 
@@ -63,14 +57,14 @@ export function profile(container, { x, values, xFormat, format, invert = false,
 
     for (const tick of ticks) {
       const y = py(tick);
-      element("line", { x1: inner.left, x2: inner.right, y1: y, y2: y, class: "chart-grid" }, svg);
-      const text = element("text", { x: inner.left - 6, y, class: "chart-tick", "text-anchor": "end", "dominant-baseline": "middle" }, svg);
+      svgElement("line", { x1: inner.left, x2: inner.right, y1: y, y2: y, class: "chart-grid" }, svg);
+      const text = svgElement("text", { x: inner.left - 6, y, class: "chart-tick", "text-anchor": "end", "dominant-baseline": "middle" }, svg);
       text.textContent = format(tick);
     }
     const labels = Math.max(2, Math.floor((inner.right - inner.left) / 80));
     for (let index = 0; index < labels; index++) {
       const value = first + (span * index) / (labels - 1);
-      const text = element("text", {
+      const text = svgElement("text", {
         x: px(value),
         y: HEIGHT - 4,
         class: "chart-tick",
@@ -81,15 +75,15 @@ export function profile(container, { x, values, xFormat, format, invert = false,
 
     const line = indices.map((index, n) => `${n === 0 ? "M" : "L"}${px(x[index]).toFixed(1)},${py(values[index]).toFixed(1)}`).join("");
     const base = invert ? inner.top : inner.bottom;
-    element("path", {
+    svgElement("path", {
       d: `${line}L${px(last).toFixed(1)},${base}L${px(first).toFixed(1)},${base}Z`,
       class: "profile-area",
     }, svg);
-    element("path", { d: line, class: "chart-line profile-line" }, svg);
+    svgElement("path", { d: line, class: "chart-line profile-line" }, svg);
 
     parts = {
-      line: element("line", { y1: inner.top, y2: inner.bottom, class: "chart-crosshair", visibility: "hidden" }, svg),
-      dot: element("circle", { r: 4, class: "chart-dot profile-dot", visibility: "hidden" }, svg),
+      line: svgElement("line", { y1: inner.top, y2: inner.bottom, class: "chart-crosshair", visibility: "hidden" }, svg),
+      dot: svgElement("circle", { r: 4, class: "chart-dot profile-dot", visibility: "hidden" }, svg),
     };
     svg.addEventListener("pointermove", move);
     svg.addEventListener("pointerdown", move);
