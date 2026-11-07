@@ -136,6 +136,7 @@ const detail = setUpActivityDetail(map, {
   legend,
   onClose: () => select(null),
   onReload: (id) => loadDetail(id, false),
+  onNavigate: (id) => select({ id }, { fit: true }),
 });
 
 // Fires again after each theme change, because a new style drops source and layer.
@@ -333,7 +334,8 @@ async function loadStats() {
     fitToActivities = false;
     const km = Math.round(distance / 1000).toLocaleString();
     statsElement.textContent = `${plural(activities, "activity", "activities")} · ${km} km`;
-    if (activities > 0) {
+    // A selected activity without a track has nothing on the map, which is fine.
+    if (activities > 0 || selectedId !== null) {
       showStatus("");
     } else if (query.size > 0) {
       showStatus(t("No activities match these filters."));

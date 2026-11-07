@@ -11,6 +11,7 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -584,6 +585,42 @@ struct ActivityDetail {
     samples: Samples,
     /// The URLs of the photos added to the activity on Garmin Connect, in Garmin's order.
     images: Vec<String>,
+    /// The lowest heart rate of zones 1 to 5 and the maximum, from the zones
+    /// that Garmin has for this sport, or else its default ones.
+    heart_rate_zones: Option<Vec<f64>>,
+    /// The account's activity that started just before this one.
+    previous_id: Option<i64>,
+    /// The account's activity that started just after this one.
+    next_id: Option<i64>,
+}
+
+/// Garmin lists zones per sport, like RUNNING or CYCLING, and DEFAULT for the rest.
+fn heart_rate_zones(document: &Value, activity_type: &str) -> Option<Vec<f64>> {
+    let zones = document.as_array()?;
+    let sport = if activity_type.contains("running") {
+        "RUNNING"
+    } else if activity_type.contains("cycling") || activity_type.contains("biking") {
+        "CYCLING"
+    } else {
+        "DEFAULT"
+    };
+    let of_sport = |name: &str| {
+        zones
+            .iter()
+            .find(|zone| zone.get("sport").and_then(Value::as_str) == Some(name))
+    };
+    let zone = of_sport(sport).or_else(|| of_sport("DEFAULT"))?;
+    [
+        "zone1Floor",
+        "zone2Floor",
+        "zone3Floor",
+        "zone4Floor",
+        "zone5Floor",
+        "maxHeartRateUsed",
+    ]
+    .iter()
+    .map(|key| zone.get(key).and_then(Value::as_f64))
+    .collect()
 }
 
 /// One activity with all its metrics and what the device recorded along it.
@@ -635,11 +672,19 @@ async fn activity(
         .into_iter()
         .map(|image_id| format!("/api/activities/{id}/images/{image_id}"))
         .collect();
+    let heart_rate_zones = db::document(&state.pool, user.id, "heart_rate_zones", "")
+        .await?
+        .and_then(|document| heart_rate_zones(&document, &activity.activity_type));
+    let (previous_id, next_id) =
+        db::neighbors(&state.pool, user.id, id, activity.started_at).await?;
     Ok(Json(ActivityDetail {
         activity: ActivityItem::new(activity, bounds),
         summary,
         samples: Samples::from_samples(&samples),
         images,
+        heart_rate_zones,
+        previous_id,
+        next_id,
     }))
 }
 

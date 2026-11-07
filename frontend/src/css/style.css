@@ -13,6 +13,12 @@
   --series-2: #eb6834;
   --series-3: #8b5cf6;
   --series-4: #eda100;
+  /* Heart rate zones, from easy to hard. They read on both themes. */
+  --zone-1: #94a3b8;
+  --zone-2: #3b82f6;
+  --zone-3: #22c55e;
+  --zone-4: #f59e0b;
+  --zone-5: #ef4444;
   --accent: #0d9488;
   --accent-fill: #0f766e;
   --accent-soft: rgb(13 148 136 / 12%);
@@ -163,6 +169,98 @@ body {
 
 .detail-header .icon-button {
   flex: none;
+}
+
+.detail-nav {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.detail-nav .icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.laps {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.laps th {
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: right;
+  padding: 0 4px 4px;
+}
+
+.laps td {
+  text-align: right;
+  padding: 3px 4px;
+  border-top: 1px solid var(--line);
+}
+
+.laps th:first-child,
+.laps td:first-child {
+  text-align: left;
+}
+
+.laps .fastest td {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.photo-dialog {
+  max-width: min(96vw, 1200px);
+  max-height: 92dvh;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: #000;
+  overflow: hidden;
+}
+
+.photo-dialog::backdrop {
+  background: rgb(0 0 0 / 80%);
+}
+
+.photo-dialog img {
+  display: block;
+  max-width: min(96vw, 1200px);
+  max-height: 92dvh;
+  object-fit: contain;
+}
+
+.photo-dialog .icon-button {
+  position: absolute;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+}
+
+#photo-close {
+  top: 8px;
+  right: 8px;
+}
+
+#photo-previous,
+#photo-next {
+  top: 50%;
+  translate: 0 -50%;
+}
+
+#photo-previous {
+  left: 8px;
+}
+
+#photo-next {
+  right: 8px;
+}
+
+.photo-dialog .icon-button[hidden] {
+  display: none;
 }
 
 .detail h2 {

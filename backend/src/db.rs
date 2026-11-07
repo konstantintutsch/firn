@@ -905,6 +905,62 @@ pub async fn activity_records(pool: &Pool, filter: &Filter) -> Result<Vec<Activi
         .await?)
 }
 
+/// The data of one of the account's Garmin documents, like its heart rate zones.
+pub async fn document(
+    pool: &Pool,
+    user_id: i64,
+    kind: &str,
+    period: &str,
+) -> Result<Option<Value>> {
+    Ok(garmin_documents::table
+        .find((user_id, kind, period))
+        .select(garmin_documents::data)
+        .first::<Option<Value>>(&mut pool.get().await?)
+        .await
+        .optional()?
+        .flatten())
+}
+
+/// The account's activities that started just before and just after one, by
+/// start and then ID, so that activities with the same start still take turns.
+pub async fn neighbors(
+    pool: &Pool,
+    user_id: i64,
+    id: i64,
+    started_at: DateTime<Utc>,
+) -> Result<(Option<i64>, Option<i64>)> {
+    let mut connection = pool.get().await?;
+    let previous = activities::table
+        .filter(activities::user_id.eq(user_id))
+        .filter(
+            activities::started_at
+                .lt(started_at)
+                .or(activities::started_at
+                    .eq(started_at)
+                    .and(activities::id.lt(id))),
+        )
+        .order((activities::started_at.desc(), activities::id.desc()))
+        .select(activities::id)
+        .first(&mut connection)
+        .await
+        .optional()?;
+    let next = activities::table
+        .filter(activities::user_id.eq(user_id))
+        .filter(
+            activities::started_at
+                .gt(started_at)
+                .or(activities::started_at
+                    .eq(started_at)
+                    .and(activities::id.gt(id))),
+        )
+        .order((activities::started_at, activities::id))
+        .select(activities::id)
+        .first(&mut connection)
+        .await
+        .optional()?;
+    Ok((previous, next))
+}
+
 /// The IDs of all of the account's activities, oldest first.
 pub async fn activity_ids(pool: &Pool, user_id: i64) -> Result<Vec<i64>> {
     Ok(activities::table

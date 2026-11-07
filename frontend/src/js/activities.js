@@ -49,12 +49,12 @@ async function load(append = false) {
   else statusElement.textContent = t("No activities saved yet. Select Sync to save them from Garmin.");
 }
 
-/** Activities with a track link to the map, which then shows only them. */
+/** Each activity links to its details on the map, which then shows only its track. */
 function listItem(activity) {
   const item = document.createElement("li");
-  const entry = document.createElement(activity.bounds ? "a" : "div");
+  const entry = document.createElement("a");
   entry.className = "activity";
-  if (activity.bounds) entry.href = `/?${new URLSearchParams({ activity: activity.id })}`;
+  entry.href = `/?${new URLSearchParams({ activity: activity.id })}`;
   const title = document.createElement("strong");
   title.textContent = activityTitle(activity);
   const type = document.createElement("span");

@@ -151,6 +151,72 @@ function trackMetrics(type, samples) {
   return metrics;
 }
 
+/** Distance along the samples, from the device or else from the positions. */
+function distances(samples) {
+  if (samples.distance_m?.some((value) => value != null)) return samples.distance_m;
+  if (!samples.position) return null;
+  let total = 0;
+  let last = null;
+  return samples.position.map((position) => {
+    if (position && last) total += meters(last, position);
+    if (position) last = position;
+    return position ? total : null;
+  });
+}
+
+function meters([lon1, lat1], [lon2, lat2]) {
+  const radians = Math.PI / 180;
+  const h =
+    Math.sin(((lat2 - lat1) * radians) / 2) ** 2 +
+    Math.cos(lat1 * radians) * Math.cos(lat2 * radians) * Math.sin(((lon2 - lon1) * radians) / 2) ** 2;
+  return 2 * 6_371_000 * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * One row per kilometer, and one for the rest if it is longer than 100 m: its
+ * distance, time, average heart rate and the change in elevation.
+ */
+function kilometerSplits(samples) {
+  const distance = distances(samples);
+  const time = samples.time_s;
+  if (!distance || !time) return [];
+  const points = distance
+    .map((meters, index) => ({ meters, seconds: time[index], index }))
+    .filter(({ meters, seconds }) => meters != null && seconds != null);
+  if (points.length < 2) return [];
+
+  const splits = [];
+  let start = points[0];
+  let next = 1000;
+  for (let i = 1; i < points.length; i++) {
+    const point = points[i];
+    const isLast = i === points.length - 1;
+    if (point.meters < next && !(isLast && point.meters - start.meters > 100)) continue;
+    const end = point.meters >= next ? { ...point, meters: next } : point;
+    // Interpolates the time at the exact kilometer, between this sample and the one before.
+    if (point.meters >= next && i > 0) {
+      const before = points[i - 1];
+      const share = (next - before.meters) / (point.meters - before.meters || 1);
+      end.seconds = before.seconds + share * (point.seconds - before.seconds);
+    }
+    const within = (values) =>
+      values?.slice(start.index, point.index + 1).filter((value) => value != null) ?? [];
+    const rates = within(samples.heart_rate);
+    const elevations = within(samples.elevation_m);
+    splits.push({
+      meters: end.meters - start.meters,
+      seconds: end.seconds - start.seconds,
+      heartRate: rates.length ? rates.reduce((sum, value) => sum + value, 0) / rates.length : null,
+      climb: elevations.length > 1 ? elevations.at(-1) - elevations[0] : null,
+    });
+    start = end;
+    next += 1000;
+    // A long gap can pass several kilometers at once.
+    while (point.meters >= next && !isLast) next += 1000;
+  }
+  return splits;
+}
+
 function percentile(sorted, fraction) {
   return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
 }
@@ -182,7 +248,7 @@ function html(name, className, text) {
  * Wires the detail panel to the map. `heatLayers` are hidden while the track is
  * colored by a metric, and `legend` shows that metric's colors.
  */
-export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onClose, onReload }) {
+export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onClose, onReload, onNavigate }) {
   const panel = document.querySelector("#detail");
   const titleElement = document.querySelector("#detail-title");
   const metaElement = document.querySelector("#detail-meta");
@@ -199,6 +265,12 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
   const statusElement = document.querySelector("#detail-status");
   const imagesElement = document.querySelector("#detail-images");
   const actionsElement = document.querySelector("#detail-actions");
+  const lapsElement = document.querySelector("#detail-laps");
+  const previousButton = document.querySelector("#detail-previous");
+  const nextButton = document.querySelector("#detail-next");
+  previousButton.addEventListener("click", () => detail?.previous_id != null && onNavigate(detail.previous_id));
+  nextButton.addEventListener("click", () => detail?.next_id != null && onNavigate(detail.next_id));
+  const photos = setUpPhotoDialog();
 
   let detail = null;
   let metrics = [];
@@ -401,24 +473,60 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
       }),
     );
 
-    const zones = [1, 2, 3, 4, 5].map((zone) => ({
-      label: t("Zone {zone}", { zone }),
-      value: summary[`hrTimeInZone_${zone}`] ?? 0,
-      slot: 2,
-    }));
+  }
+
+  /** Time per heart rate zone, each in its color, with its range if Garmin has one. */
+  function renderZones(summary, floors) {
+    const zones = [1, 2, 3, 4, 5].map((zone) => {
+      const low = floors?.[zone - 1];
+      const high = floors?.[zone];
+      const range = low != null && high != null ? ` · ${Math.round(low)}–${Math.round(high) - (zone < 5 ? 1 : 0)}` : "";
+      return {
+        label: `${t("Zone {zone}", { zone })}${range}`,
+        value: summary[`hrTimeInZone_${zone}`] ?? 0,
+        color: `var(--zone-${zone})`,
+      };
+    });
     zonesElement.hidden = zones.every(({ value }) => value === 0);
     if (!zonesElement.hidden) bars(zonesElement.querySelector("div"), zones, duration);
+  }
+
+  function renderLaps(type, samples) {
+    const splits = kilometerSplits(samples);
+    lapsElement.hidden = splits.length < 2;
+    if (lapsElement.hidden) return;
+    const foot = isOnFoot(type);
+    lapsElement.querySelector("#laps-speed").textContent = t(foot ? "Pace" : "Speed");
+    const fastest = Math.min(...splits.filter(({ meters }) => meters >= 999).map(({ seconds }) => seconds));
+    lapsElement.querySelector("tbody").replaceChildren(
+      ...splits.map(({ meters, seconds, heartRate, climb }, index) => {
+        const row = html("tr");
+        if (seconds === fastest) row.className = "fastest";
+        const kilometer = meters >= 999 ? String(index + 1) : number(2)((index * 1000 + meters) / 1000);
+        const speed = meters / seconds;
+        row.append(
+          html("td", null, kilometer),
+          html("td", null, duration(seconds)),
+          html("td", null, foot ? paceOfSpeed(speed).replace(" /km", "") : kmh(speed)),
+          html("td", null, heartRate == null ? "–" : String(Math.round(heartRate))),
+          html("td", null, climb == null ? "–" : `${climb > 0 ? "+" : ""}${Math.round(climb)} m`),
+        );
+        return row;
+      }),
+    );
   }
 
   /** The photos from Garmin Connect, each opening at full size. */
   function renderImages(images) {
     imagesElement.hidden = images.length === 0;
     imagesElement.replaceChildren(
-      ...images.map((url) => {
+      ...images.map((url, index) => {
         const link = html("a");
         link.href = url;
-        link.target = "_blank";
-        link.rel = "noreferrer";
+        link.addEventListener("click", (event) => {
+          event.preventDefault();
+          photos.open(images, index);
+        });
         const image = html("img");
         image.src = url;
         image.alt = t("Photo of the activity");
@@ -462,6 +570,10 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     renderMetrics(summary, activity.activity_type);
     renderImages(images ?? []);
     renderActions(activity, samples);
+    renderLaps(activity.activity_type, samples);
+    renderZones(summary, detail.heart_rate_zones);
+    previousButton.disabled = detail.previous_id == null;
+    nextButton.disabled = detail.next_id == null;
 
     profileTabs.replaceChildren(
       ...metrics.map(({ key, label }) => {
@@ -505,6 +617,10 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     metaElement.textContent = "";
     descriptionElement.textContent = "";
     actionsElement.hidden = true;
+    lapsElement.hidden = true;
+    zonesElement.hidden = true;
+    previousButton.disabled = true;
+    nextButton.disabled = true;
     renderImages([]);
     metricsElement.replaceChildren();
     splitsElement.hidden = true;
@@ -519,4 +635,40 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
   }
 
   return { addLayers, open, show, fail };
+}
+
+/** A dialog that shows the photos of an activity large, one at a time. */
+function setUpPhotoDialog() {
+  const dialog = document.querySelector("#photo-dialog");
+  const image = document.querySelector("#photo-image");
+  const previous = document.querySelector("#photo-previous");
+  const next = document.querySelector("#photo-next");
+  let urls = [];
+  let index = 0;
+
+  const show = (at) => {
+    index = (at + urls.length) % urls.length;
+    image.src = urls[index];
+    image.alt = t("Photo {number} of {count}", { number: index + 1, count: urls.length });
+    previous.hidden = next.hidden = urls.length < 2;
+  };
+  previous.addEventListener("click", () => show(index - 1));
+  next.addEventListener("click", () => show(index + 1));
+  document.querySelector("#photo-close").addEventListener("click", () => dialog.close());
+  // A click beside the photo closes it, like on most sites.
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft") show(index - 1);
+    if (event.key === "ArrowRight") show(index + 1);
+  });
+
+  return {
+    open(all, at) {
+      urls = all;
+      show(at);
+      dialog.showModal();
+    },
+  };
 }

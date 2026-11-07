@@ -383,13 +383,13 @@ export function bars(container, items, format) {
   container.replaceChildren();
   container.classList.add("bars");
   const max = Math.max(...items.map(({ value }) => value), 0) || 1;
-  for (const { label, value, slot } of items) {
+  for (const { label, value, slot, color } of items) {
     const row = html("div", "bar-row");
     const track = html("div", "bar-track");
     const bar = html("div", "bar");
     // Leaves room at the tip for the value.
     bar.style.width = `calc((100% - 64px) * ${value / max})`;
-    bar.style.background = `var(--series-${slot})`;
+    bar.style.background = color ?? `var(--series-${slot})`;
     track.append(bar, html("span", "bar-value", format(value)));
     row.append(html("span", "bar-label", label), track);
     container.append(row);

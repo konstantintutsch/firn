@@ -33,7 +33,11 @@
               <h2 id="detail-title"></h2>
               <p id="detail-meta" class="muted"></p>
             </div>
-            <button id="detail-close" class="icon-button" type="button" aria-label="Show all activities" title="Show all activities" data-i18n-attrs="aria-label title">{% icon "close" %}</button>
+            <div class="detail-nav">
+              <button id="detail-previous" class="icon-button" type="button" aria-label="Previous activity" title="Previous activity" data-i18n-attrs="aria-label title">{% icon "previous" %}</button>
+              <button id="detail-next" class="icon-button" type="button" aria-label="Next activity" title="Next activity" data-i18n-attrs="aria-label title">{% icon "next" %}</button>
+              <button id="detail-close" class="icon-button" type="button" aria-label="Show all activities" title="Show all activities" data-i18n-attrs="aria-label title">{% icon "close" %}</button>
+            </div>
           </div>
           <p id="detail-description" class="detail-description"></p>
           <div id="detail-actions" class="detail-actions" hidden>
@@ -54,6 +58,13 @@
             <select id="track-color"></select>
           </label>
           <dl id="detail-metrics" class="metrics"></dl>
+          <section id="detail-laps" hidden>
+            <h3 data-i18n>Splits</h3>
+            <table class="laps">
+              <thead><tr><th data-i18n>km</th><th data-i18n>Time</th><th id="laps-speed" data-i18n>Pace</th><th data-i18n>Heart rate</th><th data-i18n>Elevation</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </section>
           <section id="detail-splits" hidden>
             <h3 data-i18n>Fastest splits</h3>
             <dl class="metrics"></dl>
@@ -73,6 +84,12 @@
         </div>
       </div>
     </section>
+    <dialog id="photo-dialog" class="photo-dialog" aria-label="Photo" data-i18n-attrs="aria-label">
+      <img id="photo-image" alt="">
+      <button id="photo-previous" class="icon-button" type="button" aria-label="Previous photo" title="Previous photo" data-i18n-attrs="aria-label title">{% icon "previous" %}</button>
+      <button id="photo-next" class="icon-button" type="button" aria-label="Next photo" title="Next photo" data-i18n-attrs="aria-label title">{% icon "next" %}</button>
+      <button id="photo-close" class="icon-button" type="button" aria-label="Close" title="Close" data-i18n-attrs="aria-label title">{% icon "close" %}</button>
+    </dialog>
     {% include "nav.njk" %}
     {% include "account.njk" %}
     <script type="module" src="/js/heatmap.js"></script>

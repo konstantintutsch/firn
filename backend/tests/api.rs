@@ -1049,3 +1049,38 @@ async fn one_activity_can_be_downloaded_again() {
         StatusCode::CONFLICT
     );
 }
+
+#[tokio::test]
+async fn activity_links_its_neighbors_and_has_its_zones() {
+    let pool = common::test_pool().await;
+    add_two_activities(&pool).await;
+    let zones = json!([
+        {"sport": "DEFAULT", "zone1Floor": 100, "zone2Floor": 120, "zone3Floor": 140,
+         "zone4Floor": 160, "zone5Floor": 175, "maxHeartRateUsed": 190},
+        {"sport": "RUNNING", "zone1Floor": 101, "zone2Floor": 121, "zone3Floor": 141,
+         "zone4Floor": 161, "zone5Floor": 176, "maxHeartRateUsed": 191},
+    ]);
+    db::save_document(
+        &pool,
+        common::user(&pool).await,
+        "heart_rate_zones",
+        "",
+        Some(&zones),
+        &[],
+    )
+    .await
+    .unwrap();
+
+    let (_, first) = get(&pool, "/api/activities/1").await;
+    assert_eq!(first["previous_id"], Value::Null);
+    assert_eq!(first["next_id"], 2);
+    assert_eq!(
+        first["heart_rate_zones"],
+        json!([101.0, 121.0, 141.0, 161.0, 176.0, 191.0])
+    );
+    let (_, second) = get(&pool, "/api/activities/2").await;
+    assert_eq!(second["previous_id"], 1);
+    assert_eq!(second["next_id"], Value::Null);
+    // A ride has no zones of its own here, so it gets the default ones.
+    assert_eq!(second["heart_rate_zones"][0], 100.0);
+}
