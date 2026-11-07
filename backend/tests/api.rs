@@ -5,7 +5,7 @@ use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use runmap::api::router;
 use runmap::db::{self, Pool};
-use runmap::gpx::Point;
+use runmap::track::Point;
 use serde_json::Value;
 use tower::ServiceExt;
 
@@ -40,7 +40,7 @@ async fn add_run(pool: &Pool, id: i64, points: &[Point]) {
         summary,
     };
     db::upsert_runs(pool, &[activity]).await.unwrap();
-    db::save_track(pool, id, Some("<gpx/>"), points)
+    db::save_track(pool, id, Some(b"zip".as_slice()), points)
         .await
         .unwrap();
 }

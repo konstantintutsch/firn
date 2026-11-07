@@ -18,13 +18,9 @@ down:
 logs *services:
     docker compose logs --follow {{services}}
 
-# Sign in to Garmin. Asks for the password and never stores it
-login:
-    docker compose run --build --rm api login
-
-# Save all runs that are not saved yet
+# Save all runs that are not saved yet. Needs GARMIN_PERSONAL_API_KEY in .env
 sync:
-    docker compose run --build --rm api sync
+    docker compose run --build --rm sync
 
 # Run the backend tests in a throwaway database
 test *args:

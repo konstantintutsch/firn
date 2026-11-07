@@ -2,9 +2,10 @@ use std::time::Duration;
 
 use crate::db::{self, Pool};
 use crate::garmin::{Activity, GarminClient, GarminError};
-use crate::gpx;
+use crate::track;
 
-const PAGE_SIZE: u32 = 100;
+/// The default page size of Garmin's activity search.
+const PAGE_SIZE: u32 = 99;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Report {
@@ -43,17 +44,16 @@ pub async fn sync_runs(
             db::save_track(pool, activity.id, None, &[]).await?;
             continue;
         }
-        match save_gpx(pool, client, activity).await {
-            Ok(false) => tracing::warn!(id = activity.id, "Garmin has no track for this run"),
+        match save_original(pool, client, activity).await {
+            Ok(false) => tracing::warn!(id = activity.id, "Garmin has no file for this run"),
             Ok(true) => {
                 report.downloaded += 1;
                 tracing::info!(id = activity.id, done = report.downloaded, "saved track");
             }
-            // Retrying these immediately only makes things worse, so stop here.
+            // Later downloads would fail the same way, so stop here.
             Err(
                 error @ (GarminError::RateLimited
-                | GarminError::Blocked
-                | GarminError::NeedsLogin
+                | GarminError::InvalidApiKey
                 | GarminError::Database(_)),
             ) => return Err(error),
             Err(error) => {
@@ -66,22 +66,22 @@ pub async fn sync_runs(
     Ok(report)
 }
 
-/// Returns whether Garmin had a track to save.
-async fn save_gpx(
+/// Returns whether Garmin had a file to save.
+async fn save_original(
     pool: &Pool,
     client: &mut GarminClient,
     activity: &Activity,
 ) -> Result<bool, GarminError> {
-    let gpx = match client.download_gpx(activity.id).await {
-        Ok(gpx) => gpx,
+    let zip = match client.download_original(activity.id).await {
+        Ok(zip) => zip,
         Err(GarminError::NotFound) => {
             db::save_track(pool, activity.id, None, &[]).await?;
             return Ok(false);
         }
         Err(error) => return Err(error),
     };
-    let points = gpx::parse_track(&gpx)
-        .map_err(|error| GarminError::Unexpected(format!("activity GPX: {error}")))?;
-    db::save_track(pool, activity.id, Some(&gpx), &points).await?;
+    let points = track::parse_archive(&zip)
+        .map_err(|error| GarminError::Unexpected(format!("activity file: {error:#}")))?;
+    db::save_track(pool, activity.id, Some(&zip), &points).await?;
     Ok(true)
 }

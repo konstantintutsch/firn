@@ -10,9 +10,9 @@ use diesel_async::{AsyncConnection, AsyncMigrationHarness, AsyncPgConnection, Ru
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use serde_json::Value;
 
-use crate::garmin::{Activity, Tokens};
-use crate::gpx::Point;
-use crate::schema::{garmin_tokens, runs, track_points};
+use crate::garmin::Activity;
+use crate::schema::{runs, track_points};
+use crate::track::Point;
 
 pub type Pool = deadpool::Pool<AsyncPgConnection>;
 
@@ -92,7 +92,12 @@ pub async fn is_track_synced(pool: &Pool, id: i64) -> Result<bool> {
 }
 
 /// Stores a track atomically and marks the run as done. `None` means no track exists.
-pub async fn save_track(pool: &Pool, id: i64, gpx: Option<&str>, points: &[Point]) -> Result<()> {
+pub async fn save_track(
+    pool: &Pool,
+    id: i64,
+    original_zip: Option<&[u8]>,
+    points: &[Point],
+) -> Result<()> {
     let rows: Vec<_> = points
         .iter()
         .enumerate()
@@ -119,47 +124,13 @@ pub async fn save_track(pool: &Pool, id: i64, gpx: Option<&str>, points: &[Point
             }
             diesel::update(runs::table.find(id))
                 .set((
-                    runs::gpx.eq(gpx),
+                    runs::original_zip.eq(original_zip),
                     runs::track_synced_at.eq(diesel::dsl::now),
                 ))
                 .execute(&mut *connection)
                 .await?;
             Ok(())
         })
-        .await?;
-    Ok(())
-}
-
-pub async fn load_tokens(pool: &Pool) -> Result<Option<Tokens>> {
-    let row: Option<(String, String, String)> = garmin_tokens::table
-        .select((
-            garmin_tokens::access_token,
-            garmin_tokens::refresh_token,
-            garmin_tokens::client_id,
-        ))
-        .first(&mut pool.get().await?)
-        .await
-        .optional()?;
-    Ok(row.map(|(access_token, refresh_token, client_id)| Tokens {
-        access_token,
-        refresh_token,
-        client_id,
-    }))
-}
-
-pub async fn save_tokens(pool: &Pool, tokens: &Tokens) -> Result<()> {
-    let values = (
-        garmin_tokens::access_token.eq(&tokens.access_token),
-        garmin_tokens::refresh_token.eq(&tokens.refresh_token),
-        garmin_tokens::client_id.eq(&tokens.client_id),
-        garmin_tokens::updated_at.eq(diesel::dsl::now),
-    );
-    diesel::insert_into(garmin_tokens::table)
-        .values(values)
-        .on_conflict(garmin_tokens::id)
-        .do_update()
-        .set(values)
-        .execute(&mut pool.get().await?)
         .await?;
     Ok(())
 }

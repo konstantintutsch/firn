@@ -6,28 +6,31 @@ A heatmap of all your Garmin runs on a global map.
 
 Requires Docker and [just](https://just.systems).
 
-```sh
-just up      # start the app at http://localhost:8080
-just login   # sign in to Garmin
-just sync    # save your runs, rerun at any time to add new ones
-```
+1. Create a Personal API key on
+   [Garmin Connect](https://connect.garmin.com/app/settings/personalApiToken).
+2. Copy `.env.example` to `.env` and add the key.
+3. Start the app and save your runs:
+
+   ```sh
+   just up      # start the app at http://localhost:8080
+   just sync    # save your runs, rerun at any time to add new ones
+   ```
 
 `just` lists all commands. The API documentation is at
 <http://localhost:8080/api/docs>.
 
 ## Garmin access
 
-Garmin has no API for personal use, so runmap uses the unofficial API behind
-Garmin's mobile apps. It can change or stop working at any time, and using it
-may conflict with Garmin's terms. Garmin can also block the login. In that case
-`just login` fails with an error and does not retry, because repeated attempts
-can lock your account for days.
+Runmap uses the [Garmin Connect Personal API](https://developer.garmin.com/gc-developer-program/personal/personal-api),
+which is meant for personal use. Keys expire after the period you chose when
+creating them. `just sync` tells you when a key stops working: create a new one
+and update `.env`.
 
 ## Data and privacy
 
-- Your password is never stored. `just login` saves a Garmin session token in
-  Postgres, unencrypted. That token gives access to your Garmin account, so
-  treat the database volume as a secret.
+- The API key gives access to your Garmin data. Keep `.env` private. Only the
+  `sync` container receives the key, and it is not stored in the database.
+- Each run keeps the original ZIP file from Garmin in Postgres.
 - The map shows where you run, including near your home, and the API has no
   login. The app therefore only listens on localhost.
 - Map tiles come from [OpenFreeMap](https://openfreemap.org), which sees the

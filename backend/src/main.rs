@@ -1,10 +1,9 @@
-use std::io::Write;
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
-use runmap::garmin::{self, Endpoints, GarminClient};
+use runmap::garmin::{DEFAULT_BASE_URL, GarminClient};
 use runmap::{api, db, sync};
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
@@ -29,9 +28,7 @@ enum Command {
         #[arg(long, env = "BIND_ADDRESS", default_value = "0.0.0.0:3000")]
         bind: SocketAddr,
     },
-    /// Sign in to Garmin and save the session. The password is not stored
-    Login,
-    /// Save all runs that are not saved yet
+    /// Save all runs that are not saved yet. Reads GARMIN_PERSONAL_API_KEY
     Sync,
 }
 
@@ -55,19 +52,17 @@ async fn main() -> Result<()> {
                 .with_graceful_shutdown(shutdown_signal())
                 .await?;
         }
-        Command::Login => {
-            let email = prompt("Garmin email: ")?;
-            let password = rpassword::prompt_password("Garmin password: ")?;
-            let tokens = garmin::login(&Endpoints::default(), &email, &password, || {
-                prompt("MFA code: ")
-            })
-            .await?;
-            db::save_tokens(&pool, &tokens).await?;
-            println!("Signed in. Run `just sync` to save your runs.");
-        }
         Command::Sync => {
-            let mut client =
-                GarminClient::from_saved_tokens(pool.clone(), Endpoints::default()).await?;
+            // Not a command-line option: those end up in the shell history.
+            let api_key = std::env::var("GARMIN_PERSONAL_API_KEY").unwrap_or_default();
+            if api_key.trim().is_empty() {
+                bail!(
+                    "GARMIN_PERSONAL_API_KEY is not set. Create a key at \
+                     https://connect.garmin.com/app/settings/personalApiToken \
+                     and add it to .env"
+                );
+            }
+            let mut client = GarminClient::new(DEFAULT_BASE_URL, &api_key)?;
             let report = sync::sync_runs(&pool, &mut client, DOWNLOAD_PAUSE).await?;
             println!(
                 "{} runs listed, {} tracks downloaded, {} failed",
@@ -91,14 +86,4 @@ async fn shutdown_signal() {
         _ = terminate.recv() => {}
         _ = tokio::signal::ctrl_c() => {}
     }
-}
-
-fn prompt(label: &str) -> Result<String> {
-    print!("{label}");
-    std::io::stdout().flush()?;
-    let mut line = String::new();
-    std::io::stdin()
-        .read_line(&mut line)
-        .context("could not read input")?;
-    Ok(line.trim().to_owned())
 }
