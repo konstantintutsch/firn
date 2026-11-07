@@ -41,6 +41,30 @@ pub enum GarminError {
     Database(#[from] anyhow::Error),
 }
 
+/// The largest original file that a sync saves. Even long activities stay far below.
+const MAX_FILE_BYTES: usize = 100 * 1024 * 1024;
+/// The largest photo that a sync saves.
+const MAX_IMAGE_BYTES: usize = 25 * 1024 * 1024;
+
+/// Reads a response body, but stops at `limit` bytes instead of filling the memory.
+async fn read_limited(mut response: Response, limit: usize) -> Result<Vec<u8>, GarminError> {
+    let too_large = || GarminError::Unexpected(format!("response larger than {limit} bytes"));
+    if response
+        .content_length()
+        .is_some_and(|length| length > limit as u64)
+    {
+        return Err(too_large());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if body.len() + chunk.len() > limit {
+            return Err(too_large());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
 impl From<reqwest::Error> for GarminError {
     fn from(error: reqwest::Error) -> Self {
         GarminError::Http(error.without_url())
@@ -215,7 +239,7 @@ impl GarminClient {
                 )
             })
             .await?;
-        Ok(response.bytes().await?.to_vec())
+        read_limited(response, MAX_FILE_BYTES).await
     }
 
     /// An image behind one of Garmin's expiring links, with its media type. Sends
@@ -236,7 +260,7 @@ impl GarminClient {
             .filter(|value| IMAGE_TYPES.contains(value))
             .unwrap_or("image/jpeg")
             .to_owned();
-        Ok((response.bytes().await?.to_vec(), content_type))
+        Ok((read_limited(response, MAX_IMAGE_BYTES).await?, content_type))
     }
 
     /// Details of one activity, like laps, heart rate and training effect.

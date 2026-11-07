@@ -142,6 +142,7 @@ pub enum ApiError {
     NotFound(&'static str),
     Forbidden(&'static str),
     Conflict(&'static str),
+    TooManyRequests(&'static str),
     /// Garmin failed in a way the person can act on.
     BadGateway(String),
     Internal(anyhow::Error),
@@ -156,6 +157,9 @@ impl IntoResponse for ApiError {
             ApiError::NotFound(message) => (StatusCode::NOT_FOUND, message.to_owned()),
             ApiError::BadGateway(message) => (StatusCode::BAD_GATEWAY, message),
             ApiError::Conflict(message) => (StatusCode::CONFLICT, message.to_owned()),
+            ApiError::TooManyRequests(message) => {
+                (StatusCode::TOO_MANY_REQUESTS, message.to_owned())
+            }
             ApiError::Internal(error) => {
                 tracing::error!("{error:#}");
                 (

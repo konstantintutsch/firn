@@ -32,6 +32,8 @@ const LOGIN_COOKIE: &str = "runmap_login";
 const SESSION_DAYS: i64 = 30;
 /// How long a person has to sign in at the provider.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(600);
+/// Sign-ins that can be under way at once, so that repeated calls cannot fill the memory.
+const MAX_PENDING_LOGINS: usize = 1000;
 const TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct OidcSettings {
@@ -187,6 +189,7 @@ fn redirect(location: &str, cookies: Vec<HeaderValue>) -> Response {
     responses(
         (status = 303, description = "Redirects to the provider"),
         (status = 409, description = "OpenID Connect is not set up", body = ErrorBody),
+        (status = 429, description = "Too many sign-ins are under way", body = ErrorBody),
     )
 )]
 pub async fn login(State(state): State<AppState>) -> Result<Response, ApiError> {
@@ -205,6 +208,11 @@ pub async fn login(State(state): State<AppState>) -> Result<Response, ApiError> 
     {
         let mut pending = auth.pending.lock().unwrap();
         pending.retain(|_, login| login.started.elapsed() < LOGIN_TIMEOUT);
+        if pending.len() >= MAX_PENDING_LOGINS {
+            return Err(ApiError::TooManyRequests(
+                "too many sign-ins at once. Try again in a few minutes",
+            ));
+        }
         pending.insert(
             login_state.clone(),
             PendingLogin {

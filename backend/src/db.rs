@@ -660,19 +660,24 @@ pub async fn set_garmin_key(pool: &Pool, user_id: i64, sealed: Option<&[u8]>) ->
     Ok(())
 }
 
+/// Also removes expired sessions of all accounts, so that they do not pile up.
 pub async fn create_session(
     pool: &Pool,
     user_id: i64,
     token_hash: &[u8],
     expires_at: DateTime<Utc>,
 ) -> Result<()> {
+    let mut connection = pool.get().await?;
+    diesel::delete(sessions::table.filter(sessions::expires_at.le(diesel::dsl::now)))
+        .execute(&mut connection)
+        .await?;
     diesel::insert_into(sessions::table)
         .values((
             sessions::token_hash.eq(token_hash),
             sessions::user_id.eq(user_id),
             sessions::expires_at.eq(expires_at),
         ))
-        .execute(&mut pool.get().await?)
+        .execute(&mut connection)
         .await?;
     Ok(())
 }
@@ -689,7 +694,7 @@ pub async fn session_user(pool: &Pool, token_hash: &[u8]) -> Result<Option<User>
         .optional()?)
 }
 
-/// Also removes expired sessions of all accounts, which nothing else cleans up.
+/// Also removes expired sessions of all accounts.
 pub async fn delete_session(pool: &Pool, token_hash: &[u8]) -> Result<()> {
     diesel::delete(
         sessions::table.filter(

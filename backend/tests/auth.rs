@@ -457,3 +457,36 @@ async fn first_account_claims_activities_from_before_accounts() {
     assert_eq!(owned(first).await, 1);
     assert_eq!(owned(second).await, 0);
 }
+
+#[tokio::test]
+async fn expired_sessions_stop_working_and_are_removed() {
+    use diesel::prelude::*;
+    use diesel_async::RunQueryDsl;
+    use runmap::schema::sessions;
+
+    let pool = common::test_pool().await;
+    let user_id = common::user(&pool).await;
+    let token = runmap::secret::random_token();
+    db::create_session(
+        &pool,
+        user_id,
+        &runmap::secret::sha256(&token),
+        chrono::Utc::now() - chrono::Duration::minutes(1),
+    )
+    .await
+    .unwrap();
+    let state = common::state(pool.clone(), "http://unused", None).await;
+    let me = Request::get("/api/me")
+        .header("cookie", format!("runmap_session={token}"))
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(send(&state, me).await.status(), StatusCode::UNAUTHORIZED);
+
+    common::cookie(&pool).await;
+    let remaining: i64 = sessions::table
+        .count()
+        .get_result(&mut pool.get().await.unwrap())
+        .await
+        .unwrap();
+    assert_eq!(remaining, 1);
+}
