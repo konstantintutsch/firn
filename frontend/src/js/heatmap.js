@@ -1,4 +1,5 @@
 import * as maplibregl from "/vendor/maplibre-gl.mjs";
+import { distanceUnit, toDistance } from "/js/units.js";
 import {
   activityDetails,
   activityTitle,
@@ -331,8 +332,8 @@ async function loadStats() {
       map.fitBounds([[west, south], [east, north]], { padding: fitPadding(), maxZoom: 13, animate: false });
     }
     fitToActivities = false;
-    const km = Math.round(distance / 1000).toLocaleString();
-    statsElement.textContent = `${plural(activities, "activity", "activities")} · ${km} km`;
+    const shown = Math.round(toDistance(distance)).toLocaleString(language);
+    statsElement.textContent = `${plural(activities, "activity", "activities")} · ${shown} ${distanceUnit}`;
     // A selected activity without a track has nothing on the map, which is fine.
     if (activities > 0 || selectedId !== null) {
       showStatus("");

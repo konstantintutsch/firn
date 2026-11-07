@@ -4,8 +4,10 @@
  */
 
 import { bars } from "/js/charts.js";
+import { language } from "/js/i18n.js";
 import { activityDetails, errorMessage, send, t, typeName } from "/js/account.js";
 import { profile } from "/js/profile.js";
+import { DISTANCE_M, distanceUnit, elevationUnit, paceUnit, speedUnit, toDistance, toElevation, toPace, toSpeed } from "/js/units.js";
 
 const TRACK_SOURCE_ID = "selected-track";
 const CURSOR_SOURCE_ID = "selected-cursor";
@@ -23,7 +25,7 @@ const MIN_SPEED_M_S = 0.5;
 
 const twoDigits = (value) => String(value).padStart(2, "0");
 const number = (digits = 0) => (value) =>
-  value.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
+  value.toLocaleString(language, { maximumFractionDigits: digits, minimumFractionDigits: digits });
 const unit = (digits, suffix) => (value) => `${number(digits)(value)} ${t(suffix)}`;
 
 function duration(seconds) {
@@ -32,15 +34,16 @@ function duration(seconds) {
   return hours > 0 ? `${hours}:${twoDigits(minutes)}:${twoDigits(total % 60)}` : `${minutes}:${twoDigits(total % 60)}`;
 }
 
-/** Minutes per kilometer, as minutes and seconds. */
+/** Minutes per kilometer or mile, as minutes and seconds. */
 function pace(minutes) {
   const seconds = Math.round(minutes * 60);
-  return `${Math.floor(seconds / 60)}:${twoDigits(seconds % 60)} /km`;
+  return `${Math.floor(seconds / 60)}:${twoDigits(seconds % 60)} ${paceUnit}`;
 }
 
-const paceOfSpeed = (speed) => pace(1000 / speed / 60);
-const kmh = (speed) => unit(1, "km/h")(speed * 3.6);
-const km = (meters) => unit(2, "km")(meters / 1000);
+const paceOfSpeed = (speed) => pace(toPace(speed));
+const kmh = (speed) => unit(1, speedUnit)(toSpeed(speed));
+const km = (meters) => unit(2, distanceUnit)(toDistance(meters));
+const elevation = (meters) => unit(0, elevationUnit)(toElevation(meters));
 
 /** Activities on foot show pace and steps instead of speed and revolutions. */
 function isOnFoot(type) {
@@ -58,10 +61,10 @@ function summaryMetrics(type) {
     ["averageSpeed", foot ? "Average pace" : "Average speed", foot ? paceOfSpeed : kmh],
     ["avgGradeAdjustedSpeed", "Grade adjusted pace", paceOfSpeed],
     ["maxSpeed", foot ? "Best pace" : "Max. speed", foot ? paceOfSpeed : kmh],
-    ["elevationGain", "Elevation gain", unit(0, "m")],
-    ["elevationLoss", "Elevation loss", unit(0, "m")],
-    ["minElevation", "Lowest point", unit(0, "m")],
-    ["maxElevation", "Highest point", unit(0, "m")],
+    ["elevationGain", "Elevation gain", elevation],
+    ["elevationLoss", "Elevation loss", elevation],
+    ["minElevation", "Lowest point", elevation],
+    ["maxElevation", "Highest point", elevation],
     ["averageHR", "Average heart rate", unit(0, "bpm")],
     ["maxHR", "Max. heart rate", unit(0, "bpm")],
     ["averageRunningCadenceInStepsPerMinute", "Average cadence", unit(0, "spm")],
@@ -136,12 +139,12 @@ function trackMetrics(type, samples) {
   };
   const speed = samples.speed_m_s && smooth(samples.speed_m_s);
   if (foot) {
-    const paces = speed?.map((value) => (value != null && value >= MIN_SPEED_M_S ? 1000 / value / 60 : null));
+    const paces = speed?.map((value) => (value != null && value >= MIN_SPEED_M_S ? toPace(value) : null));
     add("pace", "Pace", paces, pace, true);
   } else {
-    add("speed", "Speed", speed?.map((value) => (value == null ? null : value * 3.6)), unit(1, "km/h"));
+    add("speed", "Speed", speed?.map((value) => (value == null ? null : toSpeed(value))), unit(1, speedUnit));
   }
-  add("elevation", "Elevation", samples.elevation_m, unit(0, "m"));
+  add("elevation", "Elevation", samples.elevation_m?.map((value) => (value == null ? null : toElevation(value))), unit(0, elevationUnit));
   add("heart_rate", "Heart rate", samples.heart_rate, unit(0, "bpm"));
   // Devices count the strides of one foot, while steps per minute count both.
   const cadence = samples.cadence?.map((value) => (value ? value * (foot ? 2 : 1) : null));
@@ -173,7 +176,7 @@ function meters([lon1, lat1], [lon2, lat2]) {
 }
 
 /**
- * One row per kilometer, and one for the rest if it is longer than 100 m: its
+ * One row per kilometer or mile, and one for the rest if it is longer than 100 m: its
  * distance, time, average heart rate and the change in elevation.
  */
 function kilometerSplits(samples) {
@@ -187,7 +190,7 @@ function kilometerSplits(samples) {
 
   const splits = [];
   let start = points[0];
-  let next = 1000;
+  let next = DISTANCE_M;
   for (let i = 1; i < points.length; i++) {
     const point = points[i];
     const isLast = i === points.length - 1;
@@ -210,9 +213,9 @@ function kilometerSplits(samples) {
       climb: elevations.length > 1 ? elevations.at(-1) - elevations[0] : null,
     });
     start = end;
-    next += 1000;
+    next += DISTANCE_M;
     // A long gap can pass several kilometers at once.
-    while (point.meters >= next && !isLast) next += 1000;
+    while (point.meters >= next && !isLast) next += DISTANCE_M;
   }
   return splits;
 }
@@ -442,7 +445,7 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     chart = profile(profileChart, {
       x,
       values: metric.values,
-      xFormat: byDistance ? (meters) => unit(meters < 10_000 ? 1 : 0, "km")(meters / 1000) : duration,
+      xFormat: byDistance ? (meters) => unit(meters < 10 * DISTANCE_M ? 1 : 0, distanceUnit)(toDistance(meters)) : duration,
       format: metric.format,
       invert: metric.invert,
       label: t(metric.label),
@@ -497,19 +500,20 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     if (lapsElement.hidden) return;
     const foot = isOnFoot(type);
     lapsElement.querySelector("#laps-speed").textContent = t(foot ? "Pace" : "Speed");
-    const fastest = Math.min(...splits.filter(({ meters }) => meters >= 999).map(({ seconds }) => seconds));
+    lapsElement.querySelector("th").textContent = distanceUnit;
+    const fastest = Math.min(...splits.filter(({ meters }) => meters >= DISTANCE_M - 1).map(({ seconds }) => seconds));
     lapsElement.querySelector("tbody").replaceChildren(
       ...splits.map(({ meters, seconds, heartRate, climb }, index) => {
         const row = html("tr");
         if (seconds === fastest) row.className = "fastest";
-        const kilometer = meters >= 999 ? String(index + 1) : number(2)((index * 1000 + meters) / 1000);
+        const kilometer = meters >= DISTANCE_M - 1 ? String(index + 1) : number(2)(toDistance(index * DISTANCE_M + meters));
         const speed = meters / seconds;
         row.append(
           html("td", null, kilometer),
           html("td", null, duration(seconds)),
-          html("td", null, foot ? paceOfSpeed(speed).replace(" /km", "") : kmh(speed)),
+          html("td", null, foot ? paceOfSpeed(speed).replace(` ${paceUnit}`, "") : kmh(speed)),
           html("td", null, heartRate == null ? "–" : String(Math.round(heartRate))),
-          html("td", null, climb == null ? "–" : `${climb > 0 ? "+" : ""}${Math.round(climb)} m`),
+          html("td", null, climb == null ? "–" : `${climb > 0 ? "+" : ""}${Math.round(toElevation(climb))} ${elevationUnit}`),
         );
         return row;
       }),

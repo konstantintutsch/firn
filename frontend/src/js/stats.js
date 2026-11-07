@@ -1,6 +1,8 @@
 import { bars, chart, forgetCharts } from "/js/charts.js";
+import { language } from "/js/i18n.js";
 import { plural, requireAccount, setUpSync, t, typeName } from "/js/account.js";
 import { localDay, setUpFilters } from "/js/filters.js";
+import { distanceUnit, elevationUnit, paceUnit, toDistance, toElevation } from "/js/units.js";
 
 const DAY_MS = 86_400_000;
 /** Activity types that get their own color in the distance chart. The rest are "Other". */
@@ -14,14 +16,14 @@ const healthNote = document.querySelector("#health-note");
 const rangeButtons = [...document.querySelectorAll(".range-picker button")];
 
 const number = (digits = 0) => (value) =>
-  value.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
+  value.toLocaleString(language, { maximumFractionDigits: digits, minimumFractionDigits: digits });
 const hours = (value) => {
   const minutes = Math.round(value * 60);
   return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")} h`;
 };
 const pace = (minutes) => {
   const seconds = Math.round(minutes * 60);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} /km`;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} ${paceUnit}`;
 };
 const unit = (digits, suffix) => (value) => `${number(digits)(value)} ${t(suffix)}`;
 
@@ -231,19 +233,19 @@ function makeBuckets(first, last) {
     if (size === "day") {
       buckets.push({
         time,
-        label: date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }),
-        short: date.toLocaleDateString(undefined, { day: "numeric", month: "short" }),
+        label: date.toLocaleDateString(language, { weekday: "short", day: "numeric", month: "short" }),
+        short: date.toLocaleDateString(language, { day: "numeric", month: "short" }),
       });
       date.setDate(date.getDate() + 1);
     } else if (size === "week") {
-      const short = date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+      const short = date.toLocaleDateString(language, { day: "numeric", month: "short" });
       buckets.push({ time, label: t("Week of {day}, {year}", { day: short, year: date.getFullYear() }), short });
       date.setDate(date.getDate() + 7);
     } else {
       buckets.push({
         time,
-        label: date.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
-        short: date.toLocaleDateString(undefined, { month: "short", year: "2-digit" }),
+        label: date.toLocaleDateString(language, { month: "long", year: "numeric" }),
+        short: date.toLocaleDateString(language, { month: "short", year: "2-digit" }),
       });
       date.setMonth(date.getMonth() + 1);
     }
@@ -332,10 +334,10 @@ function renderActivities(activities, buckets) {
   const dated = activities.filter(({ day }) => day).map((activity) => ({ ...activity, time: parseDay(activity.day) }));
   const { current, longest } = streaks(dated);
   tiles(document.querySelector("#activity-tiles"), [
-    ["Activities", activities.length.toLocaleString()],
-    ["Distance", `${number()(sum(activities, "distance_m") / 1000)} km`],
+    ["Activities", activities.length.toLocaleString(language)],
+    ["Distance", `${number()(toDistance(sum(activities, "distance_m")))} ${distanceUnit}`],
     ["Time", `${number()(sum(activities, "duration_s") / 3600)} h`],
-    ["Elevation gain", `${number()(sum(activities, "elevation_gain_m"))} m`],
+    ["Elevation gain", `${number()(toElevation(sum(activities, "elevation_gain_m")))} ${elevationUnit}`],
     ["Calories", `${number()(sum(activities, "calories"))} kcal`],
     ["Current streak", plural(current, "day", "days")],
     ["Longest streak", plural(longest, "day", "days")],
@@ -364,7 +366,7 @@ function renderActivities(activities, buckets) {
     slot: index + 1,
     values: intoBuckets(
       buckets,
-      dated.filter((activity) => activity.activity_type === type).map((activity) => [activity.time, (activity.distance_m ?? 0) / 1000]),
+      dated.filter((activity) => activity.activity_type === type).map((activity) => [activity.time, toDistance(activity.distance_m ?? 0)]),
       true,
     ),
   }));
@@ -373,7 +375,7 @@ function renderActivities(activities, buckets) {
     distanceSeries.push({
       name: t("Other"),
       slot: topTypes.length + 1,
-      values: intoBuckets(buckets, others.map((activity) => [activity.time, activity.distance_m / 1000]), true),
+      values: intoBuckets(buckets, others.map((activity) => [activity.time, toDistance(activity.distance_m)]), true),
     });
   }
   if (distanceSeries.length > 0) {
@@ -382,7 +384,7 @@ function renderActivities(activities, buckets) {
       stacked: true,
       buckets,
       series: distanceSeries,
-      format: unit(1, "km"),
+      format: unit(1, distanceUnit),
       label: t("Distance per period by activity type"),
     });
   }
@@ -414,7 +416,7 @@ function renderActivities(activities, buckets) {
       series: [{
         name: t("Pace"),
         slot: 1,
-        values: averagePerDay(runs.map((run) => [run.time, run.duration_s / 60 / (run.distance_m / 1000)])),
+        values: averagePerDay(runs.map((run) => [run.time, run.duration_s / 60 / toDistance(run.distance_m)])),
       }],
       format: pace,
       label: t("Running pace over time"),
@@ -562,9 +564,9 @@ function calendar(container, dated, buckets) {
       const level = entry ? Math.min(4, 1 + Math.floor((Math.sqrt(entry.meters / max) || 0) * 3.99)) : 0;
       square.setAttribute("class", `calendar-day level-${level}`);
       const title = document.createElementNS(SVG, "title");
-      const label = date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+      const label = date.toLocaleDateString(language, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
       title.textContent = entry
-        ? `${label}: ${plural(entry.count, "activity", "activities")} · ${number(1)(entry.meters / 1000)} km`
+        ? `${label}: ${plural(entry.count, "activity", "activities")} · ${number(1)(toDistance(entry.meters))} ${distanceUnit}`
         : label;
       square.append(title);
       svg.append(square);
@@ -603,7 +605,7 @@ function records(container, dated) {
     link.href = `/?${new URLSearchParams({ activity: fastest.id })}`;
     link.textContent = clock(fastest.fastest_splits[meters]);
     const when = document.createElement("small");
-    when.textContent = new Date(fastest.time).toLocaleDateString();
+    when.textContent = new Date(fastest.time).toLocaleDateString(language);
     value.append(link, when);
     row.append(name, value);
     list.append(row);
@@ -649,7 +651,7 @@ function yearOverYear(container, dated) {
       .filter(({ time }) => new Date(time).getFullYear() === year)
       .sort((a, b) => a.time - b.time)
       .map((activity) => {
-        total += (activity.distance_m ?? 0) / 1000;
+        total += toDistance(activity.distance_m ?? 0);
         const date = new Date(activity.time);
         // Moved to this year, so that all years share one axis. Leap days land on March 1.
         return [new Date(base, date.getMonth(), date.getDate()).getTime(), total];
@@ -659,7 +661,7 @@ function yearOverYear(container, dated) {
   chart(card(container, "Year over year", "Distance so far in each year"), {
     kind: "line",
     series,
-    format: unit(0, "km"),
+    format: unit(0, distanceUnit),
     label: t("Distance so far in each year"),
     // A total goes on between activities, so its line never breaks.
     maxGap: Infinity,

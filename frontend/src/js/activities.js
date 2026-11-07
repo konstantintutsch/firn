@@ -1,5 +1,7 @@
 import { activityDetails, activityTitle, plural, requireAccount, setUpSync, t, typeName } from "/js/account.js";
+import { language } from "/js/i18n.js";
 import { setUpFilters } from "/js/filters.js";
+import { distanceUnit, toDistance } from "/js/units.js";
 
 const PAGE_SIZE = 50;
 const SEARCH_DELAY_MS = 300;
@@ -109,13 +111,13 @@ function monthHeading(month) {
   item.className = "month-heading";
   const [year, number] = month.split("-").map(Number);
   const name = document.createElement("strong");
-  name.textContent = new Date(year, number - 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  name.textContent = new Date(year, number - 1).toLocaleDateString(language, { month: "long", year: "numeric" });
   item.append(name);
   const totals = months.get(month);
   if (totals) {
     const summary = document.createElement("span");
-    const km = Math.round(totals.meters / 1000).toLocaleString();
-    summary.textContent = `${plural(totals.count, "activity", "activities")} · ${km} km`;
+    const shown = Math.round(toDistance(totals.meters)).toLocaleString(language);
+    summary.textContent = `${plural(totals.count, "activity", "activities")} · ${shown} ${distanceUnit}`;
     item.append(summary);
   }
   return item;

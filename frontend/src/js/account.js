@@ -1,6 +1,7 @@
 /** The signed-in account, the settings page and the theme, shared by all pages. */
 
 import { language, plural, t, typeName } from "/js/i18n.js";
+import { distanceUnit, toDistance } from "/js/units.js";
 
 export { plural, t, typeName };
 
@@ -179,19 +180,57 @@ export function setUpSettings() {
     }
   });
 
+  const accountMessage = document.querySelector("#account-message");
   document.querySelector("#sign-out").addEventListener("click", async () => {
     try {
       const response = await send("/api/auth/logout", { method: "POST" });
       if (!response.ok) {
-        message.textContent = await errorMessage(response, t("Could not sign out."));
+        accountMessage.textContent = await errorMessage(response, t("Could not sign out."));
         return;
       }
     } catch {
-      message.textContent = t("Could not reach the API. Is it running?");
+      accountMessage.textContent = t("Could not reach the API. Is it running?");
       return;
     }
     location.reload();
   });
+
+  document.querySelector("#delete-account").addEventListener("click", async () => {
+    const warning = t(
+      "Delete your account? All activities, files, photos and health data in Runmap are deleted for good. Your data on Garmin Connect stays.",
+    );
+    if (!confirm(warning)) return;
+    try {
+      const response = await send("/api/me", { method: "DELETE" });
+      if (!response.ok) {
+        accountMessage.textContent = await errorMessage(response, t("Could not delete the account."));
+        return;
+      }
+    } catch {
+      accountMessage.textContent = t("Could not reach the API. Is it running?");
+      return;
+    }
+    location.href = "/";
+  });
+
+  showLastSync();
+}
+
+/** When the last sync ended, on the settings page. */
+async function showLastSync() {
+  const element = document.querySelector("#last-sync");
+  try {
+    const response = await fetch("/api/sync");
+    if (!response.ok) return;
+    const { finished_at: finished, state } = await response.json();
+    if (state === "running") element.textContent = t("A sync is running.");
+    else if (finished) {
+      const time = new Date(finished).toLocaleString(language, { dateStyle: "medium", timeStyle: "short" });
+      element.textContent = t("Last sync: {time}", { time });
+    } else element.textContent = t("Not synced yet.");
+  } catch {
+    // The rest of the page works without it.
+  }
 }
 
 export function activityTitle({ name, activity_type: type }) {
@@ -199,10 +238,10 @@ export function activityTitle({ name, activity_type: type }) {
 }
 
 export function activityDetails({ started_at: started, distance_m: distance, duration_s: duration, location }) {
-  const parts = [new Date(started).toLocaleDateString()];
+  const parts = [new Date(started).toLocaleDateString(language)];
   if (distance != null) {
-    const km = (distance / 1000).toLocaleString(language, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-    parts.push(`${km} km`);
+    const shown = toDistance(distance).toLocaleString(language, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    parts.push(`${shown} ${distanceUnit}`);
   }
   if (duration != null) parts.push(`${Math.round(duration / 60)} min`);
   if (location) parts.push(location);

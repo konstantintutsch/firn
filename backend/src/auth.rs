@@ -465,6 +465,40 @@ pub async fn logout(
     Ok(response)
 }
 
+/// Deletes the account with all its activities, files, health data and
+/// sessions, and signs out. This cannot be undone.
+///
+/// Requires the `X-Requested-With` header.
+#[utoipa::path(
+    delete,
+    path = "/api/me",
+    responses(
+        (status = 204, description = "The account is deleted"),
+        (status = 401, description = "Not signed in", body = ErrorBody),
+        (status = 403, description = "The header is missing", body = ErrorBody),
+    )
+)]
+pub async fn delete_me(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    require_header(&headers)?;
+    state.cancel_sync(user.id);
+    // The files first: once the rows are gone, nothing says which files were the account's.
+    for id in db::activity_ids(&state.pool, user.id).await? {
+        state.files.remove_activity(id).await?;
+    }
+    db::delete_user(&state.pool, user.id).await?;
+    state.forget_tracks(user.id);
+    tracing::info!(user_id = user.id, "deleted an account");
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    response
+        .headers_mut()
+        .insert(SET_COOKIE, state.auth.cookie(SESSION_COOKIE, "", 0, "/"));
+    Ok(response)
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct Me {
     id: i64,

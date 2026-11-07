@@ -3,7 +3,7 @@
  * tooltip and a table of the values. Colors come from the --series-* tokens.
  */
 
-import { t } from "/js/i18n.js";
+import { language, t } from "/js/i18n.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const HEIGHT = 200;
@@ -55,13 +55,13 @@ export function niceTicks(min, max, count = 4) {
 }
 
 export function formatDay(time) {
-  return new Date(time).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  return new Date(time).toLocaleDateString(language, { day: "numeric", month: "short", year: "numeric" });
 }
 
 function shortDay(time, spanDays) {
   const options =
     spanDays > 400 ? { month: "short", year: "numeric" } : { day: "numeric", month: "short" };
-  return new Date(time).toLocaleDateString(undefined, options);
+  return new Date(time).toLocaleDateString(language, options);
 }
 
 /** A rectangle with 4px rounded corners at the top, square at the baseline. */

@@ -731,6 +731,14 @@ pub async fn save_last_sync(pool: &Pool, user_id: i64, status: &Value) -> Result
     Ok(())
 }
 
+/// Deletes an account. Its activities, health data and sessions go with it.
+pub async fn delete_user(pool: &Pool, user_id: i64) -> Result<()> {
+    diesel::delete(users::table.find(user_id))
+        .execute(&mut pool.get().await?)
+        .await?;
+    Ok(())
+}
+
 /// The accounts that have a Garmin key, for the automatic sync.
 pub async fn users_with_keys(pool: &Pool) -> Result<Vec<User>> {
     Ok(users::table

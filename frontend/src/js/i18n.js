@@ -1,9 +1,21 @@
 /**
  * Translations. The English text is the key, so that a missing translation
- * falls back to English. German is used if the browser prefers it to English.
+ * falls back to English. German is used if chosen in the settings, or else if
+ * the browser prefers it to English.
  */
 
-const preferred = (navigator.languages ?? [navigator.language]).find((tag) => /^(de|en)\b/i.test(tag));
+export const LANGUAGE_STORAGE_KEY = "language";
+
+function chosenLanguage() {
+  try {
+    return localStorage.getItem(LANGUAGE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+const preferred =
+  chosenLanguage() ?? (navigator.languages ?? [navigator.language]).find((tag) => /^(de|en)\b/i.test(tag));
 export const language = preferred?.toLowerCase().startsWith("de") ? "de" : "en";
 
 const GERMAN = {
@@ -47,6 +59,20 @@ const GERMAN = {
     "Garmin-Schlüssel entfernen? Deine gespeicherten Daten bleiben erhalten, aber du kannst erst wieder synchronisieren, wenn du einen Schlüssel hinzufügst.",
   "Could not sign out.": "Abmelden hat nicht funktioniert.",
   "Original file": "Originaldatei",
+  Units: "Einheiten",
+  "Kilometers and meters": "Kilometer und Meter",
+  "Miles and feet": "Meilen und Fuß",
+  Language: "Sprache",
+  Account: "Konto",
+  "Delete account": "Konto löschen",
+  "Delete your account? All activities, files, photos and health data in Runmap are deleted for good. Your data on Garmin Connect stays.":
+    "Konto löschen? Alle Aktivitäten, Dateien, Fotos und Gesundheitsdaten in Runmap werden endgültig gelöscht. Deine Daten bei Garmin Connect bleiben.",
+  "Could not delete the account.": "Das Konto konnte nicht gelöscht werden.",
+  "A sync is running.": "Eine Synchronisierung läuft.",
+  "Last sync: {time}": "Letzte Synchronisierung: {time}",
+  "Not synced yet.": "Noch nicht synchronisiert.",
+  "Min.": "Min.",
+  "Max.": "Max.",
   Sort: "Sortierung",
   "Newest first": "Neueste zuerst",
   "Oldest first": "Älteste zuerst",
@@ -388,7 +414,7 @@ export function t(text, values = {}) {
 
 /** The count with the singular or plural English noun, translated. */
 export function plural(count, one, other) {
-  return `${count.toLocaleString()} ${t(count === 1 ? one : other)}`;
+  return `${count.toLocaleString(language)} ${t(count === 1 ? one : other)}`;
 }
 
 export function typeName(type) {

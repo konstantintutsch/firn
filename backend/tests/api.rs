@@ -1126,3 +1126,49 @@ async fn ordered_ids(pool: &Pool, query: &str) -> Vec<i64> {
         .map(|activity| activity["id"].as_i64().unwrap())
         .collect()
 }
+
+#[tokio::test]
+async fn deleting_the_account_removes_its_data_and_files() {
+    let pool = common::test_pool().await;
+    add_two_activities(&pool).await;
+    let files = common::files(&pool).await;
+    files.save_original(1, Some(b"zip")).await.unwrap();
+    let other = common::user_named(&pool, "other").await;
+    let state = common::state(pool.clone(), "http://unused", None).await;
+    let cookie = common::cookie(&pool).await;
+
+    let delete = |cookie: &str, header: bool| {
+        let mut request = Request::delete("/api/me").header("cookie", cookie);
+        if header {
+            request = request.header("x-requested-with", "runmap");
+        }
+        router(state.clone()).oneshot(request.body(Body::empty()).unwrap())
+    };
+    assert_eq!(
+        delete(&cookie, false).await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
+    let response = delete(&cookie, true).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(
+        response.headers()["set-cookie"]
+            .to_str()
+            .unwrap()
+            .contains("Max-Age=0")
+    );
+
+    assert_eq!(
+        get_with(&pool, "/api/me", Some(&cookie)).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(db::owner(&pool, 1).await.unwrap(), None);
+    assert_eq!(files.original(1).await.unwrap(), None);
+    // Other accounts stay.
+    let (status, _) = get_with(
+        &pool,
+        "/api/me",
+        Some(&common::cookie_for(&pool, other).await),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}

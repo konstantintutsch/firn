@@ -1,9 +1,41 @@
 import { errorMessage, plural, requireAccount, setUpSettings, setUpSync, t } from "/js/account.js";
+import { LANGUAGE_STORAGE_KEY } from "/js/i18n.js";
+import { setUnits, units } from "/js/units.js";
 
 await requireAccount();
 setUpSettings();
 setUpSync(() => {});
 setUpImport();
+// Both apply to every page, so a reload shows the change everywhere at once.
+setUpChoice("#units-picker", units, (choice) => setUnits(choice));
+setUpChoice("#language-picker", chosenLanguage(), (choice) => {
+  try {
+    if (choice) localStorage.setItem(LANGUAGE_STORAGE_KEY, choice);
+    else localStorage.removeItem(LANGUAGE_STORAGE_KEY);
+  } catch {}
+});
+
+function chosenLanguage() {
+  try {
+    return localStorage.getItem(LANGUAGE_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** Buttons that pick one choice, which `save` keeps before the page reloads. */
+function setUpChoice(selector, current, save) {
+  const buttons = [...document.querySelectorAll(`${selector} [data-choice]`)];
+  for (const button of buttons) {
+    button.setAttribute("aria-pressed", String(button.dataset.choice === current));
+    button.addEventListener("click", () => {
+      if (button.dataset.choice === current) return;
+      save(button.dataset.choice);
+      location.reload();
+    });
+  }
+}
+
 
 /** Uploads a ZIP to import. Through XMLHttpRequest, since fetch cannot report upload progress. */
 function setUpImport() {

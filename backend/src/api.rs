@@ -64,6 +64,7 @@ struct CachedTracks {
         auth::callback,
         auth::logout,
         auth::me,
+        auth::delete_me,
         auth::set_garmin_key,
         auth::delete_garmin_key,
         statistics::activity_statistics,
@@ -154,7 +155,7 @@ impl AppState {
     }
 
     /// Makes the next request load the account's tracks again, after a sync changed them.
-    fn forget_tracks(&self, user_id: i64) {
+    pub(crate) fn forget_tracks(&self, user_id: i64) {
         self.tracks.lock().unwrap().remove(&user_id);
     }
 }
@@ -184,7 +185,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/auth/login", get(auth::login))
         .route("/api/auth/callback", get(auth::callback))
         .route("/api/auth/logout", post(auth::logout))
-        .route("/api/me", get(auth::me))
+        .route("/api/me", get(auth::me).delete(auth::delete_me))
         .route(
             "/api/me/garmin-key",
             put(auth::set_garmin_key).delete(auth::delete_garmin_key),

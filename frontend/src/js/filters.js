@@ -1,4 +1,6 @@
-import { typeName } from "/js/account.js";
+import { t, typeName } from "/js/account.js";
+import { language } from "/js/i18n.js";
+import { DISTANCE_M, distanceUnit } from "/js/units.js";
 
 const STORAGE_KEY = "filters";
 const DAY_MS = 86_400_000;
@@ -18,6 +20,10 @@ export function localDay(time) {
  */
 export function setUpFilters({ withoutGps = false, onChange }) {
   const form = document.querySelector("#filters");
+  // The fields keep their names, but take miles where those are chosen.
+  for (const [name, label] of [["min_distance_km", "Min."], ["max_distance_km", "Max."]]) {
+    form.elements[name].closest("label").querySelector("span").textContent = `${t(label)} ${distanceUnit}`;
+  }
   const filterCount = document.querySelector("#filter-count");
   const typesField = document.querySelector("#types-field");
   const typesElement = document.querySelector("#types");
@@ -115,8 +121,8 @@ export function setUpFilters({ withoutGps = false, onChange }) {
         const value = values.get(from);
         if (value !== "") query.set(to, Number(value) * scale);
       };
-      setScaled("min_distance_km", "min_distance_m", 1000);
-      setScaled("max_distance_km", "max_distance_m", 1000);
+      setScaled("min_distance_km", "min_distance_m", DISTANCE_M);
+      setScaled("max_distance_km", "max_distance_m", DISTANCE_M);
       setScaled("min_duration_min", "min_duration_s", 60);
       setScaled("max_duration_min", "max_duration_s", 60);
       return query;
@@ -141,7 +147,7 @@ export function setUpFilters({ withoutGps = false, onChange }) {
           input.value = type;
           input.checked = checkedTypes.includes(type);
           const count = document.createElement("small");
-          count.textContent = activities.toLocaleString();
+          count.textContent = activities.toLocaleString(language);
           label.append(input, typeName(type), count);
           return label;
         }),

@@ -59,8 +59,27 @@
           <button class="panel-button" type="button" data-theme-choice="light" data-i18n>Light mode</button>
           <button class="panel-button" type="button" data-theme-choice="dark" data-i18n>Dark mode</button>
         </div>
+        <h3 data-i18n>Units</h3>
+        <div id="units-picker" class="theme-picker" role="group" aria-label="Units" data-i18n-attrs="aria-label">
+          <button class="panel-button" type="button" data-choice="metric" data-i18n>Kilometers and meters</button>
+          <button class="panel-button" type="button" data-choice="imperial" data-i18n>Miles and feet</button>
+        </div>
+        <h3 data-i18n>Language</h3>
+        <div id="language-picker" class="theme-picker" role="group" aria-label="Language" data-i18n-attrs="aria-label">
+          <button class="panel-button" type="button" data-choice="" data-i18n>System</button>
+          <button class="panel-button" type="button" data-choice="en">English</button>
+          <button class="panel-button" type="button" data-choice="de">Deutsch</button>
+        </div>
       </section>
-      <button id="sign-out" class="panel-button" type="button" data-i18n>Sign out</button>
+      <section class="card">
+        <h2 data-i18n>Account</h2>
+        <p id="last-sync" class="muted"></p>
+        <div class="panel-actions">
+          <button id="sign-out" class="panel-button" type="button" data-i18n>Sign out</button>
+          <button id="delete-account" class="panel-button danger-button" type="button" data-i18n>Delete account</button>
+        </div>
+        <p id="account-message" role="status"></p>
+      </section>
     </main>
     {% include "nav.njk" %}
     {% include "account.njk" %}
