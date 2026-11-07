@@ -1326,13 +1326,11 @@ a.activity:hover {
 /*
  * Pages cross-fade into each other, while the navigation bar stays put and its highlight slides over.
  * Each item is captured on its own and drawn above the highlight, so the icons stay in place.
+ * The bar itself stays in the page's snapshot: Safari draws a frosted element captured on its own
+ * with square corners.
  */
 @view-transition {
   navigation: auto;
-}
-
-.nav {
-  view-transition-name: nav;
 }
 
 .nav-item[href="/"] {
