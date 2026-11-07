@@ -26,7 +26,10 @@ const THEMES = {
 };
 const THEME_STORAGE_KEY = "theme";
 const SOURCE_ID = "runs";
+const HEAT_LAYER_ID = "runs-heat";
 const REFRESH_DELAY_MS = 150;
+/** Radius at the zoom the grid was built for, where cells are 2 px apart. */
+const HEAT_RADIUS_PX = 3;
 /** Fetches beyond the viewport so that small pans do not show empty edges. */
 const VIEWPORT_PADDING = 0.25;
 
@@ -46,6 +49,8 @@ const map = new maplibregl.Map({
   maxZoom: 18,
   renderWorldCopies: false,
   hash: true,
+  // MapLibre draws heat at a quarter of the canvas resolution, which is coarse at 1x.
+  pixelRatio: Math.max(devicePixelRatio, 2),
 });
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
@@ -53,25 +58,26 @@ let pendingRequest = null;
 let refreshTimer = null;
 let hasRuns = false;
 let cells = [];
+let gridZoom = 0;
 let isFirstStyle = true;
 
 // Fires again after each theme change, because a new style drops source and layer.
 map.on("style.load", () => {
-  map.addSource(SOURCE_ID, { type: "geojson", data: toGeoJson(cells), tolerance: 0 });
+  map.addSource(SOURCE_ID, { type: "geojson", data: toGeoJson(cells), tolerance: 0, buffer: 512 });
   map.addLayer(
     {
-      id: "runs-heat",
+      id: HEAT_LAYER_ID,
       type: "heatmap",
       source: SOURCE_ID,
       paint: {
         "heatmap-weight": ["get", "weight"],
-        "heatmap-radius": 10,
-        // A lone cell of maximum weight peaks at 0.4 times this, a line at about 0.6.
-        "heatmap-intensity": 2,
+        "heatmap-radius": heatRadius(),
+        // A lone cell of maximum weight peaks at 0.4 times this, a line at about 0.75.
+        "heatmap-intensity": 1.7,
         "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"], ...THEMES[theme].heatStops],
       },
     },
-    firstLabelLayer(),
+    layerAboveHeat(),
   );
   if (isFirstStyle) {
     isFirstStyle = false;
@@ -116,9 +122,10 @@ function updateThemeToggle() {
   themeToggle.setAttribute("aria-label", `Switch to ${theme === "dark" ? "light" : "dark"} mode`);
 }
 
-/** Keeps place names readable by drawing the heat below them. */
-function firstLabelLayer() {
-  return map.getStyle().layers.find((layer) => layer.type === "symbol")?.id;
+/** Draws the heat above roads, which would cut through it, but below the labels on top. */
+function layerAboveHeat() {
+  const layers = map.getStyle().layers;
+  return layers[layers.findLastIndex((layer) => layer.type !== "symbol") + 1]?.id;
 }
 
 async function refresh() {
@@ -129,13 +136,20 @@ async function refresh() {
   try {
     const response = await fetch(`/api/heatmap?${viewportQuery()}`, { signal: request.signal });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    ({ cells } = await response.json());
+    ({ cells, grid_zoom: gridZoom } = await response.json());
     map.getSource(SOURCE_ID)?.setData(toGeoJson(cells));
+    if (map.getLayer(HEAT_LAYER_ID)) map.setPaintProperty(HEAT_LAYER_ID, "heatmap-radius", heatRadius());
     legendElement.hidden = cells.length === 0;
     if (hasRuns) showStatus("");
   } catch (error) {
     if (error.name !== "AbortError") showStatus("Could not load runs. Is the API running?");
   }
+}
+
+/** Grows with the map, so the heat keeps its place and size while zooming. */
+function heatRadius() {
+  const radiusAt = (zoom) => HEAT_RADIUS_PX * 2 ** (zoom - gridZoom);
+  return ["interpolate", ["exponential", 2], ["zoom"], 0, radiusAt(0), 24, radiusAt(24)];
 }
 
 function viewportQuery() {

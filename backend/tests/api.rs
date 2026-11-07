@@ -108,6 +108,19 @@ async fn lower_zoom_merges_nearby_points() {
 }
 
 #[tokio::test]
+async fn grid_stops_getting_finer_at_the_maximum_zoom() {
+    let pool = common::test_pool().await;
+    add_run(&pool, 1, &[BERLIN]).await;
+
+    let (_, requested) = get(&pool, &format!("/api/heatmap?zoom=12&{WORLD}")).await;
+    assert_eq!(requested["grid_zoom"], 12);
+    let (_, finest) = get(&pool, &format!("/api/heatmap?zoom=15&{WORLD}")).await;
+    let (_, capped) = get(&pool, &format!("/api/heatmap?zoom=22&{WORLD}")).await;
+    assert_eq!(capped["grid_zoom"], 15);
+    assert_eq!(capped["cells"], finest["cells"]);
+}
+
+#[tokio::test]
 async fn rejects_invalid_viewports() {
     let pool = common::test_pool().await;
     for query in [

@@ -14,8 +14,10 @@ use crate::db::{self, Bounds, GridCell, Pool};
 const MAX_ZOOM: u8 = 22;
 /// World width in pixels at zoom 0 for MapLibre's 512 px tiles.
 const WORLD_PIXELS: f64 = 512.0;
-/// Fine enough that a track still reads as a line, coarse enough to stay cheap.
-const CELL_PIXELS: f64 = 8.0;
+const CELL_PIXELS: f64 = 2.0;
+/// A cell is about 3 m here. GPS tracks are sampled every few meters, so finer
+/// cells would break tracks into dots.
+const MAX_GRID_ZOOM: u8 = 15;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -70,7 +72,7 @@ impl From<anyhow::Error> for ApiError {
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 struct HeatmapQuery {
-    /// Map zoom level from 0 to 22. Sets the grid resolution.
+    /// Map zoom level from 0 to 22. Sets the grid resolution, up to the finest grid.
     zoom: u8,
     /// Western edge of the viewport, from -180 to 180 degrees.
     west: f64,
@@ -92,6 +94,9 @@ struct HeatCell {
 
 #[derive(Serialize, ToSchema)]
 struct Heatmap {
+    /// Zoom level that the grid was built for. Lower than the requested zoom
+    /// when that exceeds the finest grid.
+    grid_zoom: u8,
     cells: Vec<HeatCell>,
 }
 
@@ -124,7 +129,8 @@ async fn heatmap(
         return Err(ApiError::BadRequest("invalid viewport"));
     }
 
-    let cell_size = cell_size(query.zoom);
+    let grid_zoom = query.zoom.min(MAX_GRID_ZOOM);
+    let cell_size = cell_size(grid_zoom);
     let bounds = Bounds {
         west: query.west,
         south: query.south,
@@ -136,7 +142,7 @@ async fn heatmap(
         .iter()
         .map(|cell| to_heat_cell(cell, cell_size))
         .collect();
-    Ok(Json(Heatmap { cells }))
+    Ok(Json(Heatmap { grid_zoom, cells }))
 }
 
 fn cell_size(zoom: u8) -> f64 {
