@@ -79,6 +79,9 @@ const filters = setUpFilters({ onChange: applyFilters });
 
 let theme = currentTheme();
 
+// Without a view in the link, the map starts around the activities, not the whole world.
+let fitToActivities = !location.hash && !new URLSearchParams(location.search).has("activity");
+
 const map = new maplibregl.Map({
   container: "map",
   style: THEMES[theme].styleUrl,
@@ -322,7 +325,12 @@ async function loadStats() {
   try {
     const response = await fetch(`/api/stats?${query}`, { signal: request.signal });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const { activities, distance_m: distance } = await response.json();
+    const { activities, distance_m: distance, bounds } = await response.json();
+    if (fitToActivities && bounds) {
+      const [west, south, east, north] = bounds;
+      map.fitBounds([[west, south], [east, north]], { padding: fitPadding(), maxZoom: 13, animate: false });
+    }
+    fitToActivities = false;
     const km = Math.round(distance / 1000).toLocaleString();
     statsElement.textContent = `${plural(activities, "activity", "activities")} · ${km} km`;
     if (activities > 0) {

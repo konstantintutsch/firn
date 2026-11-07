@@ -401,6 +401,14 @@ async fn heatmap(
     }))
 }
 
+/// West, south, east and north edges in degrees.
+fn to_degree_bounds(bounds: Viewport) -> [f64; 4] {
+    // Mercator y grows southward, so the largest y is the south edge.
+    let [west, south] = to_degrees([bounds.min[0], bounds.max[1]]);
+    let [east, north] = to_degrees([bounds.max[0], bounds.min[1]]);
+    [west, south, east, north]
+}
+
 fn to_degrees(position: Position) -> Position {
     heatmap::unproject(position)
         .map(|degrees| (degrees * COORDINATE_SCALE).round() / COORDINATE_SCALE)
@@ -491,12 +499,7 @@ async fn activities(
         activities: found
             .into_iter()
             .map(|activity| {
-                let bounds = bounds.get(&activity.id).map(|bounds| {
-                    // Mercator y grows southward, so the largest y is the south edge.
-                    let [west, south] = to_degrees([bounds.min[0], bounds.max[1]]);
-                    let [east, north] = to_degrees([bounds.max[0], bounds.min[1]]);
-                    [west, south, east, north]
-                });
+                let bounds = bounds.get(&activity.id).copied().map(to_degree_bounds);
                 ActivityItem::new(activity, bounds)
             })
             .collect(),
@@ -969,6 +972,9 @@ async fn activity_types(
 struct Stats {
     activities: i64,
     distance_m: f64,
+    /// West, south, east and north edges around all matching tracks, in degrees.
+    #[schema(value_type = Option<Vec<f64>>)]
+    bounds: Option<[f64; 4]>,
 }
 
 /// Totals across the matching activities with GPS.
@@ -986,10 +992,22 @@ async fn stats(
     CurrentUser(user): CurrentUser,
     Query(filter): Query<FilterQuery>,
 ) -> Result<Json<Stats>, ApiError> {
-    let totals = db::totals(&state.pool, &filter.into_filter(user.id)).await?;
+    let filter = filter.into_filter(user.id);
+    let totals = db::totals(&state.pool, &filter).await?;
+    let matching = db::matching_ids(&state.pool, &filter).await?;
+    let tracks = state.tracks(user.id).await?;
+    let bounds = tracks
+        .iter()
+        .filter(|activity| matching.contains(&activity.id))
+        .map(|activity| activity.bounds)
+        .reduce(|all, bounds| Viewport {
+            min: [all.min[0].min(bounds.min[0]), all.min[1].min(bounds.min[1])],
+            max: [all.max[0].max(bounds.max[0]), all.max[1].max(bounds.max[1])],
+        });
     Ok(Json(Stats {
         activities: totals.activities,
         distance_m: totals.distance_m,
+        bounds: bounds.map(to_degree_bounds),
     }))
 }
 

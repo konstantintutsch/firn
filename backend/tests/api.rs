@@ -249,6 +249,7 @@ async fn stats_sum_all_runs() {
     let (_, empty) = get(&pool, "/api/stats").await;
     assert_eq!(empty["activities"], 0);
     assert_eq!(empty["distance_m"], 0.0);
+    assert_eq!(empty["bounds"], Value::Null);
 
     add_run(&pool, 1, &[BERLIN]).await;
     add_run(&pool, 2, &[SYDNEY]).await;
@@ -257,6 +258,13 @@ async fn stats_sum_all_runs() {
     let (_, body) = get(&pool, "/api/stats").await;
     assert_eq!(body["activities"], 2);
     assert_eq!(body["distance_m"], 2000.0);
+    let bounds: Vec<f64> = serde_json::from_value(body["bounds"].clone()).unwrap();
+    let expected = [BERLIN.lon, SYDNEY.lat, SYDNEY.lon, BERLIN.lat];
+    for (actual, expected) in bounds.iter().zip(expected) {
+        assert!((actual - expected).abs() < 1e-6, "{bounds:?}");
+    }
+    let (_, filtered) = get(&pool, "/api/stats?id=1").await;
+    assert!((filtered["bounds"][0].as_f64().unwrap() - BERLIN.lon).abs() < 1e-6);
 }
 
 const NEAR_BERLIN: Point = Point {
