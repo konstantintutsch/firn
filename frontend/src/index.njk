@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="/css/style.css">
   </head>
   <body>
-    <main id="map" aria-label="Heatmap of all runs"></main>
+    <main id="map" aria-label="Heatmap of all activities"></main>
     <section class="panel">
       <div class="panel-header">
         <h1>Runmap</h1>
@@ -24,12 +24,45 @@
           <button id="theme-toggle" class="panel-button" type="button"></button>
         </div>
       </div>
+      <div class="search">
+        <input id="search" type="search" placeholder="Search places and activities" aria-label="Search places and activities" autocomplete="off">
+        <div id="search-results" class="search-results" hidden></div>
+      </div>
+      <p id="selection" hidden>
+        <span id="selection-name"></span>
+        <button id="selection-clear" class="panel-button" type="button">Show all</button>
+      </p>
       <p id="stats"></p>
       <p id="status" role="status"></p>
       <p id="sync-status" role="status"></p>
+      <details class="filters">
+        <summary>Filters <span id="filter-count"></span></summary>
+        <form id="filters">
+          <fieldset id="types-field" hidden>
+            <legend>Activity type</legend>
+            <div id="types" class="types"></div>
+          </fieldset>
+          <label>Title <input name="title" type="search" autocomplete="off"></label>
+          <label>Description <input name="description" type="search" autocomplete="off"></label>
+          <label>Location <input name="location" type="search" autocomplete="off"></label>
+          <div class="range">
+            <label>Min. km <input name="min_distance_km" type="number" min="0" step="any"></label>
+            <label>Max. km <input name="max_distance_km" type="number" min="0" step="any"></label>
+          </div>
+          <div class="range">
+            <label>Min. minutes <input name="min_duration_min" type="number" min="0" step="any"></label>
+            <label>Max. minutes <input name="max_duration_min" type="number" min="0" step="any"></label>
+          </div>
+          <div class="range">
+            <label>From <input name="from" type="date"></label>
+            <label>To <input name="to" type="date"></label>
+          </div>
+          <button class="panel-button" type="reset">Clear filters</button>
+        </form>
+      </details>
       <div class="legend" id="legend" hidden>
         <div class="legend-ramp"></div>
-        <div class="legend-labels"><span>Fewer runs</span><span>More runs</span></div>
+        <div class="legend-labels"><span>Fewer activities</span><span>More activities</span></div>
       </div>
     </section>
     <script type="module" src="/js/heatmap.js"></script>

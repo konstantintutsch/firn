@@ -24,14 +24,23 @@ const THEMES = {
 };
 const THEME_STORAGE_KEY = "theme";
 const SYNC_POLL_MS = 1000;
-const SOURCE_ID = "runs";
-const HEAT_LAYER_ID = "runs-heat";
-const DOT_LAYER_ID = "runs-dots";
-/** Below this zoom a run can be too short to draw as a line, so it also gets a faint dot. */
+const SOURCE_ID = "activities";
+const HEAT_LAYER_ID = "activities-heat";
+const DOT_LAYER_ID = "activities-dots";
+/** Below this zoom an activity can be too short to draw as a line, so it also gets a faint dot. */
 const DOT_MAX_ZOOM = 9;
 const REFRESH_DELAY_MS = 150;
 /** Fetches beyond the viewport so that small pans do not show empty edges. */
 const VIEWPORT_PADDING = 0.25;
+const PLACE_SEARCH_URL = "https://photon.komoot.io/api/";
+const PLACE_LIMIT = 5;
+/** Place search is a shared service, so it only hears from us after typing pauses. */
+const SEARCH_DELAY_MS = 350;
+const FILTER_DELAY_MS = 300;
+const MIN_PLACE_QUERY_LENGTH = 3;
+const PLACE_ZOOM = 14;
+const FIT_PADDING = 60;
+const NOT_LOADED = "Could not load activities. Is the API running?";
 
 const statsElement = document.querySelector("#stats");
 const statusElement = document.querySelector("#status");
@@ -39,6 +48,15 @@ const legendElement = document.querySelector("#legend");
 const themeToggle = document.querySelector("#theme-toggle");
 const syncButton = document.querySelector("#sync-button");
 const syncStatusElement = document.querySelector("#sync-status");
+const searchInput = document.querySelector("#search");
+const searchResults = document.querySelector("#search-results");
+const selectionElement = document.querySelector("#selection");
+const selectionName = document.querySelector("#selection-name");
+const selectionClear = document.querySelector("#selection-clear");
+const filtersForm = document.querySelector("#filters");
+const filterCount = document.querySelector("#filter-count");
+const typesField = document.querySelector("#types-field");
+const typesElement = document.querySelector("#types");
 const systemDark = matchMedia("(prefers-color-scheme: dark)");
 
 let theme = currentTheme();
@@ -56,7 +74,11 @@ map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-ri
 
 let pendingRequest = null;
 let refreshTimer = null;
-let hasRuns = false;
+let pendingStats = null;
+let pendingSearch = null;
+let searchTimer = null;
+let filterTimer = null;
+let selectedId = null;
 let lines = [];
 let isFirstStyle = true;
 let isSyncRunning = false;
@@ -99,6 +121,7 @@ map.on("style.load", () => {
   if (isFirstStyle) {
     isFirstStyle = false;
     loadStats();
+    loadTypes();
     refresh();
     pollSync();
   }
@@ -152,14 +175,14 @@ async function refresh() {
   pendingRequest = request;
 
   try {
-    const response = await fetch(`/api/heatmap?${viewportQuery()}`, { signal: request.signal });
+    const query = new URLSearchParams([...viewportQuery(), ...filterQuery()]);
+    const response = await fetch(`/api/heatmap?${query}`, { signal: request.signal });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     ({ lines } = await response.json());
     map.getSource(SOURCE_ID)?.setData(toGeoJson(lines));
     legendElement.hidden = lines.length === 0;
-    if (hasRuns) showStatus("");
   } catch (error) {
-    if (error.name !== "AbortError") showStatus("Could not load runs. Is the API running?");
+    if (error.name !== "AbortError") showStatus(NOT_LOADED);
   }
 }
 
@@ -193,22 +216,272 @@ function toGeoJson(lines) {
   };
 }
 
+/** The active filters as API parameters, or only the selected activity if there is one. */
+function filterQuery() {
+  if (selectedId !== null) return new URLSearchParams({ id: selectedId });
+  const form = new FormData(filtersForm);
+  const query = new URLSearchParams();
+  const types = form.getAll("type");
+  if (types.length > 0) query.set("types", types.join(","));
+  for (const name of ["title", "description", "location", "from", "to"]) {
+    const value = form.get(name).trim();
+    if (value) query.set(name, value);
+  }
+  const setScaled = (from, to, scale) => {
+    const value = form.get(from);
+    if (value !== "") query.set(to, Number(value) * scale);
+  };
+  setScaled("min_distance_km", "min_distance_m", 1000);
+  setScaled("max_distance_km", "max_distance_m", 1000);
+  setScaled("min_duration_min", "min_duration_s", 60);
+  setScaled("max_duration_min", "max_duration_s", 60);
+  return query;
+}
+
 async function loadStats() {
+  pendingStats?.abort();
+  const request = new AbortController();
+  pendingStats = request;
+
+  const query = filterQuery();
   try {
-    const response = await fetch("/api/stats");
+    const response = await fetch(`/api/stats?${query}`, { signal: request.signal });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const { runs, distance_m: distance } = await response.json();
-    hasRuns = runs > 0;
-    if (hasRuns) {
-      const km = Math.round(distance / 1000).toLocaleString();
-      statsElement.textContent = `${plural(runs, "run")} · ${km} km`;
+    const { activities, distance_m: distance } = await response.json();
+    const km = Math.round(distance / 1000).toLocaleString();
+    statsElement.textContent = `${plural(activities, "activity")} · ${km} km`;
+    if (activities > 0) {
+      showStatus("");
+    } else if (query.size > 0) {
+      showStatus("No activities match these filters.");
     } else {
-      showStatus("No runs saved yet. Select Sync to save them from Garmin.");
+      statsElement.textContent = "";
+      showStatus("No activities saved yet. Select Sync to save them from Garmin.");
     }
-  } catch {
-    showStatus("Could not load runs. Is the API running?");
+  } catch (error) {
+    if (error.name !== "AbortError") showStatus(NOT_LOADED);
   }
 }
+
+/** Keeps the checked types, because a sync can reload the list at any time. */
+async function loadTypes() {
+  let types;
+  try {
+    const response = await fetch("/api/activity-types");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    ({ types } = await response.json());
+  } catch {
+    return;
+  }
+  const checked = new FormData(filtersForm).getAll("type");
+  typesElement.replaceChildren(
+    ...types.map(({ activity_type: type, activities }) => {
+      const label = document.createElement("label");
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.name = "type";
+      input.value = type;
+      input.checked = checked.includes(type);
+      const count = document.createElement("small");
+      count.textContent = activities.toLocaleString();
+      label.append(input, typeName(type), count);
+      return label;
+    }),
+  );
+  typesField.hidden = types.length === 0;
+}
+
+function typeName(type) {
+  const words = type.replaceAll("_", " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function applyFilters() {
+  const form = new FormData(filtersForm);
+  const count = [...form.values()].filter((value) => value.trim() !== "").length;
+  filterCount.textContent = count > 0 ? `(${count})` : "";
+  select(null);
+  searchNow();
+}
+
+function select(activity) {
+  selectedId = activity?.id ?? null;
+  selectionElement.hidden = activity == null;
+  selectionName.textContent = activity ? activityTitle(activity) : "";
+  loadStats();
+  refresh();
+}
+
+function activityTitle({ name, activity_type: type }) {
+  return name || typeName(type);
+}
+
+function activityDetails({ started_at: started, distance_m: distance, duration_s: duration, location }) {
+  const parts = [new Date(started).toLocaleDateString()];
+  if (distance != null) parts.push(`${(distance / 1000).toFixed(1)} km`);
+  if (duration != null) parts.push(`${Math.round(duration / 60)} min`);
+  if (location) parts.push(location);
+  return parts.join(" · ");
+}
+
+function placeDetails({ properties: { city, state, country, name } }) {
+  return [city, state, country].filter((part) => part && part !== name).join(", ");
+}
+
+function goToPlace({ geometry, properties: { extent } }) {
+  if (extent) {
+    // Photon lists the extent as west, north, east, south.
+    const [west, north, east, south] = extent;
+    map.fitBounds([[west, south], [east, north]], { padding: FIT_PADDING, maxZoom: PLACE_ZOOM });
+  } else {
+    map.flyTo({ center: geometry.coordinates, zoom: PLACE_ZOOM });
+  }
+}
+
+function goToActivity(activity) {
+  select(activity);
+  if (activity.bounds) {
+    const [west, south, east, north] = activity.bounds;
+    map.fitBounds([[west, south], [east, north]], { padding: FIT_PADDING });
+  }
+}
+
+function closeSearch() {
+  searchResults.hidden = true;
+  searchResults.replaceChildren();
+}
+
+function resultButton(title, details, onSelect) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "search-result";
+  const small = document.createElement("small");
+  small.textContent = details;
+  button.append(title, small);
+  button.addEventListener("click", () => {
+    closeSearch();
+    onSelect();
+  });
+  return button;
+}
+
+function resultSection(heading, buttons) {
+  if (buttons.length === 0) return [];
+  const title = document.createElement("div");
+  title.className = "search-heading";
+  title.textContent = heading;
+  return [title, ...buttons];
+}
+
+/** A failure in one source should not hide the results of the other. */
+async function searchNow() {
+  pendingSearch?.abort();
+  const text = searchInput.value.trim();
+  if (!text) {
+    closeSearch();
+    return;
+  }
+  const request = new AbortController();
+  pendingSearch = request;
+  const { signal } = request;
+
+  const [activities, places] = await Promise.allSettled([
+    searchActivities(text, signal),
+    searchPlaces(text, signal),
+  ]);
+  if (signal.aborted) return;
+
+  const sections = [
+    ...resultSection(
+      "Places",
+      (places.value ?? []).map((place) =>
+        resultButton(place.properties.name ?? text, placeDetails(place), () => goToPlace(place)),
+      ),
+    ),
+    ...resultSection(
+      "Activities",
+      (activities.value ?? []).map((activity) =>
+        resultButton(activityTitle(activity), activityDetails(activity), () => goToActivity(activity)),
+      ),
+    ),
+  ];
+  if (sections.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "search-heading";
+    empty.textContent =
+      activities.status === "rejected" && places.status === "rejected"
+        ? "Could not search. Is the API running?"
+        : "Nothing found.";
+    sections.push(empty);
+  }
+  searchResults.replaceChildren(...sections);
+  searchResults.hidden = false;
+}
+
+async function searchActivities(text, signal) {
+  const query = filterQuery();
+  // A selected activity limits the map only, not what can be found next.
+  query.delete("id");
+  query.set("q", text);
+  const response = await fetch(`/api/activities?${query}`, { signal });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return (await response.json()).activities;
+}
+
+async function searchPlaces(text, signal) {
+  if (text.length < MIN_PLACE_QUERY_LENGTH) return [];
+  const query = new URLSearchParams({ q: text, limit: PLACE_LIMIT, lang: "en" });
+  const response = await fetch(`${PLACE_SEARCH_URL}?${query}`, { signal });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return (await response.json()).features;
+}
+
+searchInput.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(searchNow, SEARCH_DELAY_MS);
+});
+
+searchInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    searchResults.querySelector(".search-result")?.click();
+  } else if (event.key === "Escape") {
+    clearTimeout(searchTimer);
+    pendingSearch?.abort();
+    searchInput.value = "";
+    closeSearch();
+  } else if (event.key === "ArrowDown") {
+    event.preventDefault();
+    searchResults.querySelector(".search-result")?.focus();
+  }
+});
+
+searchResults.addEventListener("keydown", (event) => {
+  const buttons = [...searchResults.querySelectorAll(".search-result")];
+  const index = buttons.indexOf(document.activeElement);
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    buttons[index + 1]?.focus();
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    (buttons[index - 1] ?? searchInput).focus();
+  } else if (event.key === "Escape") {
+    searchInput.focus();
+    closeSearch();
+  }
+});
+
+selectionClear.addEventListener("click", () => select(null));
+
+filtersForm.addEventListener("input", () => {
+  clearTimeout(filterTimer);
+  filterTimer = setTimeout(applyFilters, FILTER_DELAY_MS);
+});
+
+// Fires before the form clears its fields, so this has to wait for that to finish.
+filtersForm.addEventListener("reset", () => setTimeout(applyFilters));
+
+filtersForm.addEventListener("submit", (event) => event.preventDefault());
 
 function showStatus(message) {
   statusElement.textContent = message;
@@ -264,21 +537,24 @@ async function pollSync() {
     syncButton.disabled = false;
     syncStatusElement.textContent = syncResult(sync);
     loadStats();
+    loadTypes();
     refresh();
   }
 }
 
 function syncProgress({ to_download: total, downloaded, failed }) {
-  if (total === 0) return "Looking for new runs…";
-  return `Saving run ${Math.min(downloaded + failed + 1, total)} of ${total}…`;
+  if (total === 0) return "Looking for new activities…";
+  return `Saving activity ${Math.min(downloaded + failed + 1, total)} of ${total}…`;
 }
 
 function syncResult({ state, error, downloaded, failed }) {
   if (state === "failed") return error;
-  const saved = downloaded === 0 ? "No new runs." : `Saved ${plural(downloaded, "new run")}.`;
-  return failed === 0 ? saved : `${saved} ${plural(failed, "run")} failed. Sync again to retry.`;
+  const saved =
+    downloaded === 0 ? "No new activities." : `Saved ${plural(downloaded, "new activity")}.`;
+  return failed === 0 ? saved : `${saved} ${plural(failed, "activity")} failed. Sync again to retry.`;
 }
 
 function plural(count, noun) {
-  return `${count.toLocaleString()} ${noun}${count === 1 ? "" : "s"}`;
+  const word = count === 1 ? noun : noun.replace(/y$/, "ie") + "s";
+  return `${count.toLocaleString()} ${word}`;
 }

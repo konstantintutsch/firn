@@ -69,8 +69,8 @@ pub struct Activity {
     pub started_at: DateTime<Utc>,
     pub distance_m: Option<f64>,
     pub duration_s: Option<f64>,
-    /// False for treadmill and indoor runs. Virtual runs also count as false:
-    /// their route is in a virtual world, not where the runner was.
+    /// False for indoor activities. Virtual ones also count as false: their route
+    /// is in a virtual world, not where the athlete was.
     pub has_track: bool,
     pub summary: Value,
 }
@@ -86,6 +86,7 @@ struct RawActivity {
     distance: Option<f64>,
     duration: Option<f64>,
     has_polyline: Option<bool>,
+    start_latitude: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -104,8 +105,9 @@ impl Activity {
         Ok(Self {
             id: raw.activity_id,
             name: raw.activity_name.unwrap_or_default(),
-            has_track: raw.has_polyline != Some(false)
-                && raw.activity_type.type_key != "virtual_run",
+            // The Personal API leaves hasPolyline out, but only sets a start with GPS.
+            has_track: raw.has_polyline.unwrap_or(raw.start_latitude.is_some())
+                && !raw.activity_type.type_key.starts_with("virtual"),
             activity_type: raw.activity_type.type_key,
             started_at,
             distance_m: raw.distance,
@@ -137,8 +139,8 @@ impl GarminClient {
         })
     }
 
-    /// One page of running activities, newest first. Includes all running subtypes.
-    pub async fn list_runs(
+    /// One page of activities of all types, newest first.
+    pub async fn list_activities(
         &mut self,
         start: u32,
         limit: u32,
@@ -147,11 +149,7 @@ impl GarminClient {
             "{}/activitylist-service/activities/search/activities",
             self.base_url
         );
-        let query = [
-            ("start", start.to_string()),
-            ("limit", limit.to_string()),
-            ("activityType", "running".to_owned()),
-        ];
+        let query = [("start", start.to_string()), ("limit", limit.to_string())];
         let response = self
             .send(|http| {
                 http.get(&url)
@@ -256,19 +254,22 @@ mod tests {
     }
 
     #[test]
-    fn indoor_and_virtual_runs_have_no_track() {
-        let activity = |type_key: &str, polyline: Value| {
+    fn indoor_and_virtual_activities_have_no_track() {
+        let activity = |type_key: &str, polyline: Value, latitude: Value| {
             Activity::from_summary(json!({
                 "activityId": 1,
                 "startTimeGMT": "2026-01-02 03:04:05",
                 "activityType": {"typeKey": type_key},
                 "hasPolyline": polyline,
+                "startLatitude": latitude,
             }))
             .unwrap()
         };
-        assert!(activity("running", json!(true)).has_track);
-        assert!(activity("running", Value::Null).has_track);
-        assert!(!activity("treadmill_running", json!(false)).has_track);
-        assert!(!activity("virtual_run", json!(true)).has_track);
+        assert!(activity("running", json!(true), Value::Null).has_track);
+        assert!(activity("cycling", Value::Null, json!(52.5)).has_track);
+        assert!(!activity("strength_training", Value::Null, Value::Null).has_track);
+        assert!(!activity("treadmill_running", json!(false), Value::Null).has_track);
+        assert!(!activity("virtual_run", json!(true), json!(52.5)).has_track);
+        assert!(!activity("virtual_ride", json!(true), json!(52.5)).has_track);
     }
 }

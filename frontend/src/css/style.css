@@ -48,7 +48,9 @@ body {
   position: fixed;
   top: 16px;
   left: 16px;
-  width: min(240px, calc(100vw - 32px));
+  width: min(280px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   box-sizing: border-box;
   padding: 14px 16px;
   background: var(--panel);
@@ -109,10 +111,155 @@ p:empty {
   font-variant-numeric: tabular-nums;
 }
 
+#selection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#selection[hidden] {
+  display: none;
+}
+
+#selection-name {
+  overflow-wrap: anywhere;
+}
+
+#selection-clear {
+  flex: none;
+}
+
 #status,
 #sync-status {
   color: var(--ink-muted);
   overflow-wrap: anywhere;
+}
+
+input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 7px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font: inherit;
+}
+
+.search {
+  margin-top: 10px;
+}
+
+.search-results {
+  margin-top: 6px;
+}
+
+.search-heading {
+  margin: 8px 0 2px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.search-result {
+  display: block;
+  width: 100%;
+  padding: 4px 6px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.search-result:hover,
+.search-result:focus-visible {
+  background: var(--line);
+}
+
+.search-result small {
+  display: block;
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.filters {
+  margin-top: 10px;
+}
+
+.filters summary {
+  cursor: pointer;
+}
+
+#filter-count {
+  color: var(--ink-muted);
+}
+
+#filters {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#filters label {
+  display: block;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+#filters button {
+  justify-self: start;
+}
+
+fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+fieldset[hidden] {
+  display: none;
+}
+
+legend {
+  padding: 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.types {
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+#filters .types label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.types input {
+  width: auto;
+  margin: 0;
+}
+
+.types small {
+  margin-left: auto;
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.range {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
 }
 
 .legend {

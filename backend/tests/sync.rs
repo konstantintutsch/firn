@@ -32,7 +32,7 @@ fn activity(id: i64, type_key: &str, has_polyline: bool) -> Value {
         "activityType": {"typeKey": type_key},
         "distance": 5000.0,
         "duration": 1500.0,
-        "hasPolyline": has_polyline,
+        "startLatitude": has_polyline.then_some(52.5),
     })
 }
 
@@ -51,7 +51,6 @@ async fn mount_list(server: &MockServer, pages: &[Vec<Value>]) {
         Mock::given(method("GET"))
             .and(path(LIST))
             .and(query_param("start", start.to_string()))
-            .and(query_param("activityType", "running"))
             .respond_with(ResponseTemplate::new(200).set_body_json(page))
             .mount(server)
             .await;
@@ -136,7 +135,7 @@ async fn saves_all_pages_and_keeps_raw_data() {
         .unwrap();
     assert_eq!(name, "Run 2");
     assert_eq!(original, Some(original_zip()));
-    assert_eq!(summary["hasPolyline"], true);
+    assert_eq!(summary["startLatitude"], 52.5);
 }
 
 #[tokio::test]
@@ -165,31 +164,36 @@ async fn second_sync_downloads_only_new_runs() {
 }
 
 #[tokio::test]
-async fn runs_without_gps_are_saved_without_a_download() {
+async fn activities_without_gps_are_left_out() {
     let (pool, server) = setup().await;
     mount_list(
         &server,
         &[vec![
             activity(1, "treadmill_running", false),
             activity(2, "virtual_run", true),
+            activity(3, "strength_training", false),
+            activity(4, "cycling", true),
         ]],
     )
     .await;
-    mount_file(&server, 1, 0).await;
-    mount_file(&server, 2, 0).await;
+    for id in 1..=3 {
+        mount_file(&server, id, 0).await;
+    }
+    mount_file(&server, 4, 1).await;
 
     let report = run_sync(&pool, &server).await.unwrap();
     assert_eq!(
         report,
         Report {
-            listed: 2,
-            to_download: 0,
-            downloaded: 0,
+            listed: 1,
+            to_download: 1,
+            downloaded: 1,
             failed: 0
         }
     );
-    assert_eq!(db::totals(&pool).await.unwrap().runs, 2);
-    assert!(db::is_track_synced(&pool, 1).await.unwrap());
+    let totals = db::totals(&pool, &Default::default()).await.unwrap();
+    assert_eq!(totals.activities, 1);
+    assert!(db::is_track_synced(&pool, 4).await.unwrap());
 }
 
 #[tokio::test]
@@ -348,8 +352,8 @@ async fn expiring_token_is_replaced_before_use() {
         .await;
 
     let mut client = common::client(&server);
-    client.list_runs(0, 1).await.unwrap();
-    client.list_runs(0, 1).await.unwrap();
+    client.list_activities(0, 1).await.unwrap();
+    client.list_activities(0, 1).await.unwrap();
 }
 
 #[tokio::test]
@@ -368,8 +372,8 @@ async fn valid_token_is_reused() {
         .await;
 
     let mut client = common::client(&server);
-    client.list_runs(0, 1).await.unwrap();
-    client.list_runs(0, 1).await.unwrap();
+    client.list_activities(0, 1).await.unwrap();
+    client.list_activities(0, 1).await.unwrap();
 }
 
 #[tokio::test]

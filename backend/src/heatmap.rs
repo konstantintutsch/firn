@@ -52,6 +52,27 @@ pub fn project(lat: f64, lon: f64) -> Position {
     ]
 }
 
+/// The smallest viewport around a track, or `None` if it has no points.
+pub fn bounds(track: &[Position]) -> Option<Viewport> {
+    let first = *track.first()?;
+    Some(track.iter().fold(
+        Viewport {
+            min: first,
+            max: first,
+        },
+        |bounds, position| Viewport {
+            min: [
+                bounds.min[0].min(position[0]),
+                bounds.min[1].min(position[1]),
+            ],
+            max: [
+                bounds.max[0].max(position[0]),
+                bounds.max[1].max(position[1]),
+            ],
+        },
+    ))
+}
+
 /// Returns longitude and latitude in degrees.
 pub fn unproject([x, y]: Position) -> Position {
     [
@@ -64,7 +85,11 @@ pub fn unproject([x, y]: Position) -> Position {
 ///
 /// Consecutive points always connect, however far apart: a gap usually means lost
 /// GPS, as in a tunnel, and the straight line shows that the run went through.
-pub fn heat_lines(tracks: &[Track], viewport: &Viewport, zoom: u8) -> Vec<HeatLine> {
+pub fn heat_lines<T: AsRef<[Position]>>(
+    tracks: &[T],
+    viewport: &Viewport,
+    zoom: u8,
+) -> Vec<HeatLine> {
     let pixel = 1.0 / (WORLD_PIXELS * 2f64.powi(zoom.into()));
     let cell = (COUNT_CELL_PIXELS * pixel).max(MIN_COUNT_CELL);
     let nearby = nearby_runs(&runs_per_cell(tracks, viewport, cell), tracks.len());
@@ -84,7 +109,7 @@ pub fn heat_lines(tracks: &[Track], viewport: &Viewport, zoom: u8) -> Vec<HeatLi
     let mut pieces: Vec<(u32, Vec<Position>)> = Vec::new();
     for track in tracks {
         let mut current: Option<(u32, Vec<Position>)> = None;
-        for segment in track.windows(2) {
+        for segment in track.as_ref().windows(2) {
             let Some([a, b]) = clip(segment[0], segment[1], viewport) else {
                 pieces.extend(current.take());
                 continue;
@@ -118,11 +143,15 @@ pub fn heat_lines(tracks: &[Track], viewport: &Viewport, zoom: u8) -> Vec<HeatLi
 type Cell = (i64, i64);
 
 /// The tracks that pass through each cell, without repeats.
-fn runs_per_cell(tracks: &[Track], viewport: &Viewport, cell: f64) -> HashMap<Cell, Vec<u32>> {
+fn runs_per_cell<T: AsRef<[Position]>>(
+    tracks: &[T],
+    viewport: &Viewport,
+    cell: f64,
+) -> HashMap<Cell, Vec<u32>> {
     let mut runs: HashMap<Cell, Vec<u32>> = HashMap::new();
     for (index, track) in tracks.iter().enumerate() {
         let index = index as u32;
-        for segment in track.windows(2) {
+        for segment in track.as_ref().windows(2) {
             let Some([a, b]) = clip(segment[0], segment[1], viewport) else {
                 continue;
             };
@@ -431,8 +460,16 @@ mod tests {
     }
 
     #[test]
+    fn bounds_surround_the_whole_track() {
+        let bounds = bounds(&[[0.5, 0.2], [0.1, 0.4], [0.3, 0.3]]).unwrap();
+        assert_eq!(bounds.min, [0.1, 0.2]);
+        assert_eq!(bounds.max, [0.5, 0.4]);
+        assert!(super::bounds(&[]).is_none());
+    }
+
+    #[test]
     fn no_tracks_mean_no_lines() {
-        assert!(heat_lines(&[], &WORLD, 3).is_empty());
+        assert!(heat_lines::<Track>(&[], &WORLD, 3).is_empty());
         assert!(heat_lines(&[vec![[0.5, 0.5]]], &WORLD, 3).is_empty());
     }
 }

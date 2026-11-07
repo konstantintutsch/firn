@@ -13,7 +13,7 @@ use tracing_subscriber::EnvFilter;
 /// Pause between track downloads, to stay gentle on Garmin's servers.
 const DOWNLOAD_PAUSE: Duration = Duration::from_millis(500);
 
-/// Saves Garmin runs and serves them as a heatmap.
+/// Saves Garmin activities and serves them as a heatmap.
 #[derive(Parser)]
 struct Cli {
     #[arg(long, env = "DATABASE_URL", hide_env_values = true)]

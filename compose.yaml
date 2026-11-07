@@ -62,7 +62,7 @@ services:
       db:
         condition: service_healthy
 
-  # Throwaway database for `just test`, so that tests never touch saved runs.
+  # Throwaway database for `just test`, so that tests never touch saved activities.
   test-db:
     profiles: [dev]
     image: postgres:18-alpine

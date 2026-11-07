@@ -15,8 +15,8 @@ pub struct Report {
     pub failed: usize,
 }
 
-/// Saves every run and its track. Safe to interrupt and rerun: finished runs are
-/// skipped, and only a failed or new run costs a download.
+/// Saves every activity with GPS and its track. Safe to interrupt and rerun: finished
+/// activities are skipped, and only a failed or new one costs a download.
 pub async fn sync_runs(
     pool: &Pool,
     client: &mut GarminClient,
@@ -27,26 +27,22 @@ pub async fn sync_runs(
     let mut start = 0;
     let mut activities = Vec::new();
     loop {
-        let page = client.list_runs(start, PAGE_SIZE).await?;
+        let mut page = client.list_activities(start, PAGE_SIZE).await?;
         if page.is_empty() {
             break;
         }
-        db::upsert_runs(pool, &page).await?;
         start += page.len() as u32;
+        page.retain(|activity| activity.has_track);
+        db::upsert_runs(pool, &page).await?;
         activities.extend(page);
     }
     report.listed = activities.len();
-    tracing::info!(runs = report.listed, "listed runs");
+    tracing::info!(activities = report.listed, "listed activities with GPS");
 
     let mut pending = Vec::new();
     for activity in &activities {
-        if db::is_track_synced(pool, activity.id).await? {
-            continue;
-        }
-        if activity.has_track {
+        if !db::is_track_synced(pool, activity.id).await? {
             pending.push(activity);
-        } else {
-            db::save_track(pool, activity.id, None, &[]).await?;
         }
     }
     report.to_download = pending.len();
@@ -56,7 +52,7 @@ pub async fn sync_runs(
         match save_original(pool, client, activity).await {
             Ok(false) => {
                 report.to_download -= 1;
-                tracing::warn!(id = activity.id, "Garmin has no file for this run");
+                tracing::warn!(id = activity.id, "Garmin has no file for this activity");
             }
             Ok(true) => {
                 report.downloaded += 1;

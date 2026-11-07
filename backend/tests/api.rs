@@ -238,14 +238,206 @@ async fn rejects_invalid_viewports() {
 async fn stats_sum_all_runs() {
     let pool = common::test_pool().await;
     let (_, empty) = get(&pool, "/api/stats").await;
-    assert_eq!(empty["runs"], 0);
+    assert_eq!(empty["activities"], 0);
     assert_eq!(empty["distance_m"], 0.0);
 
     add_run(&pool, 1, &[BERLIN]).await;
-    add_run(&pool, 2, &[]).await;
+    add_run(&pool, 2, &[SYDNEY]).await;
+    // Older syncs saved activities without GPS, which no longer count.
+    add_run(&pool, 3, &[]).await;
     let (_, body) = get(&pool, "/api/stats").await;
-    assert_eq!(body["runs"], 2);
+    assert_eq!(body["activities"], 2);
     assert_eq!(body["distance_m"], 2000.0);
+}
+
+const NEAR_BERLIN: Point = Point {
+    lat: 52.53,
+    lon: 13.41,
+};
+const NEAR_SYDNEY: Point = Point {
+    lat: -33.88,
+    lon: 151.22,
+};
+
+async fn add_activity(pool: &Pool, id: i64, summary: Value, points: &[Point]) {
+    let mut full = json!({
+        "activityId": id,
+        "activityName": "Untitled",
+        "startTimeGMT": "2026-03-01 08:00:00",
+        "startTimeLocal": "2026-03-01 09:00:00",
+        "activityType": {"typeKey": "running"},
+        "distance": 5000.0,
+        "duration": 1800.0,
+    });
+    full.as_object_mut()
+        .unwrap()
+        .extend(summary.as_object().unwrap().clone());
+    let activity = runmap::garmin::Activity {
+        id,
+        name: full["activityName"].as_str().unwrap().to_owned(),
+        activity_type: full["activityType"]["typeKey"].as_str().unwrap().to_owned(),
+        started_at: chrono::Utc::now(),
+        distance_m: full["distance"].as_f64(),
+        duration_s: full["duration"].as_f64(),
+        has_track: true,
+        summary: full,
+    };
+    db::upsert_runs(pool, &[activity]).await.unwrap();
+    db::save_track(pool, id, Some(b"zip".as_slice()), points)
+        .await
+        .unwrap();
+}
+
+async fn add_two_activities(pool: &Pool) {
+    add_activity(
+        pool,
+        1,
+        json!({
+            "activityName": "Morning 100% loop",
+            "description": "Windy along the river",
+            "locationName": "Berlin",
+        }),
+        &[BERLIN, NEAR_BERLIN],
+    )
+    .await;
+    add_activity(
+        pool,
+        2,
+        json!({
+            "activityName": "Harbour ride",
+            "activityType": {"typeKey": "road_biking"},
+            "locationName": "Sydney",
+            "startTimeLocal": "2026-06-15 23:30:00",
+            "distance": 40000.0,
+            "duration": 7200.0,
+        }),
+        &[SYDNEY, NEAR_SYDNEY],
+    )
+    .await;
+}
+
+async fn found_ids(pool: &Pool, query: &str) -> Vec<i64> {
+    let (status, body) = get(pool, &format!("/api/activities?{query}")).await;
+    assert_eq!(status, StatusCode::OK, "{query}: {body}");
+    let mut ids: Vec<i64> = body["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|activity| activity["id"].as_i64().unwrap())
+        .collect();
+    ids.sort();
+    ids
+}
+
+#[tokio::test]
+async fn search_finds_activities_by_everything() {
+    let pool = common::test_pool().await;
+    add_two_activities(&pool).await;
+
+    for (query, expected) in [
+        ("q=morning", vec![1]),
+        ("q=WINDY", vec![1]),
+        ("q=sydney", vec![2]),
+        ("q=road_biking", vec![2]),
+        ("q=2026-06", vec![2]),
+        ("q=5km", vec![1]),
+        ("q=40%20km", vec![2]),
+        ("q=2h", vec![2]),
+        ("q=berlin%205km", vec![1]),
+        ("q=berlin%2040km", vec![]),
+        ("q=100%25", vec![1]),
+        ("q=_", vec![2]),
+        ("q=nothing", vec![]),
+        ("q=", vec![1, 2]),
+        ("id=2", vec![2]),
+        ("types=road_biking,cycling", vec![2]),
+        ("types=running,road_biking", vec![1, 2]),
+        ("title=loop", vec![1]),
+        ("title=river", vec![]),
+        ("description=river", vec![1]),
+        ("location=berl", vec![1]),
+        ("min_distance_m=10000", vec![2]),
+        ("max_distance_m=10000", vec![1]),
+        ("min_duration_s=3600", vec![2]),
+        ("max_duration_s=3600", vec![1]),
+        ("from=2026-03-02", vec![2]),
+        ("to=2026-03-01", vec![1]),
+        ("from=2026-06-15&to=2026-06-15", vec![2]),
+        ("location=berlin&types=road_biking", vec![]),
+    ] {
+        assert_eq!(found_ids(&pool, query).await, expected, "{query}");
+    }
+}
+
+#[tokio::test]
+async fn search_returns_details_newest_first_up_to_the_limit() {
+    let pool = common::test_pool().await;
+    add_two_activities(&pool).await;
+
+    let (status, body) = get(&pool, "/api/activities?q=berlin").await;
+    assert_eq!(status, StatusCode::OK);
+    let activity = &body["activities"][0];
+    assert_eq!(activity["name"], "Morning 100% loop");
+    assert_eq!(activity["location"], "Berlin");
+    assert_eq!(activity["description"], "Windy along the river");
+    let bounds: Vec<f64> = activity["bounds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|edge| edge.as_f64().unwrap())
+        .collect();
+    let expected = [BERLIN.lon, BERLIN.lat, NEAR_BERLIN.lon, NEAR_BERLIN.lat];
+    for (edge, expected) in bounds.iter().zip(expected) {
+        assert!((edge - expected).abs() < 1e-6, "{bounds:?}");
+    }
+
+    let (_, limited) = get(&pool, "/api/activities?limit=1").await;
+    assert_eq!(limited["activities"].as_array().unwrap().len(), 1);
+    let (status, _) = get(&pool, "/api/activities?limit=0").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = get(&pool, "/api/activities?limit=101").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn filters_apply_to_heatmap_and_stats() {
+    let pool = common::test_pool().await;
+    add_two_activities(&pool).await;
+
+    let lines_at = async |filter: &str| {
+        let uri = format!("/api/heatmap?zoom=14&{WORLD}&{filter}");
+        let (status, body) = get(&pool, &uri).await;
+        assert_eq!(status, StatusCode::OK);
+        line_points(&body)
+    };
+    assert_eq!(lines_at("").await.len(), 4);
+    let points = lines_at("types=road_biking").await;
+    assert_eq!(points.len(), 2);
+    assert!(points.iter().all(|(lon, _)| *lon > 100.0));
+    assert_eq!(lines_at("id=1").await.len(), 2);
+    assert!(lines_at("location=nowhere").await.is_empty());
+
+    let (_, stats) = get(&pool, "/api/stats?types=road_biking").await;
+    assert_eq!(stats["activities"], 1);
+    assert_eq!(stats["distance_m"], 40000.0);
+}
+
+#[tokio::test]
+async fn lists_activity_types_most_frequent_first() {
+    let pool = common::test_pool().await;
+    add_two_activities(&pool).await;
+    add_activity(&pool, 3, json!({}), &[BERLIN]).await;
+    add_activity(&pool, 4, json!({"activityType": {"typeKey": "yoga"}}), &[]).await;
+
+    let (status, body) = get(&pool, "/api/activity-types").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["types"],
+        json!([
+            {"activity_type": "running", "activities": 2},
+            {"activity_type": "road_biking", "activities": 1},
+        ])
+    );
 }
 
 #[tokio::test]
@@ -254,6 +446,8 @@ async fn publishes_openapi_without_secrets() {
     let (status, spec) = get(&pool, "/api/openapi.json").await;
     assert_eq!(status, StatusCode::OK);
     assert!(spec["paths"]["/api/heatmap"].is_object());
+    assert!(spec["paths"]["/api/activities"].is_object());
+    assert!(spec["paths"]["/api/activity-types"].is_object());
     assert!(spec["paths"]["/api/stats"].is_object());
 }
 
@@ -357,7 +551,13 @@ async fn sync_starts_in_the_background_and_saves_runs() {
     assert_eq!(finished["listed"], 1);
     assert_eq!(finished["to_download"], 1);
     assert_eq!(finished["downloaded"], 1);
-    assert_eq!(db::totals(&pool).await.unwrap().runs, 1);
+    assert_eq!(
+        db::totals(&pool, &Default::default())
+            .await
+            .unwrap()
+            .activities,
+        1
+    );
 
     // Can run again, and has nothing left to download.
     request_sync(&state, true).await;

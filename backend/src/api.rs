@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -6,26 +7,29 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::db::{self, Pool};
+use crate::db::{self, Filter, Pool, RunTrack};
 use crate::garmin::GarminClient;
-use crate::heatmap::{self, Position, Track, Viewport};
+use crate::heatmap::{self, Position, Viewport};
 use crate::sync::{Report, sync_runs};
 
 const MAX_ZOOM: u8 = 22;
 /// About 1 cm. Fewer digits make large responses much smaller.
 const COORDINATE_SCALE: f64 = 1e7;
+const DEFAULT_SEARCH_LIMIT: i64 = 20;
+const MAX_SEARCH_LIMIT: i64 = 100;
 
 #[derive(OpenApi)]
 #[openapi(
     info(
         title = "runmap",
-        description = "Heatmap of runs saved from Garmin Connect"
+        description = "Heatmap of activities saved from Garmin Connect"
     ),
-    paths(heatmap, stats, sync_status, start_sync)
+    paths(heatmap, activities, activity_types, stats, sync_status, start_sync)
 )]
 pub struct ApiDoc;
 
@@ -42,7 +46,7 @@ pub struct AppState {
     sync: Arc<Mutex<SyncStatus>>,
     /// Loaded on the first request and again after a sync, because the heatmap
     /// walks every track on every request, which would be slow from the database.
-    tracks: Arc<tokio::sync::Mutex<Option<Arc<Vec<Track>>>>>,
+    tracks: Arc<tokio::sync::Mutex<Option<Arc<Vec<RunTrack>>>>>,
 }
 
 impl AppState {
@@ -55,7 +59,7 @@ impl AppState {
         }
     }
 
-    async fn tracks(&self) -> anyhow::Result<Arc<Vec<Track>>> {
+    async fn tracks(&self) -> anyhow::Result<Arc<Vec<RunTrack>>> {
         let mut tracks = self.tracks.lock().await;
         if let Some(tracks) = tracks.as_ref() {
             return Ok(tracks.clone());
@@ -69,6 +73,8 @@ impl AppState {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/api/heatmap", get(heatmap))
+        .route("/api/activities", get(activities))
+        .route("/api/activity-types", get(activity_types))
         .route("/api/stats", get(stats))
         .route("/api/sync", get(sync_status).post(start_sync))
         .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()))
@@ -126,9 +132,64 @@ struct HeatmapQuery {
     north: f64,
 }
 
+/// Limits which activities count. Empty parameters are ignored and all others must match.
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+struct FilterQuery {
+    /// One activity.
+    id: Option<i64>,
+    /// Words to find in the title, type, description, location or local start time.
+    /// A length like `10km` or `45min` also finds activities within 5% of it.
+    q: Option<String>,
+    /// Comma-separated Garmin activity types, like `running,cycling`.
+    types: Option<String>,
+    title: Option<String>,
+    description: Option<String>,
+    location: Option<String>,
+    min_distance_m: Option<f64>,
+    max_distance_m: Option<f64>,
+    min_duration_s: Option<f64>,
+    max_duration_s: Option<f64>,
+    /// First day to include, in local time.
+    from: Option<NaiveDate>,
+    /// Last day to include, in local time.
+    to: Option<NaiveDate>,
+}
+
+impl From<FilterQuery> for Filter {
+    fn from(query: FilterQuery) -> Self {
+        let text = |value: Option<String>| {
+            value
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty())
+        };
+        Self {
+            id: query.id,
+            query: text(query.q),
+            activity_types: query
+                .types
+                .iter()
+                .flat_map(|types| types.split(','))
+                .map(str::trim)
+                .filter(|activity_type| !activity_type.is_empty())
+                .map(str::to_owned)
+                .collect(),
+            title: text(query.title),
+            description: text(query.description),
+            location: text(query.location),
+            min_distance_m: query.min_distance_m,
+            max_distance_m: query.max_distance_m,
+            min_duration_s: query.min_duration_s,
+            max_duration_s: query.max_duration_s,
+            from: query.from,
+            to: query.to,
+        }
+    }
+}
+
 #[derive(Serialize, ToSchema)]
 struct HeatLine {
-    /// From 0 for the fewest runs in the viewport to 1 for the most, on a log scale.
+    /// From 0 for the fewest activities in the viewport to 1 for the most, on a log scale.
     weight: f64,
     /// Longitude and latitude pairs.
     #[schema(value_type = Vec<Vec<f64>>)]
@@ -141,11 +202,11 @@ struct Heatmap {
     lines: Vec<HeatLine>,
 }
 
-/// Colored lines of all runs in a viewport.
+/// Colored lines of the matching activities in a viewport.
 #[utoipa::path(
     get,
     path = "/api/heatmap",
-    params(HeatmapQuery),
+    params(HeatmapQuery, FilterQuery),
     responses(
         (status = 200, body = Heatmap),
         (status = 400, description = "Invalid viewport or zoom", body = ErrorBody),
@@ -154,6 +215,7 @@ struct Heatmap {
 async fn heatmap(
     State(state): State<AppState>,
     Query(query): Query<HeatmapQuery>,
+    Query(filter): Query<FilterQuery>,
 ) -> Result<Json<Heatmap>, ApiError> {
     if query.zoom > MAX_ZOOM {
         return Err(ApiError::BadRequest("zoom must be from 0 to 22"));
@@ -171,11 +233,18 @@ async fn heatmap(
     }
 
     let viewport = Viewport::from_degrees(query.west, query.south, query.east, query.north);
+    let matching = db::matching_ids(&state.pool, &filter.into()).await?;
     let tracks = state.tracks().await?;
-    let lines =
-        tokio::task::spawn_blocking(move || heatmap::heat_lines(&tracks, &viewport, query.zoom))
-            .await
-            .map_err(anyhow::Error::from)?;
+    let lines = tokio::task::spawn_blocking(move || {
+        let tracks: Vec<&[Position]> = tracks
+            .iter()
+            .filter(|run| matching.contains(&run.id))
+            .map(|run| run.track.as_slice())
+            .collect();
+        heatmap::heat_lines(&tracks, &viewport, query.zoom)
+    })
+    .await
+    .map_err(anyhow::Error::from)?;
 
     Ok(Json(Heatmap {
         lines: lines
@@ -193,18 +262,136 @@ fn to_degrees(position: Position) -> Position {
         .map(|degrees| (degrees * COORDINATE_SCALE).round() / COORDINATE_SCALE)
 }
 
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+struct SearchQuery {
+    /// How many activities to return, from 1 to 100. Defaults to 20.
+    limit: Option<i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+struct ActivityItem {
+    id: i64,
+    name: String,
+    activity_type: String,
+    started_at: DateTime<Utc>,
+    distance_m: Option<f64>,
+    duration_s: Option<f64>,
+    description: Option<String>,
+    location: Option<String>,
+    /// West, south, east and north edges of the track, in degrees.
+    #[schema(value_type = Vec<f64>)]
+    bounds: Option<[f64; 4]>,
+}
+
+#[derive(Serialize, ToSchema)]
+struct ActivityList {
+    /// Newest first.
+    activities: Vec<ActivityItem>,
+}
+
+/// Searches saved activities.
+#[utoipa::path(
+    get,
+    path = "/api/activities",
+    params(SearchQuery, FilterQuery),
+    responses(
+        (status = 200, body = ActivityList),
+        (status = 400, description = "Invalid limit", body = ErrorBody),
+    )
+)]
+async fn activities(
+    State(state): State<AppState>,
+    Query(search): Query<SearchQuery>,
+    Query(filter): Query<FilterQuery>,
+) -> Result<Json<ActivityList>, ApiError> {
+    let limit = search.limit.unwrap_or(DEFAULT_SEARCH_LIMIT);
+    if !(1..=MAX_SEARCH_LIMIT).contains(&limit) {
+        return Err(ApiError::BadRequest("limit must be from 1 to 100"));
+    }
+    let found = db::search_activities(&state.pool, &filter.into(), limit).await?;
+    let tracks = state.tracks().await?;
+    let bounds: HashMap<i64, Viewport> = tracks
+        .iter()
+        .filter(|run| found.iter().any(|activity| activity.id == run.id))
+        .filter_map(|run| Some((run.id, heatmap::bounds(&run.track)?)))
+        .collect();
+
+    Ok(Json(ActivityList {
+        activities: found
+            .into_iter()
+            .map(|activity| ActivityItem {
+                bounds: bounds.get(&activity.id).map(|bounds| {
+                    // Mercator y grows southward, so the largest y is the south edge.
+                    let [west, south] = to_degrees([bounds.min[0], bounds.max[1]]);
+                    let [east, north] = to_degrees([bounds.max[0], bounds.min[1]]);
+                    [west, south, east, north]
+                }),
+                id: activity.id,
+                name: activity.name,
+                activity_type: activity.activity_type,
+                started_at: activity.started_at,
+                distance_m: activity.distance_m,
+                duration_s: activity.duration_s,
+                description: activity.description,
+                location: activity.location,
+            })
+            .collect(),
+    }))
+}
+
+#[derive(Serialize, ToSchema)]
+struct ActivityType {
+    /// Garmin's key for the type, like `trail_running`.
+    activity_type: String,
+    activities: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+struct ActivityTypeList {
+    /// Most frequent first.
+    types: Vec<ActivityType>,
+}
+
+/// All activity types among the saved activities.
+#[utoipa::path(
+    get,
+    path = "/api/activity-types",
+    responses((status = 200, body = ActivityTypeList))
+)]
+async fn activity_types(State(state): State<AppState>) -> Result<Json<ActivityTypeList>, ApiError> {
+    let types = db::activity_types(&state.pool).await?;
+    Ok(Json(ActivityTypeList {
+        types: types
+            .into_iter()
+            .map(|(activity_type, activities)| ActivityType {
+                activity_type,
+                activities,
+            })
+            .collect(),
+    }))
+}
+
 #[derive(Serialize, ToSchema)]
 struct Stats {
-    runs: i64,
+    activities: i64,
     distance_m: f64,
 }
 
-/// Totals across all saved runs.
-#[utoipa::path(get, path = "/api/stats", responses((status = 200, body = Stats)))]
-async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, ApiError> {
-    let totals = db::totals(&state.pool).await?;
+/// Totals across the matching activities.
+#[utoipa::path(
+    get,
+    path = "/api/stats",
+    params(FilterQuery),
+    responses((status = 200, body = Stats))
+)]
+async fn stats(
+    State(state): State<AppState>,
+    Query(filter): Query<FilterQuery>,
+) -> Result<Json<Stats>, ApiError> {
+    let totals = db::totals(&state.pool, &filter.into()).await?;
     Ok(Json(Stats {
-        runs: totals.runs,
+        activities: totals.activities,
         distance_m: totals.distance_m,
     }))
 }
@@ -223,7 +410,7 @@ enum SyncState {
 #[derive(Clone, Default, Serialize, ToSchema)]
 struct SyncStatus {
     state: SyncState,
-    /// Runs found on Garmin so far.
+    /// Activities with GPS found on Garmin so far.
     listed: usize,
     /// Tracks that this sync has to download.
     to_download: usize,
@@ -252,7 +439,7 @@ async fn sync_status(State(state): State<AppState>) -> Json<SyncStatus> {
     Json(state.sync.lock().unwrap().clone())
 }
 
-/// Starts saving all runs that are not saved yet, in the background.
+/// Starts saving all activities with GPS that are not saved yet, in the background.
 ///
 /// Requires the `X-Requested-With` header. Browsers do not let other websites
 /// send it without permission, which this API never grants.

@@ -10,7 +10,7 @@ up:
 dev:
     docker compose up --build --watch
 
-# Stop the app and keep saved runs
+# Stop the app and keep saved activities
 down:
     docker compose down
 

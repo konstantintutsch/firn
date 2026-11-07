@@ -11,6 +11,10 @@ diesel::table! {
         summary -> Jsonb,
         track_synced_at -> Nullable<Timestamptz>,
         original_zip -> Nullable<Bytea>,
+        description -> Nullable<Text>,
+        location -> Nullable<Text>,
+        started_local -> Nullable<Text>,
+        search_text -> Nullable<Text>,
     }
 }
 
