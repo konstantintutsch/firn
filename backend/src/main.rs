@@ -90,6 +90,7 @@ async fn main() -> Result<()> {
             base_url: cli.garmin_base_url,
             api_key: secret_env("GARMIN_PERSONAL_API_KEY"),
             download_pause: Duration::from_millis(cli.download_pause_ms),
+            retry_delay: Duration::from_secs(2),
             health_history_days: cli.health_history_days,
         },
         Auth::new(oidc, secret_box),

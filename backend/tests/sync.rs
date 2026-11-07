@@ -291,6 +291,54 @@ async fn rate_limit_stops_the_sync_and_next_sync_resumes() {
 }
 
 #[tokio::test]
+async fn server_errors_and_short_rate_limits_are_retried() {
+    let (pool, server) = setup().await;
+    mount_list(
+        &server,
+        &[vec![
+            activity(1, "running", true),
+            activity(2, "running", true),
+        ]],
+    )
+    .await;
+    Mock::given(method("GET"))
+        .and(path(file_path(1)))
+        .respond_with(ResponseTemplate::new(503))
+        .up_to_n_times(1)
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(file_path(2)))
+        .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "0"))
+        .up_to_n_times(1)
+        .expect(1)
+        .mount(&server)
+        .await;
+    mount_file(&server, 1, 1).await;
+    mount_file(&server, 2, 1).await;
+
+    let report = run_sync(&pool, &server).await.unwrap();
+    assert_eq!((report.downloaded, report.failed), (2, 0));
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn long_rate_limit_stops_without_waiting() {
+    let (pool, server) = setup().await;
+    mount_list(&server, &[vec![activity(1, "running", true)]]).await;
+    Mock::given(method("GET"))
+        .and(path(file_path(1)))
+        .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "3600"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let result = run_sync(&pool, &server).await;
+    assert!(matches!(result, Err(GarminError::RateLimited)));
+}
+
+#[tokio::test]
 async fn broken_file_is_skipped_and_retried_later() {
     let (pool, server) = setup().await;
     mount_list(

@@ -60,6 +60,8 @@ pub struct GarminSettings {
     /// The key from before accounts existed, which the first account takes over.
     pub api_key: Option<String>,
     pub download_pause: Duration,
+    /// The wait before retrying a failed Garmin request.
+    pub retry_delay: Duration,
     /// How far back health data goes at least.
     pub health_history_days: u64,
 }
@@ -791,7 +793,8 @@ async fn run_sync(state: AppState, user_id: i64, api_key: String) {
     let task = {
         let state = state.clone();
         tokio::spawn(async move {
-            let mut client = GarminClient::new(&state.garmin.base_url, &api_key)?;
+            let mut client = GarminClient::new(&state.garmin.base_url, &api_key)?
+                .with_retry_delay(state.garmin.retry_delay);
             let set_status = |status: SyncStatus| {
                 state.sync.lock().unwrap().insert(user_id, status);
             };

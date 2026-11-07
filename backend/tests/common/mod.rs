@@ -99,6 +99,7 @@ pub async fn state_with_oidc(
             base_url: base_url.to_owned(),
             api_key: None,
             download_pause: Duration::ZERO,
+            retry_delay: Duration::ZERO,
             health_history_days: 2,
         },
         Auth::new(oidc, secret_box()),
@@ -106,7 +107,9 @@ pub async fn state_with_oidc(
 }
 
 pub fn client(server: &MockServer) -> GarminClient {
-    GarminClient::new(&server.uri(), API_KEY).unwrap()
+    GarminClient::new(&server.uri(), API_KEY)
+        .unwrap()
+        .with_retry_delay(Duration::ZERO)
 }
 
 pub fn zip_of(files: &[(&str, &[u8])]) -> Vec<u8> {

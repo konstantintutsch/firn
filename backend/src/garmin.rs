@@ -27,6 +27,9 @@ pub enum GarminError {
     InvalidApiKey,
     #[error("Garmin rate limited this client. Wait before trying again")]
     RateLimited,
+    /// A short rate limit, which `send` waits out. Never leaves the client.
+    #[error("Garmin asked to wait {0:?}")]
+    RetryAfter(Duration),
     #[error("Garmin refused access to this resource")]
     Forbidden,
     #[error("Garmin has no such resource")]
@@ -39,6 +42,29 @@ pub enum GarminError {
     Http(reqwest::Error),
     #[error(transparent)]
     Database(#[from] anyhow::Error),
+}
+
+/// Whether the same request may work a moment later.
+fn is_temporary(error: &GarminError) -> bool {
+    match error {
+        GarminError::Status(status) => status.is_server_error(),
+        GarminError::Http(error) => error.is_timeout() || error.is_connect() || error.is_request(),
+        _ => false,
+    }
+}
+
+/// The wait that a rate limited response asks for, in seconds. Garmin may also
+/// send a date there, which counts as unknown.
+fn retry_after(response: &Response) -> Option<Duration> {
+    let seconds = response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    Some(Duration::from_secs(seconds))
 }
 
 /// The largest original file that a sync saves. Even long activities stay far below.
@@ -187,7 +213,14 @@ pub struct GarminClient {
     api_key: String,
     /// Valid for 24 hours and never stored: a new one only costs one request.
     access_token: Option<String>,
+    /// The wait before the first retry of a failed request. Each further retry waits twice as long.
+    retry_delay: Duration,
 }
+
+/// Tries per request. Server errors and lost connections are often gone a moment later.
+const ATTEMPTS: u32 = 3;
+/// The longest `Retry-After` that a request waits for. Longer limits stop the sync instead.
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(60);
 
 impl GarminClient {
     pub fn new(base_url: &str, api_key: &str) -> Result<Self, GarminError> {
@@ -200,7 +233,14 @@ impl GarminClient {
             base_url: base_url.trim_end_matches('/').to_owned(),
             api_key: api_key.trim().to_owned(),
             access_token: None,
+            retry_delay: Duration::from_secs(2),
         })
+    }
+
+    /// Changes the wait before retries, for example to none in tests.
+    pub fn with_retry_delay(mut self, retry_delay: Duration) -> Self {
+        self.retry_delay = retry_delay;
+        self
     }
 
     /// One page of activities of all types, newest first.
@@ -316,9 +356,33 @@ impl GarminClient {
         self.fetch_token().await.map(|_| ())
     }
 
+    /// Sends a request, and retries it after server errors, lost connections and
+    /// short rate limits.
     async fn send(
         &mut self,
         build: impl Fn(&Client) -> RequestBuilder,
+    ) -> Result<Response, GarminError> {
+        let mut attempt = 1;
+        loop {
+            let wait = match self.send_once(&build).await {
+                Err(GarminError::RetryAfter(wait)) if attempt < ATTEMPTS => wait,
+                Err(GarminError::RetryAfter(_)) => return Err(GarminError::RateLimited),
+                Err(error @ (GarminError::Status(_) | GarminError::Http(_)))
+                    if attempt < ATTEMPTS && is_temporary(&error) =>
+                {
+                    self.retry_delay * 2u32.pow(attempt - 1)
+                }
+                result => return result,
+            };
+            tracing::debug!(attempt, ?wait, "retrying a Garmin request");
+            tokio::time::sleep(wait).await;
+            attempt += 1;
+        }
+    }
+
+    async fn send_once(
+        &mut self,
+        build: &impl Fn(&Client) -> RequestBuilder,
     ) -> Result<Response, GarminError> {
         let token = match &self.access_token {
             Some(token) if !expires_soon(token, Utc::now()) => token.clone(),
@@ -335,7 +399,10 @@ impl GarminClient {
             StatusCode::UNAUTHORIZED => Err(GarminError::InvalidApiKey),
             StatusCode::FORBIDDEN => Err(GarminError::Forbidden),
             StatusCode::NOT_FOUND => Err(GarminError::NotFound),
-            StatusCode::TOO_MANY_REQUESTS => Err(GarminError::RateLimited),
+            StatusCode::TOO_MANY_REQUESTS => Err(match retry_after(&response) {
+                Some(wait) if wait <= MAX_RETRY_AFTER => GarminError::RetryAfter(wait),
+                _ => GarminError::RateLimited,
+            }),
             status => Err(GarminError::Status(status)),
         }
     }
