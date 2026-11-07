@@ -25,6 +25,8 @@ export function setUpFilters({ withoutGps = false, onChange }) {
   try {
     saved = { ...saved, ...JSON.parse(localStorage.getItem(STORAGE_KEY)) };
   } catch {}
+  // Filters in the link win, so that a shared or bookmarked link shows the same.
+  saved = fromUrl(form) ?? saved;
   let days = saved.days;
   let checkedTypes = saved.values.type ?? [];
   let timer = null;
@@ -34,6 +36,7 @@ export function setUpFilters({ withoutGps = false, onChange }) {
   }
   if (days) setPeriod(days);
   updateCount();
+  toUrl(form, { ...saved.values, type: checkedTypes }, days);
 
   function setPeriod(next) {
     days = next;
@@ -54,6 +57,7 @@ export function setUpFilters({ withoutGps = false, onChange }) {
     } catch {
       // Without storage the filters still apply until the page is reloaded.
     }
+    toUrl(form, values, days);
   }
 
   function updateCount() {
@@ -146,4 +150,36 @@ export function setUpFilters({ withoutGps = false, onChange }) {
       updateCount();
     },
   };
+}
+
+/** The names of the filter fields, which are also their names in the link. */
+function fieldNames(form) {
+  return [...form.elements].filter((element) => element.name && element.type !== "checkbox").map(({ name }) => name);
+}
+
+/** The filters in the page's link, or `null` if it has none. */
+function fromUrl(form) {
+  const params = new URLSearchParams(location.search);
+  const names = [...fieldNames(form), "type", "days"];
+  if (!names.some((name) => params.has(name))) return null;
+  const values = { type: params.getAll("type") };
+  for (const name of fieldNames(form)) {
+    if (params.has(name)) values[name] = params.get(name);
+  }
+  return { values, days: params.get("days") };
+}
+
+/** Puts the filters in the page's link, next to its other parameters. */
+function toUrl(form, values, days) {
+  const params = new URLSearchParams(location.search);
+  for (const name of [...fieldNames(form), "type", "days"]) params.delete(name);
+  for (const type of values.type ?? []) params.append("type", type);
+  for (const name of fieldNames(form)) {
+    // A period that moves with the date replaces its start day.
+    if (days && name === "from") continue;
+    if (values[name]) params.set(name, values[name]);
+  }
+  if (days) params.set("days", days);
+  const search = params.size > 0 ? `?${params}` : "";
+  history.replaceState(history.state, "", `${location.pathname}${search}${location.hash}`);
 }

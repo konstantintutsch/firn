@@ -236,7 +236,6 @@ async function refresh() {
 async function showLinkedActivity() {
   const id = new URLSearchParams(location.search).get("activity");
   if (!id) return;
-  history.replaceState(null, "", location.pathname + location.hash);
   if (/^-?\d+$/.test(id)) select({ id: Number(id) }, { fit: true });
   else showStatus(t("Could not find this activity."));
 }
@@ -356,6 +355,12 @@ function applyFilters() {
 /** Shows one activity with its details, or all of them again with `null`. */
 function select(activity, { fit = false } = {}) {
   selectedId = activity?.id ?? null;
+  // Keeps the activity in the link, so that a reload or a shared link shows it again.
+  const params = new URLSearchParams(location.search);
+  if (selectedId === null) params.delete("activity");
+  else params.set("activity", selectedId);
+  const search = params.size > 0 ? `?${params}` : "";
+  history.replaceState(history.state, "", `${location.pathname}${search}${location.hash}`);
   pendingDetail?.abort();
   panelElement.classList.toggle("has-detail", activity != null);
   browseElement.hidden = activity != null;
