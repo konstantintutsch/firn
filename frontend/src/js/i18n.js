@@ -43,6 +43,11 @@ const GERMAN = {
   "Could not save the key.": "Der Schlüssel konnte nicht gespeichert werden.",
   "Removed. Your saved data stays.": "Entfernt. Deine gespeicherten Daten bleiben erhalten.",
   "Could not remove the key.": "Der Schlüssel konnte nicht entfernt werden.",
+  "Remove the Garmin key? Your saved data stays, but you cannot sync until you add a key again.":
+    "Garmin-Schlüssel entfernen? Deine gespeicherten Daten bleiben erhalten, aber du kannst erst wieder synchronisieren, wenn du einen Schlüssel hinzufügst.",
+  "Could not sign out.": "Abmelden hat nicht funktioniert.",
+  "Lost contact with the API. Reload the page to see the sync.":
+    "Die Verbindung zur API ist abgerissen. Lade die Seite neu, um die Synchronisierung zu sehen.",
   "Could not reach the API. Is it running?": "Die API ist nicht erreichbar. Läuft sie?",
   "Signing in did not work. Try again.": "Die Anmeldung hat nicht geklappt. Versuche es noch einmal.",
   "Could not load your account.": "Dein Konto konnte nicht geladen werden.",

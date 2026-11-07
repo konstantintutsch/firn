@@ -185,14 +185,24 @@ function drawYAxis(svg, inner, ticks, y, format) {
   }
 }
 
+/** The smallest and largest number. A loop, since spreading many values into Math.min can overflow the stack. */
+function extent(numbers) {
+  let low = Infinity;
+  let high = -Infinity;
+  for (const number of numbers) {
+    if (number < low) low = number;
+    if (number > high) high = number;
+  }
+  return [low, high];
+}
+
 function drawLines(state, svg, inner) {
   const { series, format } = state;
   const all = series.flatMap(({ values }) => values);
   if (all.length === 0) return;
   const times = all.map(([time]) => time);
-  const values = all.map(([, value]) => value);
-  const [minTime, maxTime] = [Math.min(...times), Math.max(...times)];
-  const ticks = niceTicks(Math.min(...values), Math.max(...values));
+  const [minTime, maxTime] = extent(times);
+  const ticks = niceTicks(...extent(all.map(([, value]) => value)));
   const [low, high] = [ticks[0], ticks.at(-1)];
   const span = Math.max(maxTime - minTime, DAY_MS);
   const x = (time) => inner.left + ((time - minTime) / span) * (inner.right - inner.left);

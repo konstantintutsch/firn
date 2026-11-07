@@ -1,6 +1,6 @@
 /** The signed-in account, the settings page and the theme, shared by all pages. */
 
-import { plural, t, typeName } from "/js/i18n.js";
+import { language, plural, t, typeName } from "/js/i18n.js";
 
 export { plural, t, typeName };
 
@@ -49,6 +49,8 @@ function setUpThemePicker() {
       }
       if (choice === "system") delete document.documentElement.dataset.theme;
       else document.documentElement.dataset.theme = choice;
+      // From /js/theme.js, which every page loads first.
+      applyThemeColor();
       show();
       notifyTheme();
     });
@@ -161,17 +163,33 @@ export function setUpSettings() {
   });
 
   document.querySelector("#key-remove").addEventListener("click", async () => {
-    const response = await send("/api/me/garmin-key", { method: "DELETE" });
-    if (response.ok) {
-      account.has_garmin_key = false;
-      showSettings(t("Removed. Your saved data stays."));
-    } else {
-      message.textContent = await errorMessage(response, t("Could not remove the key."));
+    if (!confirm(t("Remove the Garmin key? Your saved data stays, but you cannot sync until you add a key again."))) {
+      return;
+    }
+    try {
+      const response = await send("/api/me/garmin-key", { method: "DELETE" });
+      if (response.ok) {
+        account.has_garmin_key = false;
+        showSettings(t("Removed. Your saved data stays."));
+      } else {
+        message.textContent = await errorMessage(response, t("Could not remove the key."));
+      }
+    } catch {
+      message.textContent = t("Could not reach the API. Is it running?");
     }
   });
 
   document.querySelector("#sign-out").addEventListener("click", async () => {
-    await send("/api/auth/logout", { method: "POST" });
+    try {
+      const response = await send("/api/auth/logout", { method: "POST" });
+      if (!response.ok) {
+        message.textContent = await errorMessage(response, t("Could not sign out."));
+        return;
+      }
+    } catch {
+      message.textContent = t("Could not reach the API. Is it running?");
+      return;
+    }
     location.reload();
   });
 }
@@ -182,7 +200,10 @@ export function activityTitle({ name, activity_type: type }) {
 
 export function activityDetails({ started_at: started, distance_m: distance, duration_s: duration, location }) {
   const parts = [new Date(started).toLocaleDateString()];
-  if (distance != null) parts.push(`${(distance / 1000).toFixed(1)} km`);
+  if (distance != null) {
+    const km = (distance / 1000).toLocaleString(language, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    parts.push(`${km} km`);
+  }
   if (duration != null) parts.push(`${Math.round(duration / 60)} min`);
   if (location) parts.push(location);
   return parts.join(" · ");
@@ -216,6 +237,10 @@ export function syncResult({ state, error, downloaded, failed, health_failed: he
 }
 
 const SYNC_POLL_MS = 1000;
+/** Polling waits longer after each failed request, up to this. */
+const SYNC_POLL_MAX_MS = 30_000;
+/** After this many failed requests in a row, polling gives up until the next sync. */
+const SYNC_POLL_ATTEMPTS = 10;
 
 /**
  * Wires the sync button and status line. Calls `onFinished` after a sync ends,
@@ -225,6 +250,7 @@ export function setUpSync(onFinished) {
   const button = document.querySelector("#sync-button");
   const status = document.querySelector("#sync-status");
   let isRunning = false;
+  let failures = 0;
 
   async function isActive() {
     const response = await fetch("/api/sync");
@@ -239,9 +265,20 @@ export function setUpSync(onFinished) {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       sync = await response.json();
     } catch {
-      setTimeout(poll, SYNC_POLL_MS);
+      // On page load no sync is known to run, so there is nothing to wait for.
+      if (!isRunning) return;
+      failures += 1;
+      if (failures >= SYNC_POLL_ATTEMPTS) {
+        isRunning = false;
+        failures = 0;
+        button.disabled = false;
+        status.textContent = t("Lost contact with the API. Reload the page to see the sync.");
+        return;
+      }
+      setTimeout(poll, Math.min(SYNC_POLL_MS * 2 ** failures, SYNC_POLL_MAX_MS));
       return;
     }
+    failures = 0;
     if (sync.state === "running") {
       isRunning = true;
       button.disabled = true;

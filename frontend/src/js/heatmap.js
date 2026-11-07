@@ -101,6 +101,8 @@ let lastRefresh = 0;
 let pendingStats = null;
 let pendingSearch = null;
 let searchTimer = null;
+/** The text that the shown results belong to. */
+let shownSearch = "";
 let selectedId = null;
 let lines = [];
 let isFirstStyle = true;
@@ -216,6 +218,8 @@ async function refresh() {
     ({ lines } = await response.json());
     map.getSource(SOURCE_ID)?.setData(toGeoJson(lines));
     if (!legend.isColored) legendElement.hidden = lines.length === 0;
+    // Clears an earlier failure, but not the messages about the filters.
+    if (statusElement.textContent === t(NOT_LOADED)) showStatus("");
   } catch (error) {
     if (error.name !== "AbortError") showStatus(t(NOT_LOADED));
   } finally {
@@ -375,7 +379,23 @@ function goToActivity(activity) {
 function closeSearch() {
   searchResults.hidden = true;
   searchResults.replaceChildren();
+  shownSearch = "";
 }
+
+/** Searches first if the shown results are for older text, so that Enter never picks a stale one. */
+async function selectFirstResult() {
+  clearTimeout(searchTimer);
+  if (shownSearch !== searchInput.value.trim()) await searchNow();
+  searchResults.querySelector(".search-result")?.click();
+}
+
+// Results close when something else on the page is used, but keep the typed text.
+document.addEventListener("pointerdown", (event) => {
+  if (!event.target.closest(".search")) closeSearch();
+});
+searchInput.closest(".search").addEventListener("focusout", (event) => {
+  if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) closeSearch();
+});
 
 function resultButton(title, details, onSelect) {
   const button = document.createElement("button");
@@ -442,6 +462,7 @@ async function searchNow() {
   }
   searchResults.replaceChildren(...sections);
   searchResults.hidden = false;
+  shownSearch = text;
 }
 
 async function searchActivities(text, signal) {
@@ -470,7 +491,7 @@ searchInput.addEventListener("input", () => {
 searchInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();
-    searchResults.querySelector(".search-result")?.click();
+    selectFirstResult();
   } else if (event.key === "Escape") {
     clearTimeout(searchTimer);
     pendingSearch?.abort();

@@ -170,6 +170,8 @@ async function load() {
   pending = request;
   if (from && to && from > to) {
     statusElement.textContent = t("The start date is after the end date.");
+    activitySection.hidden = true;
+    healthSection.hidden = true;
     return;
   }
   // Health values belong to days, not to activities, so only the dates apply to them.
@@ -210,7 +212,10 @@ function earliest(activities, metrics) {
     ...activities.map(({ day }) => day).filter(Boolean),
     ...Object.values(metrics).map((values) => values[0][0]),
   ];
-  return days.length === 0 ? Date.now() : Math.min(...days.map(parseDay));
+  // A loop, not Math.min(...days): spreading a long history can overflow the stack.
+  let first = Infinity;
+  for (const day of days) first = Math.min(first, parseDay(day));
+  return days.length === 0 ? Date.now() : first;
 }
 
 /** Days for a month, weeks for half a year, and months beyond. */
@@ -247,10 +252,16 @@ function makeBuckets(first, last) {
   return buckets;
 }
 
+/** The last bucket that starts at or before `time`, or -1. A binary search, since it runs once per value. */
 function bucketIndex(buckets, time) {
-  let index = -1;
-  for (let i = 0; i < buckets.length && buckets[i].time <= time; i++) index = i;
-  return index;
+  let low = 0;
+  let high = buckets.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (buckets[middle].time <= time) low = middle + 1;
+    else high = middle;
+  }
+  return low - 1;
 }
 
 /** Sums or averages `[time, value]` pairs into the buckets. */
