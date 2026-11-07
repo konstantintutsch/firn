@@ -1,6 +1,6 @@
 <nav class="nav" aria-label="Pages" data-i18n-attrs="aria-label">
-  <a class="nav-item" href="/" {% if page.url == "/" %}aria-current="page"{% endif %}>{% icon "map" %}<span data-i18n>Map</span></a>
-  <a class="nav-item" href="/activities/" {% if page.url == "/activities/" %}aria-current="page"{% endif %}>{% icon "list" %}<span data-i18n>Activities</span></a>
-  <a class="nav-item" href="/stats/" {% if page.url == "/stats/" %}aria-current="page"{% endif %}>{% icon "chart" %}<span data-i18n>Statistics</span></a>
-  <a id="account-button" class="nav-item" href="/settings/" hidden {% if page.url == "/settings/" %}aria-current="page"{% endif %}>{% icon "settings" %}<span data-i18n>Settings</span></a>
+  <a class="nav-item" href="/" {% if page.url == "/" %}aria-current="page"{% endif %}><span class="nav-highlight"></span>{% icon "map" %}<span data-i18n>Map</span></a>
+  <a class="nav-item" href="/activities/" {% if page.url == "/activities/" %}aria-current="page"{% endif %}><span class="nav-highlight"></span>{% icon "list" %}<span data-i18n>Activities</span></a>
+  <a class="nav-item" href="/stats/" {% if page.url == "/stats/" %}aria-current="page"{% endif %}><span class="nav-highlight"></span>{% icon "chart" %}<span data-i18n>Statistics</span></a>
+  <a id="account-button" class="nav-item" href="/settings/" hidden {% if page.url == "/settings/" %}aria-current="page"{% endif %}><span class="nav-highlight"></span>{% icon "settings" %}<span data-i18n>Settings</span></a>
 </nav>

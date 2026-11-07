@@ -770,6 +770,8 @@ a {
 }
 
 .nav-item {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -803,9 +805,21 @@ a {
 }
 
 .nav-item[aria-current="page"] {
-  background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
+}
+
+/* The highlight is its own element, so that it can slide between items while their icons stay put. */
+.nav-highlight {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  corner-shape: inherit;
+}
+
+.nav-item[aria-current="page"] .nav-highlight {
+  background: var(--accent-soft);
 }
 
 .nav-item:active {
@@ -1309,7 +1323,10 @@ a.activity:hover {
   }
 }
 
-/* Pages cross-fade into each other, while the navigation bar stays put and its highlight slides over. */
+/*
+ * Pages cross-fade into each other, while the navigation bar stays put and its highlight slides over.
+ * Each item is captured on its own and drawn above the highlight, so the icons stay in place.
+ */
 @view-transition {
   navigation: auto;
 }
@@ -1318,13 +1335,36 @@ a.activity:hover {
   view-transition-name: nav;
 }
 
-.nav-item[aria-current="page"] {
+.nav-item[href="/"] {
+  view-transition-name: nav-map;
+}
+
+.nav-item[href="/activities/"] {
+  view-transition-name: nav-activities;
+}
+
+.nav-item[href="/stats/"] {
+  view-transition-name: nav-stats;
+}
+
+.nav-item[href="/settings/"] {
+  view-transition-name: nav-settings;
+}
+
+.nav-item[aria-current="page"] .nav-highlight {
   view-transition-name: nav-current;
 }
 
 ::view-transition-group(*) {
   animation-duration: 0.25s;
   animation-timing-function: ease-out;
+}
+
+::view-transition-group(nav-map),
+::view-transition-group(nav-activities),
+::view-transition-group(nav-stats),
+::view-transition-group(nav-settings) {
+  z-index: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
