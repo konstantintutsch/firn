@@ -90,30 +90,7 @@ pub async fn sync_activities(
     on_progress(&report);
 
     for (activity, missing) in pending {
-        let result = async {
-            if missing.track {
-                save_original(pool, files, client, activity).await?;
-            }
-            let mut details = None;
-            if missing.details {
-                let fetched = client
-                    .activity_details(activity.id)
-                    .await?
-                    .unwrap_or_else(|| json!({}));
-                db::save_details(pool, activity.id, &fetched).await?;
-                details = Some(fetched);
-            }
-            if missing.workouts {
-                let workouts = client.activity_workouts(activity.id).await?;
-                db::save_workouts(pool, activity.id, &workouts.unwrap_or_else(|| json!([])))
-                    .await?;
-            }
-            if missing.images {
-                save_images(pool, files, client, activity.id, details).await?;
-            }
-            Ok(())
-        }
-        .await;
+        let result = download_activity(pool, files, client, activity, &missing).await;
         match result {
             Ok(()) => {
                 report.downloaded += 1;
@@ -129,6 +106,59 @@ pub async fn sync_activities(
         tokio::time::sleep(pause).await;
     }
     Ok(report)
+}
+
+/// Downloads what is missing of one activity: its file and track, details, workouts and images.
+async fn download_activity(
+    pool: &Pool,
+    files: &FileStore,
+    client: &mut GarminClient,
+    activity: &Activity,
+    missing: &db::Missing,
+) -> Result<(), GarminError> {
+    if missing.track {
+        save_original(pool, files, client, activity).await?;
+    }
+    let mut details = None;
+    if missing.details {
+        let fetched = client
+            .activity_details(activity.id)
+            .await?
+            .unwrap_or_else(|| json!({}));
+        db::save_details(pool, activity.id, &fetched).await?;
+        details = Some(fetched);
+    }
+    if missing.workouts {
+        let workouts = client.activity_workouts(activity.id).await?;
+        db::save_workouts(pool, activity.id, &workouts.unwrap_or_else(|| json!([]))).await?;
+    }
+    if missing.images {
+        save_images(pool, files, client, activity.id, details).await?;
+    }
+    Ok(())
+}
+
+/// Downloads everything of one saved activity again, for example after it was
+/// edited on Garmin Connect. `None` if the account has no such activity.
+pub async fn resync_activity(
+    pool: &Pool,
+    files: &FileStore,
+    client: &mut GarminClient,
+    user_id: i64,
+    id: i64,
+) -> Result<Option<()>, GarminError> {
+    let Some(summary) = db::summary(pool, user_id, id).await? else {
+        return Ok(None);
+    };
+    let activity = Activity::from_summary(summary)?;
+    let everything = db::Missing {
+        track: true,
+        details: true,
+        workouts: true,
+        images: true,
+    };
+    download_activity(pool, files, client, &activity, &everything).await?;
+    Ok(Some(()))
 }
 
 /// Later requests would fail the same way, so the sync stops.

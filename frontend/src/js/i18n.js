@@ -46,6 +46,10 @@ const GERMAN = {
   "Remove the Garmin key? Your saved data stays, but you cannot sync until you add a key again.":
     "Garmin-Schlüssel entfernen? Deine gespeicherten Daten bleiben erhalten, aber du kannst erst wieder synchronisieren, wenn du einen Schlüssel hinzufügst.",
   "Could not sign out.": "Abmelden hat nicht funktioniert.",
+  "Original file": "Originaldatei",
+  "Download again": "Erneut herunterladen",
+  "Downloading the activity from Garmin again…": "Die Aktivität wird erneut von Garmin heruntergeladen…",
+  "Could not download the activity again.": "Die Aktivität konnte nicht erneut heruntergeladen werden.",
   "Sync stopped. The next sync continues where it stopped.":
     "Synchronisierung gestoppt. Die nächste macht dort weiter, wo diese aufgehört hat.",
   "Lost contact with the API. Reload the page to see the sync.":

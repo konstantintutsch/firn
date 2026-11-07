@@ -931,3 +931,113 @@ async fn health_statistics_average_the_resting_heart_rate_over_a_week() {
         json!([["2026-01-07", 48.0], ["2026-01-08", 44.0]])
     );
 }
+
+#[tokio::test]
+async fn downloads_the_original_file_and_gpx() {
+    let pool = common::test_pool().await;
+    add_two_activities(&pool).await;
+    let fit = common::fit_of(&[
+        (
+            common::semicircles(BERLIN.lat),
+            common::semicircles(BERLIN.lon),
+        ),
+        (
+            common::semicircles(NEAR_BERLIN.lat),
+            common::semicircles(NEAR_BERLIN.lon),
+        ),
+    ]);
+    common::files(&pool)
+        .await
+        .save_original(1, Some(&common::zip_of(&[("1_ACTIVITY.fit", &fit)])))
+        .await
+        .unwrap();
+    let state = common::state(pool.clone(), "http://unused", None).await;
+    let download = async |uri: &str| {
+        let request = Request::get(uri).header("cookie", common::cookie(&pool).await);
+        let response = router(state.clone())
+            .oneshot(request.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let disposition = response
+            .headers()
+            .get("content-disposition")
+            .map(|value| value.to_str().unwrap().to_owned());
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        (status, disposition, bytes)
+    };
+
+    let (status, disposition, bytes) = download("/api/activities/1/file").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(disposition.unwrap(), r#"attachment; filename="1.fit""#);
+    assert_eq!(bytes.as_ref(), fit.as_slice());
+
+    let (status, disposition, bytes) = download("/api/activities/1/file?format=gpx").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(disposition.unwrap(), r#"attachment; filename="1.gpx""#);
+    let gpx = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(gpx.contains("<name>Morning 100% loop</name>"));
+    assert_eq!(gpx.matches("<trkpt").count(), 2);
+
+    assert_eq!(
+        download("/api/activities/1/file?format=kml").await.0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        download("/api/activities/2/file").await.0,
+        StatusCode::NOT_FOUND
+    );
+    let other = common::user_named(&pool, "other").await;
+    let request = Request::get("/api/activities/1/file")
+        .header("cookie", common::cookie_for(&pool, other).await);
+    let response = router(state.clone())
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn one_activity_can_be_downloaded_again() {
+    let server = MockServer::start().await;
+    mount_garmin(&server, Duration::ZERO).await;
+    let pool = common::test_pool().await;
+    let state = common::state(pool.clone(), &server.uri(), Some(common::API_KEY)).await;
+    request_sync(&state, true).await;
+    assert_eq!(finished_sync(&state).await["state"], "succeeded");
+    let downloads = async || {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|request| request.url.path() == "/download-service/files/activity/1")
+            .count()
+    };
+    assert_eq!(downloads().await, 1);
+
+    let resync = async |id: i64, cookie: String| {
+        let request = Request::post(format!("/api/activities/{id}/sync"))
+            .header("cookie", cookie)
+            .header("x-requested-with", "runmap");
+        router(state.clone())
+            .oneshot(request.body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .status()
+    };
+    assert_eq!(
+        resync(1, common::cookie(&pool).await).await,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(downloads().await, 2);
+    assert_eq!(
+        resync(99, common::cookie(&pool).await).await,
+        StatusCode::NOT_FOUND
+    );
+    let other = common::user_named(&pool, "other").await;
+    assert_eq!(
+        resync(1, common::cookie_for(&pool, other).await).await,
+        StatusCode::CONFLICT
+    );
+}

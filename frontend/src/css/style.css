@@ -192,6 +192,21 @@ body {
 }
 
 /* The photos in one row that scrolls sideways. */
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.detail-actions a {
+  text-decoration: none;
+}
+
+.detail-actions [hidden] {
+  display: none;
+}
+
 .detail-images {
   display: flex;
   gap: 6px;

@@ -85,14 +85,88 @@ pub fn parse_samples(zip: &[u8]) -> Result<Vec<Sample>> {
     Ok(points)
 }
 
-type Parser = fn(&[u8]) -> Result<Vec<Sample>>;
-
-fn located(point: Point) -> Sample {
-    Sample {
-        position: Some(point),
-        ..Sample::default()
+/// The FIT, GPX or TCX file inside a Garmin download, with its name in lower case.
+pub fn original_file(zip: &[u8]) -> Result<(String, Vec<u8>)> {
+    let mut archive = ZipArchive::new(Cursor::new(zip)).context("malformed ZIP")?;
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index).context("malformed ZIP entry")?;
+        let name = file
+            .name()
+            .context("malformed ZIP entry name")?
+            .to_ascii_lowercase();
+        if parser_for(&name).is_none() {
+            continue;
+        }
+        let mut content = Vec::new();
+        file.by_ref()
+            .take(MAX_FILE_BYTES + 1)
+            .read_to_end(&mut content)
+            .context("could not extract ZIP entry")?;
+        if content.len() as u64 > MAX_FILE_BYTES {
+            bail!("{name} is too large");
+        }
+        return Ok((name, content));
     }
+    bail!("no FIT, GPX or TCX file in the archive")
 }
+
+/// A GPX 1.1 file of the samples with a position, with elevation, time, and
+/// heart rate and cadence in Garmin's extension, which most apps read.
+pub fn to_gpx(name: &str, activity_type: &str, samples: &[Sample]) -> String {
+    use std::fmt::Write;
+
+    let mut gpx = String::from(concat!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>"#,
+        "\n",
+        r#"<gpx version="1.1" creator="Runmap" xmlns="http://www.topografix.com/GPX/1/1" "#,
+        r#"xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">"#,
+        "\n",
+    ));
+    let _ = writeln!(
+        gpx,
+        "  <trk>\n    <name>{}</name>\n    <type>{}</type>\n    <trkseg>",
+        escape(name),
+        escape(activity_type)
+    );
+    for sample in samples {
+        let Some(Point { lat, lon }) = sample.position else {
+            continue;
+        };
+        let _ = write!(gpx, r#"      <trkpt lat="{lat}" lon="{lon}">"#);
+        if let Some(elevation) = sample.elevation_m {
+            let _ = write!(gpx, "<ele>{elevation:.1}</ele>");
+        }
+        if let Some(time) = sample
+            .timestamp
+            .and_then(|seconds| chrono::DateTime::from_timestamp_millis((seconds * 1000.0) as i64))
+        {
+            let _ = write!(
+                gpx,
+                "<time>{}</time>",
+                time.format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            );
+        }
+        if sample.heart_rate.is_some() || sample.cadence.is_some() {
+            gpx.push_str("<extensions><gpxtpx:TrackPointExtension>");
+            if let Some(heart_rate) = sample.heart_rate {
+                let _ = write!(gpx, "<gpxtpx:hr>{}</gpxtpx:hr>", heart_rate.round());
+            }
+            if let Some(cadence) = sample.cadence {
+                let _ = write!(gpx, "<gpxtpx:cad>{}</gpxtpx:cad>", cadence.round());
+            }
+            gpx.push_str("</gpxtpx:TrackPointExtension></extensions>");
+        }
+        gpx.push_str("</trkpt>\n");
+    }
+    gpx.push_str("    </trkseg>\n  </trk>\n</gpx>\n");
+    gpx
+}
+
+fn escape(text: &str) -> String {
+    quick_xml::escape::escape(text).into_owned()
+}
+
+type Parser = fn(&[u8]) -> Result<Vec<Sample>>;
 
 fn parser_for(name: &str) -> Option<Parser> {
     match name.rsplit_once('.')?.1 {
@@ -164,83 +238,150 @@ fn number(value: &Value) -> Option<f64> {
         .filter(|number: &f64| number.is_finite())
 }
 
-fn parse_gpx(content: &[u8]) -> Result<Vec<Sample>> {
+/// Latitude and longitude, while the element that holds them is read.
+type PartialPosition = (Option<f64>, Option<f64>);
+
+/// The field that the text inside a GPX or TCX element belongs to.
+#[derive(Clone, Copy)]
+enum Field {
+    Lat,
+    Lon,
+    Elevation,
+    Time,
+    HeartRate,
+    Cadence,
+    Distance,
+    Power,
+}
+
+impl Field {
+    /// Elements by their local name, which leaves out namespaces like `gpxtpx:hr`.
+    fn of(name: &[u8], in_heart_rate: bool) -> Option<Self> {
+        Some(match name {
+            b"LatitudeDegrees" => Field::Lat,
+            b"LongitudeDegrees" => Field::Lon,
+            b"ele" | b"AltitudeMeters" => Field::Elevation,
+            b"time" | b"Time" => Field::Time,
+            b"hr" => Field::HeartRate,
+            // In TCX, the heart rate is the Value inside HeartRateBpm.
+            b"Value" if in_heart_rate => Field::HeartRate,
+            b"cad" | b"Cadence" | b"RunCadence" => Field::Cadence,
+            b"DistanceMeters" => Field::Distance,
+            b"power" | b"Watts" => Field::Power,
+            _ => return None,
+        })
+    }
+
+    fn set(self, sample: &mut Sample, position: &mut PartialPosition, text: &[u8]) -> Result<()> {
+        let text = std::str::from_utf8(text).context("non UTF-8 value")?.trim();
+        let number = || text.parse::<f64>().ok().filter(|number| number.is_finite());
+        match self {
+            Field::Lat => position.0 = Some(parse_degrees(text.as_bytes())?),
+            Field::Lon => position.1 = Some(parse_degrees(text.as_bytes())?),
+            Field::Elevation => sample.elevation_m = number(),
+            Field::Time => {
+                sample.timestamp = chrono::DateTime::parse_from_rfc3339(text)
+                    .ok()
+                    .map(|time| time.timestamp_millis() as f64 / 1000.0);
+            }
+            Field::HeartRate => sample.heart_rate = number(),
+            Field::Cadence => sample.cadence = number(),
+            Field::Distance => sample.distance_m = number(),
+            Field::Power => sample.power_w = number(),
+        }
+        Ok(())
+    }
+}
+
+/// Reads `trkpt` elements of GPX, or `Trackpoint` elements of TCX, with the
+/// values inside them. `point` names the element and `has_attributes` says
+/// whether it carries `lat` and `lon` itself, as in GPX.
+fn parse_xml(content: &[u8], point: &[u8], has_attributes: bool) -> Result<Vec<Sample>> {
     let mut reader = Reader::from_reader(content);
     let mut buffer = Vec::new();
-    let mut points = Vec::new();
+    let mut samples = Vec::new();
+    let mut current: Option<(Sample, PartialPosition)> = None;
+    let mut field = None;
+    let mut in_heart_rate = false;
+
+    let finish = |sample: Sample, (lat, lon): PartialPosition| -> Result<Sample> {
+        let position = match (lat, lon) {
+            (Some(lat), Some(lon)) => Some(checked_point(lat, lon)?),
+            (None, None) if !has_attributes => None,
+            _ => bail!("track point without coordinates"),
+        };
+        Ok(Sample { position, ..sample })
+    };
+    let attributes = |element: &quick_xml::events::BytesStart| -> Result<PartialPosition> {
+        let (mut lat, mut lon) = (None, None);
+        for attribute in element.attributes() {
+            let attribute = attribute.context("malformed attribute")?;
+            match attribute.key.as_ref() {
+                b"lat" => lat = Some(parse_degrees(&attribute.value)?),
+                b"lon" => lon = Some(parse_degrees(&attribute.value)?),
+                _ => {}
+            }
+        }
+        Ok((lat, lon))
+    };
 
     loop {
         match reader
             .read_event_into(&mut buffer)
-            .context("malformed GPX")?
+            .context("malformed XML")?
         {
-            Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"trkpt" =>
-            {
-                let (mut lat, mut lon) = (None, None);
-                for attribute in element.attributes() {
-                    let attribute = attribute.context("malformed GPX attribute")?;
-                    match attribute.key.as_ref() {
-                        b"lat" => lat = Some(parse_degrees(&attribute.value)?),
-                        b"lon" => lon = Some(parse_degrees(&attribute.value)?),
-                        _ => {}
-                    }
-                }
-                let (Some(lat), Some(lon)) = (lat, lon) else {
-                    bail!("track point without coordinates");
+            Event::Empty(element) if element.local_name().as_ref() == point => {
+                let position = if has_attributes {
+                    attributes(&element)?
+                } else {
+                    (None, None)
                 };
-                points.push(located(checked_point(lat, lon)?));
+                samples.push(finish(Sample::default(), position)?);
             }
-            Event::Eof => return Ok(points),
+            Event::Start(element) => {
+                let name = element.local_name();
+                if name.as_ref() == point {
+                    let position = if has_attributes {
+                        attributes(&element)?
+                    } else {
+                        (None, None)
+                    };
+                    current = Some((Sample::default(), position));
+                } else if name.as_ref() == b"HeartRateBpm" {
+                    in_heart_rate = true;
+                } else if current.is_some() {
+                    field = Field::of(name.as_ref(), in_heart_rate);
+                }
+            }
+            Event::Text(text) => {
+                if let (Some(field), Some((sample, position))) = (field, &mut current) {
+                    field.set(sample, position, &text)?;
+                }
+            }
+            Event::End(element) => {
+                field = None;
+                let name = element.local_name();
+                if name.as_ref() == b"HeartRateBpm" {
+                    in_heart_rate = false;
+                } else if name.as_ref() == point
+                    && let Some((sample, position)) = current.take()
+                {
+                    samples.push(finish(sample, position)?);
+                }
+            }
+            Event::Eof => return Ok(samples),
             _ => {}
         }
         buffer.clear();
     }
 }
 
+fn parse_gpx(content: &[u8]) -> Result<Vec<Sample>> {
+    parse_xml(content, b"trkpt", true).context("malformed GPX")
+}
+
 fn parse_tcx(content: &[u8]) -> Result<Vec<Sample>> {
-    #[derive(Clone, Copy)]
-    enum Coordinate {
-        Lat,
-        Lon,
-    }
-
-    let mut reader = Reader::from_reader(content);
-    let mut buffer = Vec::new();
-    let mut points = Vec::new();
-    let mut current = None;
-    let (mut lat, mut lon) = (None, None);
-
-    loop {
-        match reader
-            .read_event_into(&mut buffer)
-            .context("malformed TCX")?
-        {
-            Event::Start(element) => match element.local_name().as_ref() {
-                b"LatitudeDegrees" => current = Some(Coordinate::Lat),
-                b"LongitudeDegrees" => current = Some(Coordinate::Lon),
-                b"Position" => (lat, lon) = (None, None),
-                _ => {}
-            },
-            Event::Text(text) => match current {
-                Some(Coordinate::Lat) => lat = Some(parse_degrees(&text)?),
-                Some(Coordinate::Lon) => lon = Some(parse_degrees(&text)?),
-                None => {}
-            },
-            Event::End(element) => {
-                current = None;
-                if element.local_name().as_ref() == b"Position" {
-                    let (Some(lat), Some(lon)) = (lat, lon) else {
-                        bail!("position without coordinates");
-                    };
-                    points.push(located(checked_point(lat, lon)?));
-                }
-            }
-            Event::Eof => return Ok(points),
-            _ => {}
-        }
-        buffer.clear();
-    }
+    parse_xml(content, b"Trackpoint", false).context("malformed TCX")
 }
 
 fn parse_degrees(value: &[u8]) -> Result<f64> {

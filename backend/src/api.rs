@@ -20,7 +20,7 @@ use crate::files::FileStore;
 use crate::garmin::{GarminClient, GarminError};
 use crate::heatmap::{self, Position, Viewport};
 use crate::statistics;
-use crate::sync::{HealthRange, Report, sync_all};
+use crate::sync::{self, HealthRange, Report, sync_all};
 use crate::track::{self, Sample};
 
 const MAX_ZOOM: u8 = 22;
@@ -48,6 +48,8 @@ struct CachedTracks {
         heatmap,
         activities,
         activity,
+        activity_file,
+        resync_activity,
         activity_image,
         activity_types,
         stats,
@@ -158,6 +160,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/heatmap", get(heatmap))
         .route("/api/activities", get(activities))
         .route("/api/activities/{id}", get(activity))
+        .route("/api/activities/{id}/file", get(activity_file))
+        .route("/api/activities/{id}/sync", post(resync_activity))
         .route(
             "/api/activities/{id}/images/{image_id}",
             get(activity_image),
@@ -626,6 +630,124 @@ async fn activity(
         samples: Samples::from_samples(&samples),
         images,
     }))
+}
+
+/// Downloads an activity again from Garmin: its file, track, details, workouts
+/// and photos. Waits until it is done, which takes a few seconds.
+///
+/// Requires the `X-Requested-With` header.
+#[utoipa::path(
+    post,
+    path = "/api/activities/{id}/sync",
+    params(("id" = i64, Path, description = "Garmin's activity ID")),
+    responses(
+        (status = 204, description = "The activity is up to date"),
+        (status = 401, description = "Not signed in", body = ErrorBody),
+        (status = 403, description = "The header is missing", body = ErrorBody),
+        (status = 404, description = "No such activity", body = ErrorBody),
+        (status = 409, description = "A sync is running or no API key is set", body = ErrorBody),
+        (status = 502, description = "Garmin failed", body = ErrorBody),
+    )
+)]
+async fn resync_activity(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<StatusCode, ApiError> {
+    require_header(&headers)?;
+    let Some(sealed) = &user.garmin_api_key else {
+        return Err(ApiError::Conflict(
+            "No Garmin API key is saved. Add one in the settings",
+        ));
+    };
+    // Both would write the same activity.
+    if state.sync_tasks.lock().unwrap().contains_key(&user.id) {
+        return Err(ApiError::Conflict("a sync is already running"));
+    }
+    let api_key = state.auth.secret_box.open(sealed)?;
+    let mut client = GarminClient::new(&state.garmin.base_url, &api_key)
+        .map_err(|error| anyhow::anyhow!("{error}"))?
+        .with_retry_delay(state.garmin.retry_delay);
+    let result = sync::resync_activity(&state.pool, &state.files, &mut client, user.id, id).await;
+    state.forget_tracks(user.id);
+    match result {
+        Ok(Some(())) => Ok(StatusCode::NO_CONTENT),
+        Ok(None) => Err(ApiError::NotFound("no such activity")),
+        Err(GarminError::Database(error)) => Err(ApiError::Internal(error)),
+        Err(error) => Err(ApiError::BadGateway(error.to_string())),
+    }
+}
+
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+struct FileQuery {
+    /// `original` for the file the device recorded, usually FIT, or `gpx` for a
+    /// GPX file made from it. Defaults to `original`.
+    format: Option<String>,
+}
+
+/// Downloads an activity's file, as the device recorded it or as GPX.
+#[utoipa::path(
+    get,
+    path = "/api/activities/{id}/file",
+    params(("id" = i64, Path, description = "Garmin's activity ID"), FileQuery),
+    responses(
+        (status = 200, description = "The file, as an attachment", content_type = "application/octet-stream"),
+        (status = 400, description = "Unknown format", body = ErrorBody),
+        (status = 401, description = "Not signed in", body = ErrorBody),
+        (status = 404, description = "No such activity, or it has no file", body = ErrorBody),
+    )
+)]
+async fn activity_file(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<i64>,
+    Query(query): Query<FileQuery>,
+) -> Result<Response, ApiError> {
+    let gpx = match query.format.as_deref() {
+        None | Some("original") => false,
+        Some("gpx") => true,
+        Some(_) => return Err(ApiError::BadRequest("format must be original or gpx")),
+    };
+    let (activity, _) = db::activity_with_summary(&state.pool, user.id, id)
+        .await?
+        .ok_or(ApiError::NotFound("no such activity"))?;
+    let zip = state
+        .files
+        .original(id)
+        .await?
+        .ok_or(ApiError::NotFound("this activity has no file"))?;
+    let (file_name, content_type, data) = tokio::task::spawn_blocking(move || {
+        if gpx {
+            let samples = track::parse_samples(&zip)?;
+            let gpx = track::to_gpx(&activity.name, &activity.activity_type, &samples);
+            Ok::<_, anyhow::Error>((format!("{id}.gpx"), "application/gpx+xml", gpx.into_bytes()))
+        } else {
+            let (name, data) = track::original_file(&zip)?;
+            let extension = name
+                .rsplit_once('.')
+                .map_or("fit", |(_, extension)| extension);
+            Ok((
+                format!("{id}.{extension}"),
+                "application/octet-stream",
+                data,
+            ))
+        }
+    })
+    .await
+    .map_err(anyhow::Error::from)??;
+    Ok((
+        [
+            (header::CONTENT_TYPE, content_type.to_owned()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{file_name}\""),
+            ),
+        ],
+        data,
+    )
+        .into_response())
 }
 
 /// A photo added to an activity on Garmin Connect.

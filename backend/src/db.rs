@@ -113,6 +113,17 @@ pub struct Missing {
 }
 
 /// `None` if the activity belongs to another account.
+/// The summary of one of the account's activities, as Garmin's list sent it.
+pub async fn summary(pool: &Pool, user_id: i64, id: i64) -> Result<Option<Value>> {
+    Ok(activities::table
+        .find(id)
+        .filter(activities::user_id.eq(user_id))
+        .select(activities::summary)
+        .first(&mut pool.get().await?)
+        .await
+        .optional()?)
+}
+
 /// When the track was saved, and whether details, workouts and images were.
 type MissingRow = (Option<DateTime<Utc>>, bool, bool, bool);
 

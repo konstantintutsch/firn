@@ -4,7 +4,7 @@
  */
 
 import { bars } from "/js/charts.js";
-import { activityDetails, t, typeName } from "/js/account.js";
+import { activityDetails, errorMessage, send, t, typeName } from "/js/account.js";
 import { profile } from "/js/profile.js";
 
 const TRACK_SOURCE_ID = "selected-track";
@@ -182,7 +182,7 @@ function html(name, className, text) {
  * Wires the detail panel to the map. `heatLayers` are hidden while the track is
  * colored by a metric, and `legend` shows that metric's colors.
  */
-export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onClose }) {
+export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onClose, onReload }) {
   const panel = document.querySelector("#detail");
   const titleElement = document.querySelector("#detail-title");
   const metaElement = document.querySelector("#detail-meta");
@@ -198,6 +198,7 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
   const colorSelect = document.querySelector("#track-color");
   const statusElement = document.querySelector("#detail-status");
   const imagesElement = document.querySelector("#detail-images");
+  const actionsElement = document.querySelector("#detail-actions");
 
   let detail = null;
   let metrics = [];
@@ -207,6 +208,27 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
   let profileKey = readStorage(PROFILE_STORAGE_KEY) ?? "elevation";
 
   document.querySelector("#detail-close").addEventListener("click", onClose);
+
+  const resyncButton = document.querySelector("#detail-resync");
+  resyncButton.addEventListener("click", async () => {
+    const id = detail?.activity.id;
+    if (id == null) return;
+    resyncButton.disabled = true;
+    statusElement.textContent = t("Downloading the activity from Garmin again…");
+    try {
+      const response = await send(`/api/activities/${id}/sync`, { method: "POST" });
+      if (response.ok) {
+        statusElement.textContent = "";
+        onReload(id);
+      } else {
+        statusElement.textContent = await errorMessage(response, t("Could not download the activity again."));
+      }
+    } catch {
+      statusElement.textContent = t("Could not reach the API. Is it running?");
+    } finally {
+      resyncButton.disabled = false;
+    }
+  });
 
   colorSelect.addEventListener("change", () => {
     colorKey = colorSelect.value;
@@ -407,6 +429,18 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     );
   }
 
+  /** Links to download the files and to open the activity on Garmin Connect. */
+  function renderActions(activity, samples) {
+    const file = `/api/activities/${activity.id}/file`;
+    const hasFile = Object.keys(samples).length > 0;
+    document.querySelector("#detail-original").href = file;
+    document.querySelector("#detail-gpx").href = `${file}?format=gpx`;
+    document.querySelector("#detail-original").hidden = !hasFile;
+    document.querySelector("#detail-gpx").hidden = samples.position == null;
+    document.querySelector("#detail-garmin").href = `https://connect.garmin.com/modern/activity/${activity.id}`;
+    actionsElement.hidden = false;
+  }
+
   /** Shows a loaded activity from `/api/activities/{id}`. */
   function show(loaded) {
     detail = loaded;
@@ -423,6 +457,7 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     statusElement.textContent = "";
     renderMetrics(summary, activity.activity_type);
     renderImages(images ?? []);
+    renderActions(activity, samples);
 
     profileTabs.replaceChildren(
       ...metrics.map(({ key, label }) => {
@@ -465,6 +500,7 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     titleElement.textContent = activity.name || (activity.activity_type ? typeName(activity.activity_type) : "");
     metaElement.textContent = "";
     descriptionElement.textContent = "";
+    actionsElement.hidden = true;
     renderImages([]);
     metricsElement.replaceChildren();
     splitsElement.hidden = true;

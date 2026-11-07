@@ -1,7 +1,7 @@
 mod common;
 
 use common::{FitRecord, fit_of, fit_of_records, semicircles, zip_of};
-use runmap::track::{Point, parse_archive, parse_samples};
+use runmap::track::{Point, original_file, parse_archive, parse_samples, to_gpx};
 
 const GPX: &[u8] = br#"<?xml version="1.0"?>
     <gpx xmlns="http://www.topografix.com/GPX/1/1"><trk>
@@ -81,6 +81,37 @@ fn reads_tcx_positions() {
 }
 
 #[test]
+fn reads_gpx_and_tcx_metrics() {
+    let gpx = br#"<gpx><trk><trkseg>
+      <trkpt lat="52.5" lon="13.4"><ele>30.5</ele><time>2026-01-01T08:00:00Z</time>
+        <extensions><gpxtpx:TrackPointExtension>
+          <gpxtpx:hr>140</gpxtpx:hr><gpxtpx:cad>85</gpxtpx:cad>
+        </gpxtpx:TrackPointExtension></extensions>
+      </trkpt>
+    </trkseg></trk></gpx>"#;
+    let samples = parse_samples(&zip_of(&[("a.gpx", gpx)])).unwrap();
+    assert_eq!(samples.len(), 1);
+    assert_eq!(samples[0].elevation_m, Some(30.5));
+    assert_eq!(samples[0].timestamp, Some(1_767_254_400.0));
+    assert_eq!(samples[0].heart_rate, Some(140.0));
+    assert_eq!(samples[0].cadence, Some(85.0));
+
+    let tcx = br#"<TrainingCenterDatabase><Activities><Activity><Lap><Track>
+      <Trackpoint><Time>2026-01-01T08:00:05Z</Time>
+        <Position><LatitudeDegrees>52.5</LatitudeDegrees><LongitudeDegrees>13.4</LongitudeDegrees></Position>
+        <AltitudeMeters>31</AltitudeMeters><DistanceMeters>12.5</DistanceMeters>
+        <HeartRateBpm><Value>141</Value></HeartRateBpm>
+      </Trackpoint>
+    </Track></Lap></Activity></Activities></TrainingCenterDatabase>"#;
+    let samples = parse_samples(&zip_of(&[("a.tcx", tcx)])).unwrap();
+    assert_eq!(samples.len(), 1);
+    assert_eq!(samples[0].timestamp, Some(1_767_254_405.0));
+    assert_eq!(samples[0].distance_m, Some(12.5));
+    assert_eq!(samples[0].heart_rate, Some(141.0));
+    assert_eq!(samples[0].elevation_m, Some(31.0));
+}
+
+#[test]
 fn ignores_other_files_in_the_archive() {
     let fit = fit_of(&[(semicircles(1.0), semicircles(2.0))]);
     let points = parse_archive(&zip_of(&[("notes.txt", b"hi"), ("a.fit", &fit)])).unwrap();
@@ -135,4 +166,29 @@ fn reads_fit_metrics_in_their_units() {
 
     // The track keeps only the samples with a position.
     assert_eq!(parse_archive(&zip_of(&[("a.fit", &fit)])).unwrap().len(), 1);
+}
+
+#[test]
+fn gpx_export_reads_back_the_same_samples() {
+    let gpx = br#"<gpx><trk><trkseg>
+      <trkpt lat="52.5" lon="13.4"><ele>30.5</ele><time>2026-01-01T08:00:00Z</time>
+        <extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>140</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions>
+      </trkpt>
+      <trkpt lat="52.6" lon="13.5"/>
+    </trkseg></trk></gpx>"#;
+    let samples = parse_samples(&zip_of(&[("a.gpx", gpx)])).unwrap();
+    let exported = to_gpx("Run <& friends>", "running", &samples);
+    assert!(exported.contains("<name>Run &lt;&amp; friends&gt;</name>"));
+    let again = parse_samples(&zip_of(&[("b.gpx", exported.as_bytes())])).unwrap();
+    assert_eq!(again, samples);
+}
+
+#[test]
+fn finds_the_original_file_in_the_archive() {
+    let fit = fit_of(&[(semicircles(1.0), semicircles(2.0))]);
+    let (name, content) =
+        original_file(&zip_of(&[("notes.txt", b"hi"), ("123_ACTIVITY.FIT", &fit)])).unwrap();
+    assert_eq!(name, "123_activity.fit");
+    assert_eq!(content, fit);
+    assert!(original_file(&zip_of(&[("notes.txt", b"hi")])).is_err());
 }

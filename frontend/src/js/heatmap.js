@@ -132,6 +132,7 @@ const detail = setUpActivityDetail(map, {
   beforeLayer: layerAboveHeat,
   legend,
   onClose: () => select(null),
+  onReload: (id) => loadDetail(id, false),
 });
 
 // Fires again after each theme change, because a new style drops source and layer.

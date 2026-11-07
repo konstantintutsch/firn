@@ -146,7 +146,8 @@ struct RawActivityType {
 }
 
 impl Activity {
-    fn from_summary(summary: Value) -> Result<Self, GarminError> {
+    /// Reads an activity from the summary that Garmin's activity list sends.
+    pub fn from_summary(summary: Value) -> Result<Self, GarminError> {
         let raw = RawActivity::deserialize(&summary)
             .map_err(|error| GarminError::Unexpected(format!("activity: {error}")))?;
         let started_at = NaiveDateTime::parse_from_str(&raw.start_time_gmt, "%Y-%m-%d %H:%M:%S")
