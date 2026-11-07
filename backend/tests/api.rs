@@ -1179,3 +1179,42 @@ async fn health_needs_no_session() {
     let (status, _) = get_with(&pool, "/api/health", None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 }
+
+#[tokio::test]
+async fn photos_are_only_for_their_account() {
+    let pool = common::test_pool().await;
+    add_two_activities(&pool).await;
+    db::save_images(
+        &pool,
+        1,
+        &[db::Image {
+            id: "a".to_owned(),
+            content_type: "image/png".to_owned(),
+        }],
+    )
+    .await
+    .unwrap();
+    common::files(&pool)
+        .await
+        .save_image(1, "a", b"png")
+        .await
+        .unwrap();
+    let state = common::state(pool.clone(), "http://unused", None).await;
+    let fetch = async |cookie: String| {
+        let request = Request::get("/api/activities/1/images/a").header("cookie", cookie);
+        let response = router(state.clone())
+            .oneshot(request.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let content_type = response.headers().get("content-type").cloned();
+        (status, content_type)
+    };
+
+    let (status, content_type) = fetch(common::cookie(&pool).await).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(content_type.unwrap(), "image/png");
+    let other = common::user_named(&pool, "other").await;
+    let (status, _) = fetch(common::cookie_for(&pool, other).await).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
