@@ -4,22 +4,20 @@ const THEMES = {
   light: {
     styleUrl: "https://tiles.openfreemap.org/styles/positron",
     heatStops: [
-      0, "rgba(253, 186, 116, 0)",
-      0.1, "rgba(253, 186, 116, 0.85)",
-      0.35, "#f97316",
-      0.6, "#d6246e",
-      0.85, "#7b1fa2",
+      0, "#f06414",
+      0.3, "#e03c14",
+      0.55, "#d6246e",
+      0.8, "#7b1fa2",
       1, "#2e1065",
     ],
   },
   dark: {
     styleUrl: "https://tiles.openfreemap.org/styles/dark",
     heatStops: [
-      0, "rgba(91, 42, 134, 0)",
-      0.1, "rgba(91, 42, 134, 0.75)",
-      0.35, "#c2366b",
-      0.6, "#f4743b",
-      0.85, "#fbd25d",
+      0, "#8e3fc4",
+      0.3, "#d13a78",
+      0.55, "#f4743b",
+      0.8, "#fbd25d",
       1, "#fff7d6",
     ],
   },
@@ -29,7 +27,10 @@ const SOURCE_ID = "runs";
 const HEAT_LAYER_ID = "runs-heat";
 const REFRESH_DELAY_MS = 150;
 /** Radius at the zoom the grid was built for, where cells are 1 px apart. */
-const HEAT_RADIUS_PX = 2;
+const HEAT_RADIUS_PX = 1;
+/** Extra radius at zoom 0, which fades out by about zoom 8. Keeps lone cells visible. */
+const LOW_ZOOM_RADIUS_PX = 3;
+const LOW_ZOOM_RADIUS_FALLOFF = 0.35;
 /** Fetches beyond the viewport so that small pans do not show empty edges. */
 const VIEWPORT_PADDING = 0.25;
 
@@ -49,7 +50,7 @@ const map = new maplibregl.Map({
   maxZoom: 18,
   renderWorldCopies: false,
   hash: true,
-  // MapLibre draws heat at a quarter of the canvas resolution, which is coarse at 1x.
+  // Anti-aliasing fades circles this small at 1x, so those screens get extra pixels too.
   pixelRatio: Math.max(devicePixelRatio, 2),
 });
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
@@ -58,23 +59,22 @@ let pendingRequest = null;
 let refreshTimer = null;
 let hasRuns = false;
 let cells = [];
-let gridZoom = 0;
+let gridZoom = Math.floor(map.getZoom());
 let isFirstStyle = true;
 
 // Fires again after each theme change, because a new style drops source and layer.
 map.on("style.load", () => {
-  map.addSource(SOURCE_ID, { type: "geojson", data: toGeoJson(cells), tolerance: 0, buffer: 512 });
+  map.addSource(SOURCE_ID, { type: "geojson", data: toGeoJson(cells), tolerance: 0 });
   map.addLayer(
     {
       id: HEAT_LAYER_ID,
-      type: "heatmap",
+      type: "circle",
       source: SOURCE_ID,
       paint: {
-        "heatmap-weight": ["get", "weight"],
-        "heatmap-radius": heatRadius(),
-        // A lone cell of maximum weight peaks at 0.4 times this, a line at about 1.
-        "heatmap-intensity": 1.3,
-        "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"], ...THEMES[theme].heatStops],
+        "circle-radius": heatRadius(),
+        // A transition would briefly redraw new cells at the radius of the old grid.
+        "circle-radius-transition": { duration: 0 },
+        "circle-color": ["interpolate", ["linear"], ["get", "weight"], ...THEMES[theme].heatStops],
       },
     },
     layerAboveHeat(),
@@ -138,7 +138,7 @@ async function refresh() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     ({ cells, grid_zoom: gridZoom } = await response.json());
     map.getSource(SOURCE_ID)?.setData(toGeoJson(cells));
-    if (map.getLayer(HEAT_LAYER_ID)) map.setPaintProperty(HEAT_LAYER_ID, "heatmap-radius", heatRadius());
+    if (map.getLayer(HEAT_LAYER_ID)) map.setPaintProperty(HEAT_LAYER_ID, "circle-radius", heatRadius());
     legendElement.hidden = cells.length === 0;
     if (hasRuns) showStatus("");
   } catch (error) {
@@ -148,7 +148,8 @@ async function refresh() {
 
 /** Grows with the map, so the heat keeps its place and size while zooming. */
 function heatRadius() {
-  const radiusAt = (zoom) => HEAT_RADIUS_PX * 2 ** (zoom - gridZoom);
+  const lowZoomRadius = Math.max(0, LOW_ZOOM_RADIUS_PX - LOW_ZOOM_RADIUS_FALLOFF * gridZoom);
+  const radiusAt = (zoom) => (HEAT_RADIUS_PX + lowZoomRadius) * 2 ** (zoom - gridZoom);
   return ["interpolate", ["exponential", 2], ["zoom"], 0, radiusAt(0), 24, radiusAt(24)];
 }
 
@@ -165,12 +166,16 @@ function viewportQuery() {
   });
 }
 
-/** Log scale, so a route run once stays visible next to one run a thousand times. */
+/**
+ * Log scale, so a route run once stays visible next to one run a thousand times.
+ * Sorted so that busy cells are drawn last and are never covered by quiet ones.
+ * This replaces `circle-sort-key`, which costs one draw call per distinct key.
+ */
 function toGeoJson(cells) {
   const maxRuns = cells.reduce((max, cell) => Math.max(max, cell.runs), 1);
   return {
     type: "FeatureCollection",
-    features: cells.map((cell) => ({
+    features: cells.toSorted((a, b) => a.runs - b.runs).map((cell) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: [cell.lon, cell.lat] },
       properties: { weight: Math.log1p(cell.runs) / Math.log1p(maxRuns) },
