@@ -6,7 +6,7 @@ use runmap::db::{self, Pool};
 use runmap::garmin::GarminClient;
 use std::io::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use wiremock::MockServer;
 use zip::write::SimpleFileOptions;
 
@@ -15,9 +15,14 @@ static NEXT_DATABASE: AtomicU32 = AtomicU32::new(0);
 /// Creates a fresh, migrated database so that tests stay independent.
 pub async fn test_pool() -> Pool {
     let admin_url = std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL is required");
+    // Not the process ID, which can repeat between containers: a failed `just test`
+    // leaves its databases behind in a running test-db.
+    let started = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
     let name = format!(
-        "test_{}_{}",
-        std::process::id(),
+        "test_{started}_{}",
         NEXT_DATABASE.fetch_add(1, Ordering::Relaxed)
     );
     let mut admin = AsyncPgConnection::establish(&admin_url).await.unwrap();

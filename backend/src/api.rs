@@ -1,4 +1,3 @@
-use std::f64::consts::PI;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -11,17 +10,13 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::db::{self, Bounds, GridCell, Pool};
+use crate::db::{self, Pool};
 use crate::garmin::GarminClient;
+use crate::heatmap::{self, Position, Track, Viewport};
 use crate::sync::{Report, sync_runs};
 
 const MAX_ZOOM: u8 = 22;
-/// World width in pixels at zoom 0 for MapLibre's 512 px tiles.
-const WORLD_PIXELS: f64 = 512.0;
-const CELL_PIXELS: f64 = 1.0;
-/// The map's maximum zoom, where a cell is about 20 cm: far below GPS accuracy.
-const MAX_GRID_ZOOM: u8 = 18;
-/// About 1 cm, well below a cell. Fewer digits make large responses much smaller.
+/// About 1 cm. Fewer digits make large responses much smaller.
 const COORDINATE_SCALE: f64 = 1e7;
 
 #[derive(OpenApi)]
@@ -45,6 +40,9 @@ pub struct AppState {
     pool: Pool,
     garmin: Arc<GarminSettings>,
     sync: Arc<Mutex<SyncStatus>>,
+    /// Loaded on the first request and again after a sync, because the heatmap
+    /// walks every track on every request, which would be slow from the database.
+    tracks: Arc<tokio::sync::Mutex<Option<Arc<Vec<Track>>>>>,
 }
 
 impl AppState {
@@ -53,7 +51,18 @@ impl AppState {
             pool,
             garmin: Arc::new(garmin),
             sync: Arc::default(),
+            tracks: Arc::default(),
         }
+    }
+
+    async fn tracks(&self) -> anyhow::Result<Arc<Vec<Track>>> {
+        let mut tracks = self.tracks.lock().await;
+        if let Some(tracks) = tracks.as_ref() {
+            return Ok(tracks.clone());
+        }
+        let loaded = Arc::new(db::load_tracks(&self.pool).await?);
+        *tracks = Some(loaded.clone());
+        Ok(loaded)
     }
 }
 
@@ -105,7 +114,7 @@ impl From<anyhow::Error> for ApiError {
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 struct HeatmapQuery {
-    /// Map zoom level from 0 to 22. Sets the grid resolution, up to the finest grid.
+    /// Map zoom level from 0 to 22. Sets how much detail the lines keep.
     zoom: u8,
     /// Western edge of the viewport, from -180 to 180 degrees.
     west: f64,
@@ -118,22 +127,21 @@ struct HeatmapQuery {
 }
 
 #[derive(Serialize, ToSchema)]
-struct HeatCell {
-    lon: f64,
-    lat: f64,
-    /// Number of distinct runs that passed through this cell.
-    runs: i64,
+struct HeatLine {
+    /// From 0 for the fewest runs in the viewport to 1 for the most, on a log scale.
+    weight: f64,
+    /// Longitude and latitude pairs.
+    #[schema(value_type = Vec<Vec<f64>>)]
+    path: Vec<Position>,
 }
 
 #[derive(Serialize, ToSchema)]
 struct Heatmap {
-    /// Zoom level that the grid was built for. Lower than the requested zoom
-    /// when that exceeds the finest grid.
-    grid_zoom: u8,
-    cells: Vec<HeatCell>,
+    /// Sorted from the quietest line to the busiest.
+    lines: Vec<HeatLine>,
 }
 
-/// Grid cells with run counts for a viewport.
+/// Colored lines of all runs in a viewport.
 #[utoipa::path(
     get,
     path = "/api/heatmap",
@@ -162,38 +170,27 @@ async fn heatmap(
         return Err(ApiError::BadRequest("invalid viewport"));
     }
 
-    let grid_zoom = query.zoom.min(MAX_GRID_ZOOM);
-    let cell_size = cell_size(grid_zoom);
-    let bounds = Bounds {
-        west: query.west,
-        south: query.south,
-        east: query.east,
-        north: query.north,
-    };
-    let cells = db::heatmap_cells(&state.pool, cell_size, &bounds)
-        .await?
-        .iter()
-        .map(|cell| to_heat_cell(cell, cell_size))
-        .collect();
-    Ok(Json(Heatmap { grid_zoom, cells }))
+    let viewport = Viewport::from_degrees(query.west, query.south, query.east, query.north);
+    let tracks = state.tracks().await?;
+    let lines =
+        tokio::task::spawn_blocking(move || heatmap::heat_lines(&tracks, &viewport, query.zoom))
+            .await
+            .map_err(anyhow::Error::from)?;
+
+    Ok(Json(Heatmap {
+        lines: lines
+            .into_iter()
+            .map(|line| HeatLine {
+                weight: line.weight,
+                path: line.path.into_iter().map(to_degrees).collect(),
+            })
+            .collect(),
+    }))
 }
 
-fn cell_size(zoom: u8) -> f64 {
-    CELL_PIXELS / (WORLD_PIXELS * 2f64.powi(zoom.into()))
-}
-
-fn to_heat_cell(cell: &GridCell, cell_size: f64) -> HeatCell {
-    let x = (cell.ix as f64 + 0.5) * cell_size;
-    let y = (cell.iy as f64 + 0.5) * cell_size;
-    HeatCell {
-        lon: round_coordinate(x * 360.0 - 180.0),
-        lat: round_coordinate((PI * (1.0 - 2.0 * y)).sinh().atan().to_degrees()),
-        runs: cell.runs,
-    }
-}
-
-fn round_coordinate(degrees: f64) -> f64 {
-    (degrees * COORDINATE_SCALE).round() / COORDINATE_SCALE
+fn to_degrees(position: Position) -> Position {
+    heatmap::unproject(position)
+        .map(|degrees| (degrees * COORDINATE_SCALE).round() / COORDINATE_SCALE)
 }
 
 #[derive(Serialize, ToSchema)]
@@ -311,6 +308,9 @@ async fn run_sync(state: AppState, api_key: String) {
 
     // Awaits a separate task, so that a panic cannot leave the state at running.
     let result = task.await;
+    // Before the status changes, because that is what makes the page reload the map.
+    *state.tracks.lock().await = None;
+
     let mut status = state.sync.lock().unwrap();
     match result {
         Ok(Ok(report)) => {

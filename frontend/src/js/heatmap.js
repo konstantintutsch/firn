@@ -26,12 +26,10 @@ const THEME_STORAGE_KEY = "theme";
 const SYNC_POLL_MS = 1000;
 const SOURCE_ID = "runs";
 const HEAT_LAYER_ID = "runs-heat";
+const DOT_LAYER_ID = "runs-dots";
+/** Below this zoom a run can be too short to draw as a line, so it also gets a faint dot. */
+const DOT_MAX_ZOOM = 9;
 const REFRESH_DELAY_MS = 150;
-/** Radius at the zoom the grid was built for, where cells are 1 px apart. */
-const HEAT_RADIUS_PX = 1;
-/** Extra radius at zoom 0, which fades out by about zoom 8. Keeps lone cells visible. */
-const LOW_ZOOM_RADIUS_PX = 3;
-const LOW_ZOOM_RADIUS_FALLOFF = 0.35;
 /** Fetches beyond the viewport so that small pans do not show empty edges. */
 const VIEWPORT_PADDING = 0.25;
 
@@ -53,35 +51,50 @@ const map = new maplibregl.Map({
   maxZoom: 18,
   renderWorldCopies: false,
   hash: true,
-  // Anti-aliasing fades circles this small at 1x, so those screens get extra pixels too.
-  pixelRatio: Math.max(devicePixelRatio, 2),
 });
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
 let pendingRequest = null;
 let refreshTimer = null;
 let hasRuns = false;
-let cells = [];
-let gridZoom = Math.floor(map.getZoom());
+let lines = [];
 let isFirstStyle = true;
 let isSyncRunning = false;
 
 // Fires again after each theme change, because a new style drops source and layer.
 map.on("style.load", () => {
-  map.addSource(SOURCE_ID, { type: "geojson", data: toGeoJson(cells), tolerance: 0 });
+  map.addSource(SOURCE_ID, { type: "geojson", data: toGeoJson(lines), tolerance: 0 });
+  const color = ["interpolate", ["linear"], ["get", "weight"], ...THEMES[theme].heatStops];
+  const beforeLayer = layerAboveHeat();
+  map.addLayer(
+    {
+      id: DOT_LAYER_ID,
+      type: "circle",
+      source: SOURCE_ID,
+      filter: ["==", ["geometry-type"], "Point"],
+      paint: {
+        "circle-radius": 2.5,
+        "circle-blur": 0.7,
+        "circle-color": color,
+        "circle-opacity": ["interpolate", ["linear"], ["zoom"], 3, 0.45, DOT_MAX_ZOOM, 0],
+      },
+    },
+    beforeLayer,
+  );
   map.addLayer(
     {
       id: HEAT_LAYER_ID,
-      type: "circle",
+      type: "line",
       source: SOURCE_ID,
+      filter: ["==", ["geometry-type"], "LineString"],
+      // Flat caps: a busy route is many short pieces, and round ends would look like beads.
+      layout: { "line-cap": "butt", "line-join": "round" },
       paint: {
-        "circle-radius": heatRadius(),
-        // A transition would briefly redraw new cells at the radius of the old grid.
-        "circle-radius-transition": { duration: 0 },
-        "circle-color": ["interpolate", ["linear"], ["get", "weight"], ...THEMES[theme].heatStops],
+        "line-width": ["interpolate", ["linear"], ["zoom"], 3, 1, 12, 1.25, 18, 1.75],
+        "line-color": color,
       },
     },
-    layerAboveHeat(),
+    beforeLayer,
   );
   if (isFirstStyle) {
     isFirstStyle = false;
@@ -141,21 +154,13 @@ async function refresh() {
   try {
     const response = await fetch(`/api/heatmap?${viewportQuery()}`, { signal: request.signal });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    ({ cells, grid_zoom: gridZoom } = await response.json());
-    map.getSource(SOURCE_ID)?.setData(toGeoJson(cells));
-    if (map.getLayer(HEAT_LAYER_ID)) map.setPaintProperty(HEAT_LAYER_ID, "circle-radius", heatRadius());
-    legendElement.hidden = cells.length === 0;
+    ({ lines } = await response.json());
+    map.getSource(SOURCE_ID)?.setData(toGeoJson(lines));
+    legendElement.hidden = lines.length === 0;
     if (hasRuns) showStatus("");
   } catch (error) {
     if (error.name !== "AbortError") showStatus("Could not load runs. Is the API running?");
   }
-}
-
-/** Grows with the map, so the heat keeps its place and size while zooming. */
-function heatRadius() {
-  const lowZoomRadius = Math.max(0, LOW_ZOOM_RADIUS_PX - LOW_ZOOM_RADIUS_FALLOFF * gridZoom);
-  const radiusAt = (zoom) => (HEAT_RADIUS_PX + lowZoomRadius) * 2 ** (zoom - gridZoom);
-  return ["interpolate", ["exponential", 2], ["zoom"], 0, radiusAt(0), 24, radiusAt(24)];
 }
 
 function viewportQuery() {
@@ -171,20 +176,20 @@ function viewportQuery() {
   });
 }
 
-/**
- * Log scale, so a route run once stays visible next to one run a thousand times.
- * Sorted so that busy cells are drawn last and are never covered by quiet ones.
- * This replaces `circle-sort-key`, which costs one draw call per distinct key.
- */
-function toGeoJson(cells) {
-  const maxRuns = cells.reduce((max, cell) => Math.max(max, cell.runs), 1);
+/** The API sorts lines by weight, so that the busiest are drawn last and end up on top. */
+function toGeoJson(lines) {
+  const showDots = map.getZoom() < DOT_MAX_ZOOM;
   return {
     type: "FeatureCollection",
-    features: cells.toSorted((a, b) => a.runs - b.runs).map((cell) => ({
-      type: "Feature",
-      geometry: { type: "Point", coordinates: [cell.lon, cell.lat] },
-      properties: { weight: Math.log1p(cell.runs) / Math.log1p(maxRuns) },
-    })),
+    features: lines.flatMap(({ weight, path }) => {
+      const line = {
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: path },
+        properties: { weight },
+      };
+      if (!showDots) return [line];
+      return [line, { ...line, geometry: { type: "Point", coordinates: path[0] } }];
+    }),
   };
 }
 
