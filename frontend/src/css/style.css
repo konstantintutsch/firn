@@ -1259,6 +1259,62 @@ a.activity:hover {
   font-size: 13px;
 }
 
+.calendar {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.calendar-day.level-0 {
+  fill: var(--fill);
+}
+
+.calendar-day.level-1 {
+  fill: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.calendar-day.level-2 {
+  fill: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.calendar-day.level-3 {
+  fill: color-mix(in srgb, var(--accent) 80%, transparent);
+}
+
+.calendar-day.level-4 {
+  fill: var(--accent);
+}
+
+.records {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.records div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+
+.records dt {
+  color: var(--ink-muted);
+}
+
+.records dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.records small {
+  margin-left: 8px;
+  color: var(--ink-muted);
+  font-weight: 400;
+}
+
 .tiles {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));

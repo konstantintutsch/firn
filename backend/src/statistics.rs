@@ -51,7 +51,13 @@ pub struct ActivityStatistic {
     aerobic_training_effect: Option<f64>,
     anaerobic_training_effect: Option<f64>,
     training_load: Option<f64>,
+    /// The fastest time in seconds over each distance in meters that Garmin
+    /// measured within the activity, like 5000.
+    fastest_splits: BTreeMap<u32, f64>,
 }
+
+/// The distances in meters that Garmin keeps the fastest time over.
+const SPLIT_DISTANCES: [u32; 6] = [1000, 1609, 5000, 10000, 21098, 42195];
 
 #[derive(Serialize, ToSchema)]
 pub struct ActivityStatistics {
@@ -104,6 +110,13 @@ pub async fn activity_statistics(
                     aerobic_training_effect: number(summary, "aerobicTrainingEffect"),
                     anaerobic_training_effect: number(summary, "anaerobicTrainingEffect"),
                     training_load: number(summary, "activityTrainingLoad"),
+                    fastest_splits: SPLIT_DISTANCES
+                        .iter()
+                        .filter_map(|meters| {
+                            let seconds = number(summary, &format!("fastestSplit_{meters}"))?;
+                            (seconds > 0.0).then_some((*meters, seconds))
+                        })
+                        .collect(),
                     id: record.id,
                     name: record.name,
                     activity_type: record.activity_type,

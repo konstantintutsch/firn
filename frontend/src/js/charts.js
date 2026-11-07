@@ -224,7 +224,8 @@ function drawLines(state, svg, inner) {
 
   for (const { slot, values: points } of series) {
     // Breaks the line where days are missing, instead of drawing across gaps.
-    const joins = (index) => index > 0 && points[index][0] - points[index - 1][0] <= MAX_LINE_GAP_MS;
+    const maxGap = state.maxGap ?? MAX_LINE_GAP_MS;
+    const joins = (index) => index > 0 && points[index][0] - points[index - 1][0] <= maxGap;
     let path = "";
     points.forEach(([time, value], index) => {
       path += `${joins(index) ? "L" : "M"}${x(time).toFixed(1)},${y(value).toFixed(1)}`;

@@ -821,7 +821,13 @@ async fn activity_statistics_include_activities_without_gps() {
     add_activity(
         &pool,
         1,
-        json!({"averageHR": 151.0, "elevationGain": 40.0, "vO2MaxValue": 52.0}),
+        json!({
+            "averageHR": 151.0,
+            "elevationGain": 40.0,
+            "vO2MaxValue": 52.0,
+            "fastestSplit_1000": 290.5,
+            "fastestSplit_5000": 0.0,
+        }),
         &[BERLIN, NEAR_BERLIN],
     )
     .await;
@@ -847,6 +853,7 @@ async fn activity_statistics_include_activities_without_gps() {
         .unwrap();
     assert_eq!(run["average_heart_rate"], 151.0);
     assert_eq!(run["vo2_max"], 52.0);
+    assert_eq!(run["fastest_splits"], json!({"1000": 290.5}));
     let gym = activities
         .iter()
         .find(|activity| activity["id"] == 2)

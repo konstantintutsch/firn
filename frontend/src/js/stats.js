@@ -1,5 +1,5 @@
 import { bars, chart, forgetCharts } from "/js/charts.js";
-import { requireAccount, setUpSync, t, typeName } from "/js/account.js";
+import { plural, requireAccount, setUpSync, t, typeName } from "/js/account.js";
 import { localDay, setUpFilters } from "/js/filters.js";
 
 const DAY_MS = 86_400_000;
@@ -329,15 +329,21 @@ function renderActivities(activities, buckets) {
   activitySection.hidden = activities.length === 0;
   if (activities.length === 0) return;
 
+  const dated = activities.filter(({ day }) => day).map((activity) => ({ ...activity, time: parseDay(activity.day) }));
+  const { current, longest } = streaks(dated);
   tiles(document.querySelector("#activity-tiles"), [
     ["Activities", activities.length.toLocaleString()],
     ["Distance", `${number()(sum(activities, "distance_m") / 1000)} km`],
     ["Time", `${number()(sum(activities, "duration_s") / 3600)} h`],
     ["Elevation gain", `${number()(sum(activities, "elevation_gain_m"))} m`],
     ["Calories", `${number()(sum(activities, "calories"))} kcal`],
+    ["Current streak", plural(current, "day", "days")],
+    ["Longest streak", plural(longest, "day", "days")],
   ]);
 
-  const dated = activities.filter(({ day }) => day).map((activity) => ({ ...activity, time: parseDay(activity.day) }));
+  calendar(card(container, "Calendar", "Distance per day, darker is more"), dated, buckets);
+  records(container, dated);
+  yearOverYear(container, dated);
   const byType = new Map();
   for (const activity of dated) {
     const entry = byType.get(activity.activity_type) ?? { distance: 0, duration: 0, count: 0 };
@@ -498,3 +504,164 @@ function renderHealth(metrics, buckets) {
   if (container.childElementCount === 0) healthSection.hidden = true;
 }
 
+
+/** Days in a row with an activity: the run up to today or yesterday, and the longest. */
+function streaks(dated) {
+  const days = [...new Set(dated.map(({ day }) => day))].sort();
+  let longest = 0;
+  let run = 0;
+  let previous = null;
+  for (const day of days) {
+    run = previous && parseDay(day) - parseDay(previous) <= DAY_MS * 1.5 ? run + 1 : 1;
+    longest = Math.max(longest, run);
+    previous = day;
+  }
+  // A day without an activity yet does not end the streak until it is over.
+  const today = parseDay(localDay(Date.now()));
+  const last = previous ? parseDay(previous) : null;
+  const current = last != null && today - last <= DAY_MS * 1.5 ? run : 0;
+  return { current, longest };
+}
+
+/** A grid of the last weeks of the period, one square per day, darker for more distance. */
+function calendar(container, dated, buckets) {
+  const SVG = "http://www.w3.org/2000/svg";
+  const SIZE = 11;
+  const GAP = 3;
+  const WEEKS = 53;
+  const perDay = new Map();
+  for (const { time, distance_m: meters, duration_s: seconds } of dated) {
+    const entry = perDay.get(time) ?? { meters: 0, seconds: 0, count: 0 };
+    entry.meters += meters ?? 0;
+    entry.seconds += seconds ?? 0;
+    entry.count += 1;
+    perDay.set(time, entry);
+  }
+  const last = Math.min(parseDay(localDay(Date.now())), buckets.at(-1).time + 31 * DAY_MS);
+  const end = new Date(last);
+  // Weeks start on Monday, and the last column is the week of `last`.
+  const start = new Date(end);
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7) - (WEEKS - 1) * 7);
+  const max = Math.max(1, ...[...perDay.values()].map(({ meters }) => meters));
+
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("viewBox", `0 0 ${WEEKS * (SIZE + GAP)} ${7 * (SIZE + GAP)}`);
+  svg.setAttribute("class", "calendar");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", t("Distance per day over the last year"));
+  for (let week = 0, date = new Date(start); week < WEEKS; week++) {
+    for (let weekday = 0; weekday < 7; weekday++, date.setDate(date.getDate() + 1)) {
+      if (date.getTime() > last) break;
+      const entry = perDay.get(date.getTime());
+      const square = document.createElementNS(SVG, "rect");
+      square.setAttribute("x", week * (SIZE + GAP));
+      square.setAttribute("y", weekday * (SIZE + GAP));
+      square.setAttribute("width", SIZE);
+      square.setAttribute("height", SIZE);
+      square.setAttribute("rx", 2);
+      const level = entry ? Math.min(4, 1 + Math.floor((Math.sqrt(entry.meters / max) || 0) * 3.99)) : 0;
+      square.setAttribute("class", `calendar-day level-${level}`);
+      const title = document.createElementNS(SVG, "title");
+      const label = date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+      title.textContent = entry
+        ? `${label}: ${plural(entry.count, "activity", "activities")} · ${number(1)(entry.meters / 1000)} km`
+        : label;
+      square.append(title);
+      svg.append(square);
+    }
+  }
+  container.append(svg);
+}
+
+const RECORD_DISTANCES = [
+  ["1000", "1 km"],
+  ["1609", "1 mile"],
+  ["5000", "5 km"],
+  ["10000", "10 km"],
+  ["21098", "Half marathon"],
+  ["42195", "Marathon"],
+];
+
+/** The fastest times of the period, and how the 5 and 10 km times developed. */
+function records(container, dated) {
+  const best = RECORD_DISTANCES.map(([meters, label]) => {
+    const fastest = dated
+      .filter((activity) => activity.fastest_splits?.[meters])
+      .reduce((winner, activity) => (!winner || activity.fastest_splits[meters] < winner.fastest_splits[meters] ? activity : winner), null);
+    return { meters, label, fastest };
+  }).filter(({ fastest }) => fastest);
+  if (best.length === 0) return;
+
+  const list = document.createElement("dl");
+  list.className = "records";
+  for (const { meters, label, fastest } of best) {
+    const row = document.createElement("div");
+    const name = document.createElement("dt");
+    name.textContent = t(label);
+    const value = document.createElement("dd");
+    const link = document.createElement("a");
+    link.href = `/?${new URLSearchParams({ activity: fastest.id })}`;
+    link.textContent = clock(fastest.fastest_splits[meters]);
+    const when = document.createElement("small");
+    when.textContent = new Date(fastest.time).toLocaleDateString();
+    value.append(link, when);
+    row.append(name, value);
+    list.append(row);
+  }
+  card(container, "Personal records", "The fastest times in the period, as Garmin measured them").append(list);
+
+  const series = [
+    ["5000", "5 km", 1],
+    ["10000", "10 km", 2],
+  ]
+    .map(([meters, label, slot]) => ({
+      name: t(label),
+      slot,
+      values: dated.filter((activity) => activity.fastest_splits?.[meters]).map((activity) => [activity.time, activity.fastest_splits[meters] / 60]),
+    }))
+    .filter(({ values }) => values.length > 1);
+  if (series.length > 0) {
+    chart(card(container, "Times over 5 and 10 km", "The fastest stretch of each activity, lower is faster"), {
+      kind: "line",
+      series,
+      format: (minutes) => clock(minutes * 60),
+      label: t("Times over 5 and 10 km"),
+    });
+  }
+}
+
+/** Seconds as hours, minutes and seconds. */
+function clock(seconds) {
+  const total = Math.round(seconds);
+  const [h, m, s] = [Math.floor(total / 3600), Math.floor((total % 3600) / 60), total % 60];
+  const two = (value) => String(value).padStart(2, "0");
+  return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
+}
+
+/** The distance so far in each year, on the same calendar, to compare the years. */
+function yearOverYear(container, dated) {
+  const years = [...new Set(dated.map(({ time }) => new Date(time).getFullYear()))].sort().slice(-4);
+  if (years.length < 2) return;
+  const base = new Date().getFullYear();
+  const series = years.map((year, index) => {
+    let total = 0;
+    const values = dated
+      .filter(({ time }) => new Date(time).getFullYear() === year)
+      .sort((a, b) => a.time - b.time)
+      .map((activity) => {
+        total += (activity.distance_m ?? 0) / 1000;
+        const date = new Date(activity.time);
+        // Moved to this year, so that all years share one axis. Leap days land on March 1.
+        return [new Date(base, date.getMonth(), date.getDate()).getTime(), total];
+      });
+    return { name: String(year), slot: index + 1, values };
+  });
+  chart(card(container, "Year over year", "Distance so far in each year"), {
+    kind: "line",
+    series,
+    format: unit(0, "km"),
+    label: t("Distance so far in each year"),
+    // A total goes on between activities, so its line never breaks.
+    maxGap: Infinity,
+  });
+}
