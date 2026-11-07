@@ -11,6 +11,7 @@ import {
   typeName,
 } from "/js/account.js";
 import { setUpActivityDetail } from "/js/activity-detail.js";
+import { setUpFilters } from "/js/filters.js";
 import { language } from "/js/i18n.js";
 
 const THEMES = {
@@ -49,7 +50,6 @@ const PLACE_SEARCH_URL = "https://photon.komoot.io/api/";
 const PLACE_LIMIT = 5;
 /** Place search is a shared service, so it only hears from us after typing pauses. */
 const SEARCH_DELAY_MS = 350;
-const FILTER_DELAY_MS = 300;
 const MIN_PLACE_QUERY_LENGTH = 3;
 const PLACE_ZOOM = 14;
 const FIT_PADDING = 60;
@@ -70,12 +70,10 @@ const searchInput = document.querySelector("#search");
 const searchResults = document.querySelector("#search-results");
 const panelElement = document.querySelector(".panel");
 const browseElement = document.querySelector("#browse");
-const filtersForm = document.querySelector("#filters");
-const filterCount = document.querySelector("#filter-count");
-const typesField = document.querySelector("#types-field");
-const typesElement = document.querySelector("#types");
 
 await requireAccount();
+
+const filters = setUpFilters({ onChange: applyFilters });
 
 let theme = currentTheme();
 
@@ -101,7 +99,6 @@ let lastRefresh = 0;
 let pendingStats = null;
 let pendingSearch = null;
 let searchTimer = null;
-let filterTimer = null;
 let selectedId = null;
 let lines = [];
 let isFirstStyle = true;
@@ -172,11 +169,11 @@ map.on("style.load", () => {
   if (isFirstStyle) {
     isFirstStyle = false;
     loadStats();
-    loadTypes();
+    filters.loadTypes();
     refresh();
     setUpSync(() => {
       loadStats();
-      loadTypes();
+      filters.loadTypes();
       refresh();
     });
     showLinkedActivity();
@@ -289,23 +286,7 @@ function toGeoJson(lines) {
 /** The active filters as API parameters, or only the selected activity if there is one. */
 function filterQuery() {
   if (selectedId !== null) return new URLSearchParams({ id: selectedId });
-  const form = new FormData(filtersForm);
-  const query = new URLSearchParams();
-  const types = form.getAll("type");
-  if (types.length > 0) query.set("types", types.join(","));
-  for (const name of ["title", "description", "location", "from", "to"]) {
-    const value = form.get(name).trim();
-    if (value) query.set(name, value);
-  }
-  const setScaled = (from, to, scale) => {
-    const value = form.get(from);
-    if (value !== "") query.set(to, Number(value) * scale);
-  };
-  setScaled("min_distance_km", "min_distance_m", 1000);
-  setScaled("max_distance_km", "max_distance_m", 1000);
-  setScaled("min_duration_min", "min_duration_s", 60);
-  setScaled("max_duration_min", "max_duration_s", 60);
-  return query;
+  return filters.query();
 }
 
 async function loadStats() {
@@ -333,38 +314,7 @@ async function loadStats() {
   }
 }
 
-/** Keeps the checked types, because a sync can reload the list at any time. */
-async function loadTypes() {
-  let types;
-  try {
-    const response = await fetch("/api/activity-types");
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    ({ types } = await response.json());
-  } catch {
-    return;
-  }
-  const checked = new FormData(filtersForm).getAll("type");
-  typesElement.replaceChildren(
-    ...types.map(({ activity_type: type, activities }) => {
-      const label = document.createElement("label");
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.name = "type";
-      input.value = type;
-      input.checked = checked.includes(type);
-      const count = document.createElement("small");
-      count.textContent = activities.toLocaleString();
-      label.append(input, typeName(type), count);
-      return label;
-    }),
-  );
-  typesField.hidden = types.length === 0;
-}
-
 function applyFilters() {
-  const form = new FormData(filtersForm);
-  const count = [...form.values()].filter((value) => value.trim() !== "").length;
-  filterCount.textContent = count > 0 ? String(count) : "";
   select(null);
   searchNow();
 }
@@ -528,16 +478,6 @@ searchResults.addEventListener("keydown", (event) => {
   }
 });
 
-
-filtersForm.addEventListener("input", () => {
-  clearTimeout(filterTimer);
-  filterTimer = setTimeout(applyFilters, FILTER_DELAY_MS);
-});
-
-// Fires before the form clears its fields, so this has to wait for that to finish.
-filtersForm.addEventListener("reset", () => setTimeout(applyFilters));
-
-filtersForm.addEventListener("submit", (event) => event.preventDefault());
 
 function showStatus(message) {
   statusElement.textContent = message;

@@ -446,10 +446,12 @@ async fn first_account_claims_activities_from_before_accounts() {
     let owned = |user_id| {
         let pool = pool.clone();
         async move {
-            db::activity_records(&pool, user_id, None, None)
-                .await
-                .unwrap()
-                .len()
+            let filter = db::Filter {
+                user_id,
+                without_gps: true,
+                ..Default::default()
+            };
+            db::activity_records(&pool, &filter).await.unwrap().len()
         }
     };
     assert_eq!(owned(first).await, 1);

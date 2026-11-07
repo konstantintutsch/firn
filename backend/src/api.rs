@@ -197,7 +197,7 @@ struct HeatmapQuery {
 /// Limits which activities count. Empty parameters are ignored and all others must match.
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
-struct FilterQuery {
+pub struct FilterQuery {
     /// One activity.
     id: Option<i64>,
     /// Words to find in the title, type, description, location or local start time.
@@ -219,7 +219,7 @@ struct FilterQuery {
 }
 
 impl FilterQuery {
-    fn into_filter(self, user_id: i64) -> Filter {
+    pub fn into_filter(self, user_id: i64) -> Filter {
         let query = self;
         let text = |value: Option<String>| {
             value
@@ -247,6 +247,7 @@ impl FilterQuery {
             max_duration_s: query.max_duration_s,
             from: query.from,
             to: query.to,
+            without_gps: false,
         }
     }
 }
@@ -560,16 +561,25 @@ struct ActivityType {
     activities: i64,
 }
 
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+struct ActivityTypeQuery {
+    /// Also counts activities without GPS, as the statistics do.
+    #[serde(default)]
+    without_gps: bool,
+}
+
 #[derive(Serialize, ToSchema)]
 struct ActivityTypeList {
     /// Most frequent first.
     types: Vec<ActivityType>,
 }
 
-/// All activity types among the saved activities with GPS.
+/// All activity types among the saved activities with GPS, or among all of them.
 #[utoipa::path(
     get,
     path = "/api/activity-types",
+    params(ActivityTypeQuery),
     responses(
         (status = 200, body = ActivityTypeList),
         (status = 401, description = "Not signed in", body = ErrorBody),
@@ -578,8 +588,9 @@ struct ActivityTypeList {
 async fn activity_types(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
+    Query(query): Query<ActivityTypeQuery>,
 ) -> Result<Json<ActivityTypeList>, ApiError> {
-    let types = db::activity_types(&state.pool, user.id).await?;
+    let types = db::activity_types(&state.pool, user.id, query.without_gps).await?;
     Ok(Json(ActivityTypeList {
         types: types
             .into_iter()

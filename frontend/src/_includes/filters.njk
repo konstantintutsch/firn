@@ -1,0 +1,27 @@
+<details class="filters">
+  <summary><span data-i18n>Filters</span> <span id="filter-count"></span></summary>
+  <form id="filters">
+    <fieldset id="types-field" hidden>
+      <legend data-i18n>Activity type</legend>
+      <div id="types" class="types"></div>
+    </fieldset>
+    <label><span data-i18n>Title</span> <input name="title" type="search" autocomplete="off"></label>
+    <label><span data-i18n>Description</span> <input name="description" type="search" autocomplete="off"></label>
+    <label><span data-i18n>Location</span> <input name="location" type="search" autocomplete="off"></label>
+    <div class="range">
+      <label><span data-i18n>Min. km</span> <input name="min_distance_km" type="number" min="0" step="any"></label>
+      <label><span data-i18n>Max. km</span> <input name="max_distance_km" type="number" min="0" step="any"></label>
+    </div>
+    <div class="range">
+      <label><span data-i18n>Min. minutes</span> <input name="min_duration_min" type="number" min="0" step="any"></label>
+      <label><span data-i18n>Max. minutes</span> <input name="max_duration_min" type="number" min="0" step="any"></label>
+    </div>
+    {% if filterDates !== false %}
+    <div class="range">
+      <label><span data-i18n>From</span> <input name="from" type="date"></label>
+      <label><span data-i18n>To</span> <input name="to" type="date"></label>
+    </div>
+    {% endif %}
+    <button class="panel-button" type="reset" data-i18n>Clear filters</button>
+  </form>
+</details>

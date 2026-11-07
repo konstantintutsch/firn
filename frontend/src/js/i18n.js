@@ -165,11 +165,14 @@ const GERMAN = {
 
   // Statistics
   Period: "Zeitraum",
+  "7 days": "7 Tage",
   "30 days": "30 Tage",
   "90 days": "90 Tage",
   "1 year": "1 Jahr",
   All: "Alles",
   Health: "Gesundheit",
+  "Health values are filtered by the dates only.": "Gesundheitswerte werden nur nach Datum gefiltert.",
+  "The start date is after the end date.": "Das Startdatum liegt nach dem Enddatum.",
   "Could not load statistics. Is the API running?": "Die Statistik konnte nicht geladen werden. Läuft die API?",
   "Nothing saved for this period. Select Sync to save your data from Garmin.":
     "Für diesen Zeitraum ist nichts gespeichert. Wähle Synchronisieren, um deine Daten von Garmin zu holen.",

@@ -230,19 +230,21 @@ pub struct Filter {
     pub max_duration_s: Option<f64>,
     pub from: Option<NaiveDate>,
     pub to: Option<NaiveDate>,
+    /// Also counts activities without GPS, which have no place on a map but do in statistics.
+    pub without_gps: bool,
 }
 
 impl Filter {
-    /// Activities without GPS have no place on a map.
     fn apply<'a, ST: 'a>(
         &self,
         mut query: activities::BoxedQuery<'a, Pg, ST>,
     ) -> activities::BoxedQuery<'a, Pg, ST> {
-        query = query
-            .filter(activities::user_id.eq(self.user_id))
-            .filter(exists(
+        query = query.filter(activities::user_id.eq(self.user_id));
+        if !self.without_gps {
+            query = query.filter(exists(
                 track_points::table.filter(track_points::activity_id.eq(activities::id)),
             ));
+        }
         if let Some(id) = self.id {
             query = query.filter(activities::id.eq(id));
         }
@@ -430,17 +432,23 @@ pub async fn activity_with_file(
 }
 
 /// Each activity type that has a track, with how many activities have it, most first.
-pub async fn activity_types(pool: &Pool, user_id: i64) -> Result<Vec<(String, i64)>> {
-    Ok(activities::table
+pub async fn activity_types(
+    pool: &Pool,
+    user_id: i64,
+    without_gps: bool,
+) -> Result<Vec<(String, i64)>> {
+    let mut query = activities::table
         .filter(activities::user_id.eq(user_id))
-        .filter(exists(
-            track_points::table.filter(track_points::activity_id.eq(activities::id)),
-        ))
         .group_by(activities::activity_type)
         .select((activities::activity_type, count_star()))
         .order((count_star().desc(), activities::activity_type))
-        .load(&mut pool.get().await?)
-        .await?)
+        .into_boxed();
+    if !without_gps {
+        query = query.filter(exists(
+            track_points::table.filter(track_points::activity_id.eq(activities::id)),
+        ));
+    }
+    Ok(query.load(&mut pool.get().await?).await?)
 }
 
 pub struct Totals {
@@ -700,25 +708,17 @@ pub struct ActivityRecord {
     pub summary: Value,
 }
 
-/// All activities of an account, with or without GPS, oldest first.
-pub async fn activity_records(
-    pool: &Pool,
-    user_id: i64,
-    from: Option<NaiveDate>,
-    to: Option<NaiveDate>,
-) -> Result<Vec<ActivityRecord>> {
-    let mut query = activities::table
-        .filter(activities::user_id.eq(user_id))
-        .select(ActivityRecord::as_select())
-        .order((activities::started_at, activities::id))
-        .into_boxed();
-    if let Some(from) = from {
-        query = query.filter(activities::started_local.ge(from.to_string()));
-    }
-    if let Some(next_day) = to.and_then(|to| to.succ_opt()) {
-        query = query.filter(activities::started_local.lt(next_day.to_string()));
-    }
-    Ok(query.load(&mut pool.get().await?).await?)
+/// The matching activities, oldest first.
+pub async fn activity_records(pool: &Pool, filter: &Filter) -> Result<Vec<ActivityRecord>> {
+    Ok(filter
+        .apply(
+            activities::table
+                .select(ActivityRecord::as_select())
+                .order((activities::started_at, activities::id))
+                .into_boxed(),
+        )
+        .load(&mut pool.get().await?)
+        .await?)
 }
 
 #[cfg(test)]

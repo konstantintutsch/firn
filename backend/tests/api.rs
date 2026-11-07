@@ -458,6 +458,13 @@ async fn lists_activity_types_most_frequent_first() {
             {"activity_type": "road_biking", "activities": 1},
         ])
     );
+
+    let (_, all) = get(&pool, "/api/activity-types?without_gps=true").await;
+    assert_eq!(all["types"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        all["types"][2],
+        json!({"activity_type": "yoga", "activities": 1})
+    );
 }
 
 #[tokio::test]
@@ -796,6 +803,11 @@ async fn activity_statistics_include_activities_without_gps() {
     )
     .await;
     assert_eq!(april["activities"].as_array().unwrap().len(), 1);
+    let (_, strength) = get(&pool, "/api/statistics/activities?types=strength_training").await;
+    assert_eq!(strength["activities"].as_array().unwrap().len(), 1);
+    assert_eq!(strength["activities"][0]["id"], 2);
+    let (_, gym) = get(&pool, "/api/statistics/activities?title=gym").await;
+    assert_eq!(gym["activities"].as_array().unwrap().len(), 1);
     let (status, _) = get(
         &pool,
         "/api/statistics/activities?from=2026-05-01&to=2026-04-30",
@@ -837,4 +849,37 @@ async fn health_statistics_group_values_by_metric() {
 
     let (_, later) = get(&pool, "/api/statistics/health?from=2026-01-02").await;
     assert_eq!(later["metrics"]["hrv"], json!([["2026-01-02", 50.0]]));
+}
+
+#[tokio::test]
+async fn health_statistics_average_the_resting_heart_rate_over_a_week() {
+    let pool = common::test_pool().await;
+    let user_id = common::user(&pool).await;
+    let day = |text: &str| text.parse::<chrono::NaiveDate>().unwrap();
+    db::save_document(
+        &pool,
+        user_id,
+        "user_summaries",
+        "2026-01-01/2026-01-28",
+        Some(&json!({})),
+        &[
+            (day("2026-01-01"), "resting_heart_rate", 50.0),
+            (day("2026-01-07"), "resting_heart_rate", 46.0),
+            (day("2026-01-08"), "resting_heart_rate", 42.0),
+        ],
+    )
+    .await
+    .unwrap();
+
+    // The days before the range still count toward its first averages.
+    let (status, body) = get(&pool, "/api/statistics/health?from=2026-01-07").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["metrics"]["resting_heart_rate"],
+        json!([["2026-01-07", 46.0], ["2026-01-08", 42.0]])
+    );
+    assert_eq!(
+        body["metrics"]["resting_heart_rate_7d"],
+        json!([["2026-01-07", 48.0], ["2026-01-08", 44.0]])
+    );
 }

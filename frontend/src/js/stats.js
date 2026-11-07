@@ -1,9 +1,8 @@
 import { bars, chart, forgetCharts } from "/js/charts.js";
 import { requireAccount, setUpSync, t, typeName } from "/js/account.js";
+import { localDay, setUpFilters } from "/js/filters.js";
 
 const DAY_MS = 86_400_000;
-const DEFAULT_DAYS = "90";
-const RANGE_STORAGE_KEY = "statistics-range";
 /** Activity types that get their own color in the distance chart. The rest are "Other". */
 const MAX_TYPES = 3;
 const MAX_TYPE_BARS = 8;
@@ -11,6 +10,7 @@ const MAX_TYPE_BARS = 8;
 const statusElement = document.querySelector("#statistics-status");
 const activitySection = document.querySelector("#activity-section");
 const healthSection = document.querySelector("#health-section");
+const healthNote = document.querySelector("#health-note");
 const rangeButtons = [...document.querySelectorAll(".range-picker button")];
 
 const number = (digits = 0) => (value) =>
@@ -55,7 +55,10 @@ const HEALTH_CHARTS = [
     title: "Resting heart rate",
     kind: "line",
     format: unit(0, "bpm"),
-    metrics: [["resting_heart_rate", "Resting"]],
+    metrics: [
+      ["resting_heart_rate", "Resting"],
+      ["resting_heart_rate_7d", "7-day average"],
+    ],
   },
   {
     title: "Stress",
@@ -126,32 +129,19 @@ const HEALTH_CHARTS = [
 
 await requireAccount();
 
-let days = DEFAULT_DAYS;
-try {
-  days = localStorage.getItem(RANGE_STORAGE_KEY) ?? DEFAULT_DAYS;
-} catch {}
+const filters = setUpFilters({ withoutGps: true, onChange: load });
 let pending = null;
 
 for (const button of rangeButtons) {
-  button.addEventListener("click", () => {
-    days = button.dataset.days;
-    try {
-      localStorage.setItem(RANGE_STORAGE_KEY, days);
-    } catch {
-      // Without storage the choice still applies until the page is reloaded.
-    }
-    load();
-  });
+  button.addEventListener("click", () => filters.setDays(button.dataset.days === "all" ? null : button.dataset.days));
 }
 
-setUpSync(load);
+setUpSync(() => {
+  filters.loadTypes();
+  load();
+});
+filters.loadTypes();
 load();
-
-function localDay(time) {
-  const date = new Date(time);
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${String(date.getDate()).padStart(2, "0")}`;
-}
 
 function parseDay(text) {
   const [year, month, day] = text.split("-").map(Number);
@@ -159,21 +149,31 @@ function parseDay(text) {
 }
 
 async function load() {
+  const query = filters.query();
+  const from = query.get("from");
+  const to = query.get("to");
+  const period = filters.days ?? (from || to ? null : "all");
   for (const button of rangeButtons) {
-    button.setAttribute("aria-pressed", String(button.dataset.days === days));
+    button.setAttribute("aria-pressed", String(button.dataset.days === period));
   }
   pending?.abort();
   const request = new AbortController();
   pending = request;
-  const query = new URLSearchParams();
-  if (days !== "all") query.set("from", localDay(Date.now() - (Number(days) - 1) * DAY_MS));
+  if (from && to && from > to) {
+    statusElement.textContent = t("The start date is after the end date.");
+    return;
+  }
+  // Health values belong to days, not to activities, so only the dates apply to them.
+  const healthQuery = new URLSearchParams([...query].filter(([name]) => name === "from" || name === "to"));
+  const filtersActivities = query.size > healthQuery.size;
+  healthNote.hidden = !filtersActivities;
 
   statusElement.textContent = t("Loading…");
   let activities, metrics;
   try {
     const [activityResponse, healthResponse] = await Promise.all([
       fetch(`/api/statistics/activities?${query}`, { signal: request.signal }),
-      fetch(`/api/statistics/health?${query}`, { signal: request.signal }),
+      fetch(`/api/statistics/health?${healthQuery}`, { signal: request.signal }),
     ]);
     if (!activityResponse.ok || !healthResponse.ok) throw new Error("HTTP error");
     ({ activities } = await activityResponse.json());
@@ -183,13 +183,15 @@ async function load() {
     return;
   }
 
-  const first = query.has("from") ? parseDay(query.get("from")) : earliest(activities, metrics);
-  const buckets = makeBuckets(first, parseDay(localDay(Date.now())));
+  const first = from ? parseDay(from) : earliest(activities, metrics);
+  const buckets = makeBuckets(first, parseDay(to ?? localDay(Date.now())));
   const hasHealth = Object.keys(metrics).length > 0;
   statusElement.textContent =
-    activities.length === 0 && !hasHealth
-      ? t("Nothing saved for this period. Select Sync to save your data from Garmin.")
-      : "";
+    activities.length === 0 && filtersActivities
+      ? t("No activities match these filters.")
+      : activities.length === 0 && !hasHealth
+        ? t("Nothing saved for this period. Select Sync to save your data from Garmin.")
+        : "";
   renderActivities(activities, buckets);
   renderHealth(metrics, buckets);
 }
