@@ -14,7 +14,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::auth::{self, Auth, CurrentUser};
 use crate::db::{self, ActivityTrack, Filter, Pool};
-use crate::garmin::GarminClient;
+use crate::garmin::{GarminClient, GarminError};
 use crate::heatmap::{self, Position, Viewport};
 use crate::statistics;
 use crate::sync::{HealthRange, Report, sync_all};
@@ -823,7 +823,13 @@ async fn run_sync(state: AppState, user_id: i64, api_key: String) {
         Ok(Err(error)) => {
             tracing::error!(%error, "sync failed");
             status.state = SyncState::Failed;
-            status.error = Some(error.to_string());
+            // Database errors can name tables and queries, which are no use to the user.
+            status.error = Some(match error {
+                GarminError::Database(_) => {
+                    "the sync could not save the data. See the logs".to_owned()
+                }
+                error => error.to_string(),
+            });
         }
         Err(error) => {
             tracing::error!(%error, "sync crashed");
