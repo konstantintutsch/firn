@@ -14,8 +14,9 @@ const COUNT_CELL_PIXELS: f64 = 4.0;
 const MIN_COUNT_CELL: f64 = 3e-7;
 /// Simplifies lines by up to this much, which is too little to see.
 const SIMPLIFY_PIXELS: f64 = 0.25;
-/// Number of color steps. Fewer steps merge more segments into one line.
-const LEVELS: u32 = 8;
+/// Number of color steps. Fewer steps merge more segments into one line, but make
+/// the jump between two neighboring colors easier to see.
+const LEVELS: u32 = 16;
 
 pub type Position = [f64; 2];
 pub type Track = Vec<Position>;
@@ -66,14 +67,16 @@ pub fn unproject([x, y]: Position) -> Position {
 pub fn heat_lines(tracks: &[Track], viewport: &Viewport, zoom: u8) -> Vec<HeatLine> {
     let pixel = 1.0 / (WORLD_PIXELS * 2f64.powi(zoom.into()));
     let cell = (COUNT_CELL_PIXELS * pixel).max(MIN_COUNT_CELL);
-    let runs_per_cell = count_runs(tracks, viewport, cell);
-    let max_runs = runs_per_cell
-        .values()
-        .map(|visit| visit.runs)
-        .max()
-        .unwrap_or(1);
-    let level_of = |position: Position| {
-        let runs = nearby_runs(&runs_per_cell, cell_of(position, cell));
+    let nearby = nearby_runs(&runs_per_cell(tracks, viewport, cell), tracks.len());
+    let max_runs = nearby.values().copied().max().unwrap_or(1);
+    let level_of = |[a, b]: [Position; 2]| {
+        // The midpoint represents a long gap best, but counting walks in steps, so it can
+        // land in a corner of a cell that was skipped. The start is always counted.
+        let runs = nearby
+            .get(&cell_of(midpoint(a, b), cell))
+            .or_else(|| nearby.get(&cell_of(a, cell)))
+            .copied()
+            .unwrap_or(1);
         let share = f64::from(runs).ln_1p() / f64::from(max_runs).ln_1p();
         (share * f64::from(LEVELS - 1)).round() as u32
     };
@@ -86,7 +89,7 @@ pub fn heat_lines(tracks: &[Track], viewport: &Viewport, zoom: u8) -> Vec<HeatLi
                 pieces.extend(current.take());
                 continue;
             };
-            let level = level_of(midpoint(a, b));
+            let level = level_of([a, b]);
             match &mut current {
                 Some((current_level, path))
                     if *current_level == level && path.last() == Some(&a) =>
@@ -112,14 +115,13 @@ pub fn heat_lines(tracks: &[Track], viewport: &Viewport, zoom: u8) -> Vec<HeatLi
         .collect()
 }
 
-struct Visit {
-    last_track: usize,
-    runs: u32,
-}
+type Cell = (i64, i64);
 
-fn count_runs(tracks: &[Track], viewport: &Viewport, cell: f64) -> HashMap<(i64, i64), Visit> {
-    let mut visits = HashMap::new();
+/// The tracks that pass through each cell, without repeats.
+fn runs_per_cell(tracks: &[Track], viewport: &Viewport, cell: f64) -> HashMap<Cell, Vec<u32>> {
+    let mut runs: HashMap<Cell, Vec<u32>> = HashMap::new();
     for (index, track) in tracks.iter().enumerate() {
+        let index = index as u32;
         for segment in track.windows(2) {
             let Some([a, b]) = clip(segment[0], segment[1], viewport) else {
                 continue;
@@ -128,36 +130,45 @@ fn count_runs(tracks: &[Track], viewport: &Viewport, cell: f64) -> HashMap<(i64,
             for step in 0..=steps as u64 {
                 let t = step as f64 / steps;
                 let position = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-                let visit = visits.entry(cell_of(position, cell)).or_insert(Visit {
-                    last_track: index,
-                    runs: 1,
-                });
-                if visit.last_track != index {
-                    visit.last_track = index;
-                    visit.runs += 1;
+                let runs = runs.entry(cell_of(position, cell)).or_default();
+                // Tracks are walked one at a time, so a repeat is always the last entry.
+                if runs.last() != Some(&index) {
+                    runs.push(index);
                 }
-            }
-        }
-    }
-    visits
-}
-
-/// The busiest of a cell and its neighbors. GPS error scatters a shared route over
-/// neighboring cells, and their counts differ by chance, which would make its color
-/// flicker along the way.
-fn nearby_runs(visits: &HashMap<(i64, i64), Visit>, (x, y): (i64, i64)) -> u32 {
-    let mut runs = 1;
-    for dx in -1..=1 {
-        for dy in -1..=1 {
-            if let Some(visit) = visits.get(&(x + dx, y + dy)) {
-                runs = runs.max(visit.runs);
             }
         }
     }
     runs
 }
 
-fn cell_of([x, y]: Position, cell: f64) -> (i64, i64) {
+/// Counts the distinct runs in each cell and its neighbors.
+///
+/// GPS error scatters a shared route over several cells, and how many runs a single
+/// cell catches depends on how the grid happens to line up with the street. Counting
+/// the whole neighborhood sees all of them, so the color stays the same along the way.
+fn nearby_runs(runs: &HashMap<Cell, Vec<u32>>, track_count: usize) -> HashMap<Cell, u32> {
+    // Marks the tracks seen for the current cell, without clearing it for every cell.
+    let mut seen_at = vec![usize::MAX; track_count];
+    runs.keys()
+        .enumerate()
+        .map(|(round, &(x, y))| {
+            let mut count = 0;
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for &track in runs.get(&(x + dx, y + dy)).into_iter().flatten() {
+                        if seen_at[track as usize] != round {
+                            seen_at[track as usize] = round;
+                            count += 1;
+                        }
+                    }
+                }
+            }
+            ((x, y), count)
+        })
+        .collect()
+}
+
+fn cell_of([x, y]: Position, cell: f64) -> Cell {
     ((x / cell).floor() as i64, (y / cell).floor() as i64)
 }
 
@@ -341,8 +352,8 @@ mod tests {
         let tracks = vec![back_and_forth];
         let lines = heat_lines(&tracks, &WORLD, 14);
         assert!(lines.iter().all(|line| line.weight == 1.0));
-        let runs = count_runs(&tracks, &WORLD, MIN_COUNT_CELL);
-        assert!(runs.values().all(|visit| visit.runs == 1));
+        let runs = runs_per_cell(&tracks, &WORLD, MIN_COUNT_CELL);
+        assert!(runs.values().all(|runs| runs.len() == 1));
     }
 
     #[test]
@@ -362,25 +373,61 @@ mod tests {
         assert_eq!(lines.len(), 1);
     }
 
+    /// Runs on one street, each off by up to `spread` meters and wandering slowly.
+    fn scattered_street(runs: usize, spread: f64, angle: f64) -> Vec<Track> {
+        (0..runs)
+            .map(|run| {
+                let offset = spread * (2.0 * run as f64 / (runs - 1) as f64 - 1.0);
+                (0..1000)
+                    .map(|index| {
+                        let along = index as f64 * 3.0 * METER;
+                        let wander = (offset + (index as f64 / 40.0 + run as f64).sin()) * METER;
+                        [
+                            0.5 + along * angle.cos() - wander * angle.sin(),
+                            0.5 + along * angle.sin() + wander * angle.cos(),
+                        ]
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
     #[test]
-    fn scatter_between_cells_does_not_split_a_shared_route() {
-        // Each run zigzags by a few meters around the same street.
-        let run = |offset: f64| -> Track {
-            (0..400)
-                .map(|index| {
-                    let side = if (index / 7) % 2 == 0 {
-                        offset
-                    } else {
-                        -offset
-                    };
-                    [0.5 + index as f64 * 3.0 * METER, 0.5 + side * METER]
-                })
-                .collect()
-        };
-        let tracks = vec![run(2.0), run(5.0), run(9.0), run(13.0), run(1.0), run(7.0)];
-        let lines = heat_lines(&tracks, &WORLD, 16);
-        // One line per run, not many short pieces per run.
-        assert!(lines.len() <= 2 * tracks.len(), "{} lines", lines.len());
+    fn a_shared_street_keeps_one_color_however_the_grid_lines_up() {
+        for angle in [0.0, 0.3, 0.8, 1.2] {
+            for zoom in [14, 16, 18] {
+                let mut tracks = scattered_street(40, 8.0, angle);
+                // Sets the top of the scale, far enough away not to affect the street.
+                tracks.extend(vec![street(0.7, 50); 200]);
+                let lines = heat_lines(&tracks, &WORLD, zoom);
+                let on_street: Vec<f64> = lines
+                    .iter()
+                    .filter(|line| line.path[0][1] < 0.65)
+                    .map(|line| line.weight)
+                    .collect();
+                let (min, max) = on_street.iter().fold((1.0_f64, 0.0_f64), |(min, max), w| {
+                    (min.min(*w), max.max(*w))
+                });
+                // The ends of the street taper off, so allow a single color step.
+                assert!(
+                    max - min <= 1.0 / f64::from(LEVELS - 1) + 1e-9,
+                    "angle {angle}, zoom {zoom}: weights from {min} to {max}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn neighboring_cells_count_each_run_once() {
+        let runs = HashMap::from([
+            ((0, 0), vec![0, 1]),
+            ((0, 1), vec![1, 2]),
+            ((5, 5), vec![3]),
+        ]);
+        let nearby = nearby_runs(&runs, 4);
+        assert_eq!(nearby[&(0, 0)], 3);
+        assert_eq!(nearby[&(0, 1)], 3);
+        assert_eq!(nearby[&(5, 5)], 1);
     }
 
     #[test]
