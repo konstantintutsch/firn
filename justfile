@@ -48,3 +48,22 @@ npm *args:
 # Open a SQL shell on the database
 psql:
     docker compose exec db psql -U runmap runmap
+
+# Start the app with a local Authelia at https://authelia.localhost:9091. Sign in as alice or bob, password runmap
+authelia: authelia-secrets
+    docker compose -f compose.yaml -f dev/authelia/compose.yaml up --build --detach --wait
+
+# Create the test CA, certificate and signing key of the local Authelia, unless they exist
+[private]
+authelia-secrets:
+    #!/usr/bin/env sh
+    set -eu
+    secrets=dev/authelia/secrets
+    [ -f "$secrets/jwks.key" ] && exit 0
+    mkdir -p "$secrets"
+    authelia="docker run --rm --user $(id -u):$(id -g) --volume $PWD/$secrets:/secrets authelia/authelia:4.39 authelia crypto"
+    # Writes ca.public.crt and ca.private.pem.
+    $authelia certificate rsa generate --ca --common-name "Runmap test CA" --directory /secrets
+    $authelia certificate rsa generate --common-name authelia.localhost --sans authelia.localhost \
+        --path.ca /secrets --directory /secrets --file.certificate tls.crt --file.private-key tls.key
+    $authelia pair rsa generate --directory /secrets --file.private-key jwks.key --file.public-key jwks.pub

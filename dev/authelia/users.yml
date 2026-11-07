@@ -1,0 +1,10 @@
+# Test accounts. Both have the password `runmap`.
+users:
+  alice:
+    displayname: Alice
+    email: alice@example.com
+    password: $argon2id$v=19$m=65536,t=3,p=4$CfUly7Z/vlj6NaWUULCe4A$/ec55bOb4OPMbUIoRq83prS+6ESF17nblHid65gCaTw
+  bob:
+    displayname: Bob
+    email: bob@example.com
+    password: $argon2id$v=19$m=65536,t=3,p=4$CfUly7Z/vlj6NaWUULCe4A$/ec55bOb4OPMbUIoRq83prS+6ESF17nblHid65gCaTw

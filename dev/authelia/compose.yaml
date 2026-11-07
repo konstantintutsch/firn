@@ -1,0 +1,36 @@
+# Adds a local Authelia to sign in with. Start it with `just authelia`. Paths
+# are relative to the main compose.yaml, which comes first.
+services:
+  authelia:
+    image: authelia/authelia:4.39
+    environment:
+      # Lets the configuration read the generated key with the secret template.
+      X_AUTHELIA_CONFIG_FILTERS: template
+    volumes:
+      - ./dev/authelia/configuration.yml:/config/configuration.yml:ro
+      - ./dev/authelia/users.yml:/config/users.yml:ro
+      - ./dev/authelia/secrets:/secrets:ro
+      - authelia:/data
+    ports:
+      - 127.0.0.1:9091:9091
+    networks:
+      default:
+        # The api reaches Authelia at the same address as the browser.
+        aliases: [authelia.localhost]
+    healthcheck:
+      disable: true
+
+  api:
+    environment:
+      OIDC_ISSUER: https://authelia.localhost:9091
+      OIDC_CLIENT_ID: runmap
+      OIDC_CLIENT_SECRET: test-only-client-secret
+      OIDC_CA_CERT: /secrets/ca.public.crt
+      PUBLIC_URL: http://localhost:8080
+    volumes:
+      - ./dev/authelia/secrets/ca.public.crt:/secrets/ca.public.crt:ro
+    depends_on:
+      - authelia
+
+volumes:
+  authelia:

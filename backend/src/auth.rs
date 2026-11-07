@@ -42,6 +42,8 @@ pub struct OidcSettings {
     pub client_secret: Option<String>,
     /// The address of the app, like `https://runmap.example.com`.
     pub public_url: String,
+    /// Certificates to trust besides the system's, for a provider with its own CA.
+    pub extra_roots: Vec<reqwest::Certificate>,
 }
 
 impl OidcSettings {
@@ -63,6 +65,7 @@ struct Discovery {
     issuer: String,
     authorization_endpoint: String,
     token_endpoint: String,
+    userinfo_endpoint: Option<String>,
 }
 
 struct PendingLogin {
@@ -81,9 +84,14 @@ pub struct Auth {
 
 impl Auth {
     pub fn new(oidc: Option<OidcSettings>, secret_box: SecretBox) -> Self {
+        let roots = oidc
+            .as_ref()
+            .map(|oidc| oidc.extra_roots.clone())
+            .unwrap_or_default();
         let http = Client::builder()
             .user_agent(concat!("runmap/", env!("CARGO_PKG_VERSION")))
             .timeout(TIMEOUT)
+            .tls_certs_merge(roots)
             .build()
             .expect("default TLS backend is available");
         Self {
@@ -267,6 +275,16 @@ pub async fn callback(
 #[derive(Deserialize)]
 struct TokenResponse {
     id_token: String,
+    access_token: Option<String>,
+}
+
+/// The profile claims, which some providers like Authelia only return here.
+#[derive(Deserialize)]
+struct UserInfo {
+    sub: String,
+    email: Option<String>,
+    name: Option<String>,
+    preferred_username: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -362,12 +380,33 @@ async fn finish_login(
         anyhow::bail!("the ID token has another nonce");
     }
 
-    let name = claims.name.or(claims.preferred_username);
+    let mut email = claims.email;
+    let mut name = claims.name.or(claims.preferred_username);
+    if (email.is_none() || name.is_none())
+        && let (Some(endpoint), Some(access_token)) =
+            (&discovery.userinfo_endpoint, &tokens.access_token)
+    {
+        let info: UserInfo = auth
+            .http
+            .get(endpoint)
+            .bearer_auth(access_token)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        if info.sub != claims.sub {
+            anyhow::bail!("the user info is about someone else");
+        }
+        email = email.or(info.email);
+        name = name.or(info.name).or(info.preferred_username);
+    }
+
     let (user, is_first) = db::sign_in_user(
         &state.pool,
         &discovery.issuer,
         &claims.sub,
-        claims.email.as_deref(),
+        email.as_deref(),
         name.as_deref(),
     )
     .await?;

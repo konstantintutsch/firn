@@ -1,7 +1,8 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use runmap::api::{self, AppState, GarminSettings};
 use runmap::auth::{Auth, OidcSettings};
@@ -32,6 +33,9 @@ struct Cli {
     oidc_issuer: Option<String>,
     #[arg(long, env = "OIDC_CLIENT_ID")]
     oidc_client_id: Option<String>,
+    /// A PEM file with certificates to trust for the provider, like a local test CA.
+    #[arg(long, env = "OIDC_CA_CERT")]
+    oidc_ca_cert: Option<PathBuf>,
 }
 
 /// Secrets are not command-line options: those end up in the shell history.
@@ -55,12 +59,21 @@ async fn main() -> Result<()> {
     db::migrate(&pool).await?;
 
     let secret_box = SecretBox::new(&secret_env("APP_SECRET").unwrap_or_default())?;
+    let extra_roots = match &cli.oidc_ca_cert {
+        Some(path) => {
+            let pem = std::fs::read(path)
+                .with_context(|| format!("could not read OIDC_CA_CERT {}", path.display()))?;
+            reqwest::Certificate::from_pem_bundle(&pem).context("invalid OIDC_CA_CERT")?
+        }
+        None => Vec::new(),
+    };
     let oidc = match (cli.oidc_issuer, cli.oidc_client_id) {
         (Some(issuer), Some(client_id)) => Some(OidcSettings {
             issuer,
             client_id,
             client_secret: secret_env("OIDC_CLIENT_SECRET"),
             public_url: cli.public_url,
+            extra_roots,
         }),
         _ => {
             tracing::warn!("OIDC_ISSUER or OIDC_CLIENT_ID is not set, so nobody can sign in");

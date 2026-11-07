@@ -1,0 +1,60 @@
+# A local Authelia for trying out sign-in. Not for production: the secrets
+# below are public, and the certificate is self-signed.
+server:
+  address: tcp://0.0.0.0:9091
+  tls:
+    key: /secrets/tls.key
+    certificate: /secrets/tls.crt
+
+log:
+  level: info
+
+theme: auto
+
+identity_validation:
+  reset_password:
+    jwt_secret: test-only-jwt-secret-that-is-long-enough-for-authelia
+
+authentication_backend:
+  file:
+    path: /config/users.yml
+  password_reset:
+    disable: true
+
+access_control:
+  default_policy: one_factor
+
+session:
+  secret: test-only-session-secret-that-is-long-enough
+  cookies:
+    - domain: authelia.localhost
+      authelia_url: https://authelia.localhost:9091
+
+storage:
+  encryption_key: test-only-storage-key-that-is-long-enough
+  local:
+    path: /data/db.sqlite3
+
+notifier:
+  filesystem:
+    filename: /data/notifications.txt
+
+identity_providers:
+  oidc:
+    hmac_secret: test-only-hmac-secret-that-is-long-enough-for-authelia
+    jwks:
+      - key: {{ secret "/secrets/jwks.key" | mindent 10 "|" | msquote }}
+    clients:
+      - client_id: runmap
+        client_name: Runmap
+        # The hash of test-only-client-secret, which is OIDC_CLIENT_SECRET in
+        # compose.yaml next to this file.
+        client_secret: '$pbkdf2-sha512$310000$i2KIlL1bwkNha6wLz8HaZA$PMDgZuOondW.ZUk8W64Xxs7WQ5MLxn0g4jRrq3VDgkkCQWxrkdvxoJongHt7PNe/2GAOIDy3bUxOEX0z9uPt3g'
+        token_endpoint_auth_method: client_secret_basic
+        require_pkce: true
+        pkce_challenge_method: S256
+        consent_mode: implicit
+        authorization_policy: one_factor
+        redirect_uris:
+          - http://localhost:8080/api/auth/callback
+        scopes: [openid, email, profile]

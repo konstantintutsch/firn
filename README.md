@@ -30,6 +30,21 @@ secure if `PUBLIC_URL` starts with `https://`.
 `just` lists all commands. The API documentation is at
 <http://localhost:8080/api/docs>.
 
+## Trying it with a local Authelia
+
+`just authelia` starts the app with a local [Authelia](https://www.authelia.com)
+at <https://authelia.localhost:9091>, already set up as the provider. Sign in as
+`alice` or `bob`, both with the password `runmap`. `.env` still needs
+`APP_SECRET`.
+
+The first run creates a test CA and certificate in `dev/authelia/secrets`. The
+browser warns about the certificate: accept it, or trust
+`dev/authelia/secrets/ca.public.crt`. Chrome and Firefox find
+`authelia.localhost` on their own. Other browsers may need
+`127.0.0.1 authelia.localhost` in `/etc/hosts`.
+
+Only use this to try Runmap out: the configuration's secrets are public.
+
 ## What a sync saves
 
 Runmap copies everything the Garmin Personal API offers:

@@ -79,6 +79,7 @@ async fn provider() -> Provider {
             "issuer": issuer,
             "authorization_endpoint": format!("{issuer}/authorize"),
             "token_endpoint": format!("{issuer}/token"),
+            "userinfo_endpoint": format!("{issuer}/userinfo"),
         })))
         .mount(&server)
         .await;
@@ -125,6 +126,7 @@ async fn app(provider: &Provider, garmin: &str) -> AppState {
             client_id: CLIENT_ID.to_owned(),
             client_secret: Some("secret".to_owned()),
             public_url: "https://runmap.example".to_owned(),
+            extra_roots: Vec::new(),
         }),
     )
     .await
@@ -175,24 +177,56 @@ async fn signs_in_through_the_provider() {
     let response = callback(&state, &login_state, &cookie).await;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(header_value(&response, "location"), "/");
-    let session = set_cookies(&response)
-        .into_iter()
-        .find(|cookie| cookie.starts_with("runmap_session=") && cookie.len() > 20)
-        .unwrap();
-
-    let me = send(
-        &state,
-        Request::get("/api/me")
-            .header("cookie", &session)
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await;
+    let me = me_with(&state, &response).await;
     assert_eq!(me.status(), StatusCode::OK);
     let me = json_body(me).await;
     assert_eq!(me["email"], "person@example.com");
     assert_eq!(me["name"], "Person");
     assert_eq!(me["has_garmin_key"], false);
+}
+
+#[tokio::test]
+async fn reads_the_profile_from_user_info_if_the_token_has_none() {
+    let provider = provider().await;
+    Mock::given(method("GET"))
+        .and(path("/userinfo"))
+        .and(header("authorization", "Bearer access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "sub": "person-1",
+            "email": "info@example.com",
+            "preferred_username": "info",
+        })))
+        .expect(1)
+        .mount(&provider.server)
+        .await;
+    let state = app(&provider, "http://unused").await;
+    let (login_state, nonce, cookie) = start_login(&state).await;
+    let mut claims = provider.claims(&nonce);
+    claims.as_object_mut().unwrap().remove("email");
+    claims.as_object_mut().unwrap().remove("name");
+    provider.answer_token(claims).await;
+
+    let response = callback(&state, &login_state, &cookie).await;
+    assert_eq!(header_value(&response, "location"), "/");
+    let me = json_body(me_with(&state, &response).await).await;
+    assert_eq!(me["email"], "info@example.com");
+    assert_eq!(me["name"], "info");
+}
+
+/// Asks for the account with the session that a callback response started.
+async fn me_with(state: &AppState, callback: &Response<Body>) -> Response<Body> {
+    let session = set_cookies(callback)
+        .into_iter()
+        .find(|cookie| cookie.starts_with("runmap_session=") && cookie.len() > 20)
+        .unwrap();
+    send(
+        state,
+        Request::get("/api/me")
+            .header("cookie", &session)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await
 }
 
 #[tokio::test]
