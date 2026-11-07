@@ -8,12 +8,13 @@ const ICONS = {
   sync: '<path d="M19.73 14.07A8 8 0 0 1 6 17.3L4 15"/><path d="M4.27 9.93A8 8 0 0 1 18 6.7L20 9"/><path d="M20 4v5h-5M4 20v-5h5"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
   previous: '<path d="m15 6-6 6 6 6"/>',
+  collapse: '<path d="m6 15 6-6 6 6"/>',
   next: '<path d="m9 6 6 6-6 6"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
 };
 
 export default function (eleventyConfig) {
-  eleventyConfig.addPassthroughCopy({ "src/css": "css", "src/js": "js", "src/icons": "icons", "src/manifest.webmanifest": "manifest.webmanifest" });
+  eleventyConfig.addPassthroughCopy({ "src/css": "css", "src/js": "js", "src/icons": "icons", "src/manifest.webmanifest": "manifest.webmanifest", "src/sw.js": "sw.js" });
   eleventyConfig.addPassthroughCopy({
     "node_modules/maplibre-gl/dist/maplibre-gl.mjs": "vendor/maplibre-gl.mjs",
     "node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs": "vendor/maplibre-gl-worker.mjs",

@@ -15,3 +15,17 @@ try {
   if (theme) document.documentElement.dataset.theme = theme;
 } catch {}
 applyThemeColor();
+
+// Pages are written in English and translated by a module that runs later.
+// Until then, German pages stay hidden, instead of showing English for a moment.
+// /js/i18n.js chooses the language the same way and shows the page again.
+try {
+  const chosen = localStorage.getItem("language");
+  const preferred =
+    chosen ?? (navigator.languages ?? [navigator.language]).find((tag) => /^(de|en)\b/i.test(tag));
+  if (preferred?.toLowerCase().startsWith("de")) {
+    document.documentElement.dataset.translating = "";
+    // Shows the page anyway if the translation never runs, for example after an error.
+    setTimeout(() => delete document.documentElement.dataset.translating, 2000);
+  }
+} catch {}

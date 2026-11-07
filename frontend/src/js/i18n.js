@@ -60,6 +60,13 @@ const GERMAN = {
   "Could not sign out.": "Abmelden hat nicht funktioniert.",
   "Original file": "Originaldatei",
   Units: "Einheiten",
+  "Try again": "Erneut versuchen",
+  "Show less of the panel": "Weniger vom Bereich zeigen",
+  "Show all of the panel": "Ganzen Bereich zeigen",
+  "Places are found by Photon from komoot, which gets what you type.": "Orte findet Photon von komoot, das dafür deine Eingabe erhält.",
+  "Search results": "Suchergebnisse",
+  Stop: "Stoppen",
+  "Sync progress": "Fortschritt der Synchronisierung",
   "Kilometers and meters": "Kilometer und Meter",
   "Miles and feet": "Meilen und Fuß",
   Language: "Sprache",
@@ -443,3 +450,5 @@ function translatePage() {
 }
 
 translatePage();
+// Set by /js/theme.js, which hides the English text until it is translated.
+delete document.documentElement.dataset.translating;

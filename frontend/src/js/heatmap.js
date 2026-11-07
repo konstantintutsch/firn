@@ -395,6 +395,7 @@ function goToActivity(activity) {
 
 function closeSearch() {
   searchResults.hidden = true;
+  searchInput.setAttribute("aria-expanded", "false");
   searchResults.replaceChildren();
   shownSearch = "";
 }
@@ -405,6 +406,27 @@ async function selectFirstResult() {
   if (shownSearch !== searchInput.value.trim()) await searchNow();
   searchResults.querySelector(".search-result")?.click();
 }
+
+// On phones the panel can shrink to its header, to see more of the map.
+const panelToggle = document.querySelector("#panel-toggle");
+panelToggle.addEventListener("click", () => {
+  const collapsed = panelElement.classList.toggle("collapsed");
+  panelToggle.setAttribute("aria-expanded", String(!collapsed));
+  const label = t(collapsed ? "Show all of the panel" : "Show less of the panel");
+  panelToggle.setAttribute("aria-label", label);
+  panelToggle.title = label;
+});
+
+// "/" jumps to the search, and Escape closes the selected activity, unless typing.
+document.addEventListener("keydown", (event) => {
+  const typing = event.target.closest("input, textarea, select, [contenteditable]");
+  if (event.key === "/" && !typing && !event.ctrlKey && !event.metaKey) {
+    event.preventDefault();
+    searchInput.focus();
+  } else if (event.key === "Escape" && !typing && selectedId !== null && !document.querySelector("dialog[open]")) {
+    select(null);
+  }
+});
 
 // Results close when something else on the page is used, but keep the typed text.
 document.addEventListener("pointerdown", (event) => {
@@ -468,17 +490,25 @@ async function searchNow() {
       ),
     ),
   ];
-  if (sections.length === 0) {
+  const found = sections.length > 0;
+  if (text.length >= MIN_PLACE_QUERY_LENGTH) {
+    const note = document.createElement("p");
+    note.className = "search-note";
+    note.textContent = t("Places are found by Photon from komoot, which gets what you type.");
+    sections.push(note);
+  }
+  if (!found) {
     const empty = document.createElement("div");
     empty.className = "search-heading";
     empty.textContent =
       activities.status === "rejected" && places.status === "rejected"
         ? t("Could not search. Is the API running?")
         : t("Nothing found.");
-    sections.push(empty);
+    sections.unshift(empty);
   }
   searchResults.replaceChildren(...sections);
   searchResults.hidden = false;
+  searchInput.setAttribute("aria-expanded", "true");
   shownSearch = text;
 }
 

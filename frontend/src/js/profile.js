@@ -94,6 +94,21 @@ export function profile(container, { x, values, xFormat, format, invert = false,
     svg.addEventListener("pointermove", move);
     svg.addEventListener("pointerdown", move);
     svg.addEventListener("pointerleave", leave);
+    // The arrow keys scrub too, a step at a time, or further with Shift.
+    svg.setAttribute("tabindex", "0");
+    svg.addEventListener("keydown", (event) => {
+      const step = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
+      if (!step) {
+        if (event.key === "Escape") leave();
+        return;
+      }
+      event.preventDefault();
+      const at = Math.max(0, indices.indexOf(cursor));
+      const next = Math.min(indices.length - 1, Math.max(0, at + step * (event.shiftKey ? 20 : 1)));
+      setCursor(indices[next]);
+      onScrub?.(indices[next]);
+    });
+    svg.addEventListener("blur", leave);
     setCursor(cursor);
   }
 

@@ -18,12 +18,13 @@
     <section class="panel">
       <div class="panel-body">
         {% include "header.njk" %}
+        <button id="panel-toggle" class="icon-button panel-toggle" type="button" aria-expanded="true" aria-controls="map" aria-label="Show less of the panel" title="Show less of the panel" data-i18n-attrs="aria-label title">{% icon "collapse" %}</button>
         <div class="search">
           <div class="search-field">
             {% icon "search" %}
-            <input id="search" type="search" placeholder="Search places and activities" aria-label="Search places and activities" data-i18n-attrs="placeholder aria-label" autocomplete="off">
+            <input id="search" type="search" placeholder="Search places and activities" aria-label="Search places and activities" data-i18n-attrs="placeholder aria-label" autocomplete="off" aria-controls="search-results" aria-expanded="false" aria-keyshortcuts="/">
           </div>
-          <div id="search-results" class="search-results" hidden></div>
+          <div id="search-results" class="search-results" role="region" aria-label="Search results" data-i18n-attrs="aria-label" aria-live="polite" hidden></div>
         </div>
         <p id="status" role="status"></p>
         <p id="sync-status" role="status"></p>

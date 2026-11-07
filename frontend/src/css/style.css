@@ -39,6 +39,11 @@
   color-scheme: light;
 }
 
+/* Set while a German page is not translated yet, see /js/theme.js. */
+[data-translating] body {
+  visibility: hidden;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --page: #0f1214;
@@ -169,6 +174,20 @@ body {
 
 .detail-header .icon-button {
   flex: none;
+}
+
+.panel-toggle {
+  display: none;
+}
+
+.panel-body {
+  position: relative;
+}
+
+.search-note {
+  margin: 6px 10px 4px;
+  color: var(--ink-muted);
+  font-size: 12px;
 }
 
 .detail-nav {
@@ -410,7 +429,7 @@ body {
 }
 
 .readout-item small {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .track-color {
@@ -515,7 +534,7 @@ input[type="checkbox"]:focus-visible {
 
 .metrics dt {
   color: var(--ink-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .metrics dd {
@@ -885,6 +904,23 @@ a {
   cursor: progress;
 }
 
+.sync-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.sync-progress[hidden] {
+  display: none;
+}
+
+.sync-progress progress {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
 #sync-button:disabled {
   color: var(--accent);
 }
@@ -927,7 +963,7 @@ a {
   border-radius: 15px;
   corner-shape: var(--corner);
   color: var(--ink-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
@@ -1647,6 +1683,27 @@ a.activity:hover {
 
   .panel-body {
     padding: 14px;
+  }
+
+  .panel-toggle {
+    display: inline-flex;
+    position: absolute;
+    top: 14px;
+    right: 58px;
+  }
+
+  .panel-toggle .icon {
+    transition: rotate 0.2s;
+  }
+
+  .panel.collapsed .panel-toggle .icon {
+    rotate: 180deg;
+  }
+
+  /* Collapsed, only the header, the search and the activity's title stay. */
+  .panel.collapsed .panel-body > :not(.panel-header, .panel-toggle, .search, .detail),
+  .panel.collapsed .detail > :not(.detail-header) {
+    display: none;
   }
 
   .maplibregl-ctrl-top-right {

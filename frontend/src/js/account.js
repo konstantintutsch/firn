@@ -30,6 +30,9 @@ function notifyTheme() {
 
 systemDark.addEventListener("change", notifyTheme);
 
+// Lets the app open offline, with the pages it saw last. See /sw.js.
+navigator.serviceWorker?.register("/sw.js").catch(() => {});
+
 /** Wires the choice between the system's, the light and the dark theme on the settings page. */
 function setUpThemePicker() {
   const buttons = [...document.querySelectorAll("#theme-picker [data-theme-choice]")];
@@ -77,10 +80,18 @@ export async function errorMessage(response, fallback) {
   }
 }
 
-function showSignIn(message) {
+/** Shows the sign-in screen, and with `retry` a button to try reaching the API again. */
+function showSignIn(message, { retry = false } = {}) {
   const screen = document.querySelector("#sign-in");
   document.querySelector("#sign-in-message").textContent = message;
+  const retryButton = document.querySelector("#sign-in-retry");
+  retryButton.hidden = !retry;
+  retryButton.onclick = () => location.reload();
   screen.hidden = false;
+  // Keeps the keyboard and screen readers out of the page behind it.
+  for (const element of document.body.children) {
+    if (element !== screen && element.tagName !== "SCRIPT") element.inert = true;
+  }
 }
 
 let account = null;
@@ -97,7 +108,7 @@ export async function requireAccount() {
   try {
     response = await fetch("/api/me");
   } catch {
-    showSignIn(t("Could not reach the API. Is it running?"));
+    showSignIn(t("Could not reach the API. Is it running?"), { retry: true });
     return new Promise(() => {});
   }
   if (response.status === 401) {
@@ -105,7 +116,7 @@ export async function requireAccount() {
     return new Promise(() => {});
   }
   if (!response.ok) {
-    showSignIn(await errorMessage(response, t("Could not load your account.")));
+    showSignIn(await errorMessage(response, t("Could not load your account.")), { retry: true });
     return new Promise(() => {});
   }
   account = await response.json();
@@ -277,6 +288,8 @@ export function syncResult({ state, error, downloaded, failed, health_failed: he
 }
 
 const SYNC_POLL_MS = 1000;
+/** How long a successful result stays in the status line. */
+const SYNC_MESSAGE_MS = 10_000;
 /** Polling waits longer after each failed request, up to this. */
 const SYNC_POLL_MAX_MS = 30_000;
 /** After this many failed requests in a row, polling gives up until the next sync. */
@@ -291,6 +304,49 @@ export function setUpSync(onFinished) {
   const status = document.querySelector("#sync-status");
   let isRunning = false;
   let failures = 0;
+  let clearTimer = null;
+
+  // A bar and a stop button below the status line, on every page that syncs.
+  const progressRow = document.createElement("div");
+  progressRow.className = "sync-progress";
+  progressRow.hidden = true;
+  const progress = document.createElement("progress");
+  progress.max = 1;
+  progress.setAttribute("aria-label", t("Sync progress"));
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "panel-button";
+  cancel.textContent = t("Stop");
+  progressRow.append(progress, cancel);
+  status.after(progressRow);
+
+  cancel.addEventListener("click", async () => {
+    cancel.disabled = true;
+    try {
+      await send("/api/sync", { method: "DELETE" });
+    } catch {
+      // The next poll shows whether it stopped.
+    }
+  });
+
+  function showStatus(text, { fade = false } = {}) {
+    clearTimeout(clearTimer);
+    status.textContent = text;
+    // A result fades after a while, but problems stay until the next sync.
+    if (fade) clearTimer = setTimeout(() => (status.textContent = ""), SYNC_MESSAGE_MS);
+  }
+
+  function showProgress(sync) {
+    progressRow.hidden = sync == null;
+    cancel.disabled = false;
+    if (!sync) return;
+    const [done, total] =
+      sync.health_to_fetch > 0
+        ? [sync.health_fetched + sync.health_failed, sync.health_to_fetch]
+        : [sync.downloaded + sync.failed, sync.to_download];
+    if (total > 0) progress.value = done / total;
+    else progress.removeAttribute("value");
+  }
 
   async function isActive() {
     const response = await fetch("/api/sync");
@@ -312,7 +368,8 @@ export function setUpSync(onFinished) {
         isRunning = false;
         failures = 0;
         button.disabled = false;
-        status.textContent = t("Lost contact with the API. Reload the page to see the sync.");
+        showProgress(null);
+        showStatus(t("Lost contact with the API. Reload the page to see the sync."));
         return;
       }
       setTimeout(poll, Math.min(SYNC_POLL_MS * 2 ** failures, SYNC_POLL_MAX_MS));
@@ -322,12 +379,15 @@ export function setUpSync(onFinished) {
     if (sync.state === "running") {
       isRunning = true;
       button.disabled = true;
-      status.textContent = syncProgress(sync);
+      showStatus(syncProgress(sync));
+      showProgress(sync);
       setTimeout(poll, SYNC_POLL_MS);
     } else if (isRunning) {
       isRunning = false;
       button.disabled = false;
-      status.textContent = syncResult(sync);
+      showProgress(null);
+      const clean = sync.state === "succeeded" && sync.failed === 0 && sync.health_failed === 0;
+      showStatus(syncResult(sync), { fade: clean });
       onFinished();
     }
   }
@@ -338,20 +398,20 @@ export function setUpSync(onFinished) {
       return;
     }
     button.disabled = true;
-    status.textContent = t("Starting…");
+    showStatus(t("Starting…"));
     try {
       const response = await send("/api/sync", { method: "POST" });
       if (response.ok) {
         isRunning = true;
       } else if (response.status !== 409 || !(await isActive())) {
         button.disabled = false;
-        status.textContent = await errorMessage(response, t("Could not start the sync."));
+        showStatus(await errorMessage(response, t("Could not start the sync.")));
         return;
       }
       poll();
     } catch {
       button.disabled = false;
-      status.textContent = t("Could not start the sync. Is the API running?");
+      showStatus(t("Could not start the sync. Is the API running?"));
     }
   });
 
