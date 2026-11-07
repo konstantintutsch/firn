@@ -12,7 +12,7 @@ const ICONS = {
 };
 
 export default function (eleventyConfig) {
-  eleventyConfig.addPassthroughCopy({ "src/css": "css", "src/js": "js" });
+  eleventyConfig.addPassthroughCopy({ "src/css": "css", "src/js": "js", "src/icons": "icons", "src/manifest.webmanifest": "manifest.webmanifest" });
   eleventyConfig.addPassthroughCopy({
     "node_modules/maplibre-gl/dist/maplibre-gl.mjs": "vendor/maplibre-gl.mjs",
     "node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs": "vendor/maplibre-gl-worker.mjs",

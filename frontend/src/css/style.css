@@ -2,7 +2,6 @@
   --page: #f4f3ef;
   --ink: #1d2027;
   --ink-muted: #5d6068;
-  --panel: rgb(255 255 255 / 90%);
   --line: rgb(0 0 0 / 14%);
   --ramp: linear-gradient(90deg, #f06414, #e03c14, #d6246e, #7b1fa2, #2e1065);
   --surface: #fcfcfb;
@@ -13,6 +12,23 @@
   --series-3: #1baf7a;
   --series-4: #eda100;
   --nav-space: 112px;
+  --accent: #d9480f;
+  --accent-fill: #d9480f;
+  /* Liquid glass: a translucent tint over a blurred, saturated backdrop, lit along its edges. */
+  --glass: rgb(255 255 255 / 52%);
+  --glass-thin: rgb(255 255 255 / 38%);
+  --glass-selected: rgb(255 255 255 / 85%);
+  --glass-edge: rgb(255 255 255 / 70%);
+  --glass-specular: rgb(255 255 255 / 90%);
+  --glass-shade: rgb(255 255 255 / 25%);
+  --glass-shadow: 0 8px 32px rgb(31 38 70 / 16%), 0 1px 3px rgb(31 38 70 / 10%);
+  --backdrop:
+    radial-gradient(60vmax 50vmax at 0% 0%, rgb(255 154 60 / 45%), transparent 70%),
+    radial-gradient(55vmax 45vmax at 100% 20%, rgb(232 54 111 / 30%), transparent 70%),
+    radial-gradient(60vmax 50vmax at 40% 100%, rgb(91 33 182 / 25%), transparent 70%),
+    var(--page);
+  --map-icon-filter: none;
+  accent-color: var(--accent);
   color-scheme: light;
 }
 
@@ -21,7 +37,6 @@
     --page: #12141a;
     --ink: #f2efe9;
     --ink-muted: #a9a59c;
-    --panel: rgb(18 20 26 / 88%);
     --line: rgb(255 255 255 / 12%);
     --ramp: linear-gradient(90deg, #8e3fc4, #d13a78, #f4743b, #fbd25d, #fff7d6);
     --surface: #1a1a19;
@@ -31,6 +46,20 @@
     --series-2: #d95926;
     --series-3: #199e70;
     --series-4: #c98500;
+    --accent: #ff8a4c;
+    --glass: rgb(30 32 42 / 52%);
+    --glass-thin: rgb(255 255 255 / 8%);
+    --glass-selected: rgb(255 255 255 / 20%);
+    --glass-edge: rgb(255 255 255 / 16%);
+    --glass-specular: rgb(255 255 255 / 30%);
+    --glass-shade: rgb(255 255 255 / 6%);
+    --glass-shadow: 0 8px 32px rgb(0 0 0 / 40%), 0 1px 3px rgb(0 0 0 / 30%);
+    --backdrop:
+      radial-gradient(60vmax 50vmax at 0% 0%, rgb(255 120 40 / 22%), transparent 70%),
+      radial-gradient(55vmax 45vmax at 100% 20%, rgb(232 54 111 / 18%), transparent 70%),
+      radial-gradient(60vmax 50vmax at 40% 100%, rgb(110 50 220 / 22%), transparent 70%),
+      var(--page);
+    --map-icon-filter: invert(1);
     color-scheme: dark;
   }
 }
@@ -39,7 +68,6 @@
   --page: #12141a;
   --ink: #f2efe9;
   --ink-muted: #a9a59c;
-  --panel: rgb(18 20 26 / 88%);
   --line: rgb(255 255 255 / 12%);
   --ramp: linear-gradient(90deg, #8e3fc4, #d13a78, #f4743b, #fbd25d, #fff7d6);
   --surface: #1a1a19;
@@ -49,6 +77,20 @@
   --series-2: #d95926;
   --series-3: #199e70;
   --series-4: #c98500;
+  --accent: #ff8a4c;
+  --glass: rgb(30 32 42 / 52%);
+  --glass-thin: rgb(255 255 255 / 8%);
+  --glass-selected: rgb(255 255 255 / 20%);
+  --glass-edge: rgb(255 255 255 / 16%);
+  --glass-specular: rgb(255 255 255 / 30%);
+  --glass-shade: rgb(255 255 255 / 6%);
+  --glass-shadow: 0 8px 32px rgb(0 0 0 / 40%), 0 1px 3px rgb(0 0 0 / 30%);
+  --backdrop:
+    radial-gradient(60vmax 50vmax at 0% 0%, rgb(255 120 40 / 22%), transparent 70%),
+    radial-gradient(55vmax 45vmax at 100% 20%, rgb(232 54 111 / 18%), transparent 70%),
+    radial-gradient(60vmax 50vmax at 40% 100%, rgb(110 50 220 / 22%), transparent 70%),
+    var(--page);
+  --map-icon-filter: invert(1);
   color-scheme: dark;
 }
 
@@ -66,6 +108,31 @@ body {
   inset: 0;
 }
 
+/* Document pages sit on soft color, so the glass above them has something to refract. */
+.page,
+.sign-in {
+  background: var(--backdrop);
+  background-attachment: fixed;
+}
+
+.panel,
+.nav,
+.settings,
+.tile,
+.card,
+.activity-list,
+.chart-tooltip,
+.maplibregl-ctrl-group:not(:empty) {
+  background: linear-gradient(160deg, var(--glass-shade), transparent 45%), var(--glass);
+  border: 1px solid var(--glass-edge);
+  box-shadow:
+    inset 0 1px 0 var(--glass-specular),
+    inset 0 -1px 0 var(--glass-shade),
+    var(--glass-shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  backdrop-filter: blur(18px) saturate(180%);
+}
+
 .panel {
   position: fixed;
   top: 16px;
@@ -75,11 +142,8 @@ body {
   max-height: calc(100dvh - var(--nav-space));
   overflow-y: auto;
   box-sizing: border-box;
-  padding: 14px 16px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  backdrop-filter: blur(6px);
+  padding: 16px 18px;
+  border-radius: 26px;
 }
 
 .panel.has-detail {
@@ -143,8 +207,11 @@ body {
   gap: 4px;
 }
 
-.profile-tabs [aria-pressed="true"] {
-  background: var(--line);
+.profile-tabs [aria-pressed="true"],
+.range-picker [aria-pressed="true"] {
+  background: var(--glass-selected);
+  box-shadow: inset 0 1px 0 var(--glass-specular), 0 1px 4px rgb(0 0 0 / 12%);
+  font-weight: 600;
 }
 
 .profile-chart {
@@ -199,10 +266,10 @@ body {
 
 select {
   flex: 1;
-  padding: 3px 6px;
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  padding: 4px 10px;
+  background: var(--glass-thin);
+  border: 1px solid var(--glass-edge);
+  border-radius: 999px;
   color: var(--ink);
   font: inherit;
   font-size: 13px;
@@ -251,10 +318,11 @@ select option {
 }
 
 .panel-button {
-  padding: 3px 9px;
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  padding: 5px 12px;
+  background: var(--glass-thin);
+  border: 1px solid var(--glass-edge);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 var(--glass-shade);
   color: var(--ink);
   font: inherit;
   font-size: 12px;
@@ -262,7 +330,12 @@ select option {
 }
 
 .panel-button:hover:not(:disabled) {
-  background: var(--line);
+  background: var(--glass-selected);
+}
+
+.panel-button:active:not(:disabled),
+.icon-button:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .panel-button:disabled {
@@ -271,10 +344,20 @@ select option {
 }
 
 h1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.01em;
+}
+
+.brand-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 20%);
 }
 
 p {
@@ -318,12 +401,23 @@ p:empty {
 input {
   width: 100%;
   box-sizing: border-box;
-  padding: 4px 7px;
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  padding: 6px 10px;
+  background: var(--glass-thin);
+  border: 1px solid var(--glass-edge);
+  border-radius: 10px;
   color: var(--ink);
   font: inherit;
+}
+
+input[type="search"] {
+  padding-inline: 14px;
+  border-radius: 999px;
+}
+
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .search {
@@ -343,10 +437,10 @@ input {
 .search-result {
   display: block;
   width: 100%;
-  padding: 4px 6px;
+  padding: 6px 10px;
   background: transparent;
   border: 0;
-  border-radius: 6px;
+  border-radius: 12px;
   color: var(--ink);
   font: inherit;
   text-align: left;
@@ -356,7 +450,7 @@ input {
 
 .search-result:hover,
 .search-result:focus-visible {
-  background: var(--line);
+  background: var(--glass-selected);
 }
 
 .search-result small {
@@ -482,12 +576,13 @@ a {
 .icon-button {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  background: var(--glass-thin);
+  border: 1px solid var(--glass-edge);
+  border-radius: 50%;
+  box-shadow: inset 0 1px 0 var(--glass-shade);
   color: var(--ink);
   cursor: pointer;
 }
@@ -498,7 +593,7 @@ a {
 }
 
 .icon-button:hover:not(:disabled) {
-  background: var(--line);
+  background: var(--glass-selected);
 }
 
 .icon-button:disabled {
@@ -535,13 +630,9 @@ a {
   z-index: 5;
   display: flex;
   gap: 2px;
-  padding: 4px;
+  padding: 5px;
   transform: translateX(-50%);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 14%);
-  backdrop-filter: blur(6px);
+  border-radius: 999px;
 }
 
 .nav-item {
@@ -549,11 +640,11 @@ a {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  min-width: 64px;
-  padding: 6px 8px;
+  min-width: 68px;
+  padding: 7px 10px;
   background: transparent;
   border: 0;
-  border-radius: 12px;
+  border-radius: 999px;
   color: var(--ink-muted);
   font: inherit;
   font-size: 11px;
@@ -566,10 +657,35 @@ a {
   display: none;
 }
 
-.nav-item:hover,
-.nav-item[aria-current="page"] {
-  background: var(--line);
+.nav-item {
+  transition: background-color 0.2s, color 0.2s, transform 0.2s;
+}
+
+.nav-item:hover {
   color: var(--ink);
+}
+
+.nav-item[aria-current="page"] {
+  background: var(--glass-selected);
+  box-shadow: inset 0 1px 0 var(--glass-specular), 0 1px 4px rgb(0 0 0 / 12%);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.nav-item:active {
+  transform: scale(0.94);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-item {
+    transition: none;
+  }
+
+  .nav-item:active,
+  .panel-button:active:not(:disabled),
+  .icon-button:active:not(:disabled) {
+    transform: none;
+  }
 }
 
 .nav-item:focus-visible {
@@ -584,7 +700,6 @@ a {
   display: grid;
   place-items: center;
   padding: 16px;
-  background: var(--page);
 }
 
 .sign-in[hidden] {
@@ -596,6 +711,20 @@ a {
   text-align: center;
 }
 
+.sign-in-card h1 {
+  justify-content: center;
+}
+
+.sign-in-card .brand-icon {
+  display: block;
+  width: 88px;
+  margin-inline: auto;
+  height: 88px;
+  margin-bottom: 12px;
+  border-radius: 22px;
+  box-shadow: 0 10px 30px rgb(91 33 182 / 30%);
+}
+
 .sign-in-card p {
   margin: 8px 0 16px;
   color: var(--ink-muted);
@@ -603,10 +732,11 @@ a {
 
 .primary-button {
   display: inline-block;
-  padding: 6px 18px;
-  background: var(--ink);
-  border-radius: 6px;
-  color: var(--page);
+  padding: 9px 24px;
+  background: linear-gradient(180deg, rgb(255 255 255 / 22%), transparent), var(--accent-fill);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%), 0 6px 18px rgb(217 72 15 / 35%);
+  color: #fff;
   font-weight: 600;
   text-decoration: none;
 }
@@ -614,15 +744,15 @@ a {
 .settings {
   width: min(360px, calc(100vw - 32px));
   box-sizing: border-box;
-  padding: 16px;
-  background: var(--page);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  padding: 18px;
+  border-radius: 28px;
   color: var(--ink);
 }
 
 .settings::backdrop {
-  background: rgb(0 0 0 / 40%);
+  background: rgb(0 0 0 / 25%);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
 }
 
 .settings h2 {
@@ -680,16 +810,21 @@ a {
 }
 
 .activity-list {
-  margin: 8px 0;
-  padding: 0;
+  margin: 12px 0;
+  padding: 6px;
+  border-radius: 24px;
   list-style: none;
+}
+
+.activity-list:empty {
+  display: none;
 }
 
 .activity {
   display: grid;
   gap: 1px;
-  padding: 8px 10px;
-  border-radius: 8px;
+  padding: 10px 14px;
+  border-radius: 18px;
   color: var(--ink);
   text-decoration: none;
   overflow-wrap: anywhere;
@@ -697,7 +832,7 @@ a {
 
 a.activity:hover,
 a.activity:focus-visible {
-  background: var(--line);
+  background: var(--glass-selected);
 }
 
 .activity strong {
@@ -728,9 +863,6 @@ a.activity:focus-visible {
   margin-top: 8px;
 }
 
-.range-picker [aria-pressed="true"] {
-  background: var(--line);
-}
 
 .tiles {
   display: grid;
@@ -741,10 +873,8 @@ a.activity:focus-visible {
 .tile {
   display: grid;
   gap: 2px;
-  padding: 10px 12px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  padding: 12px 16px;
+  border-radius: 20px;
 }
 
 .tile span {
@@ -765,10 +895,8 @@ a.activity:focus-visible {
 
 .card {
   min-width: 0;
-  padding: 12px 14px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  padding: 16px 18px;
+  border-radius: 24px;
 }
 
 .card h3 {
@@ -859,11 +987,8 @@ a.activity:focus-visible {
   top: 0;
   z-index: 1;
   min-width: 120px;
-  padding: 6px 8px;
-  background: var(--page);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
+  padding: 8px 12px;
+  border-radius: 14px;
   font-size: 12px;
   pointer-events: none;
 }
@@ -953,4 +1078,28 @@ a.activity:focus-visible {
   flex: none;
   color: var(--ink-muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* Map controls wear the same glass as the panels. */
+.maplibregl-ctrl-group:not(:empty) {
+  overflow: hidden;
+  border-radius: 999px;
+}
+
+.maplibregl-ctrl-group button {
+  width: 34px;
+  height: 34px;
+  background-color: transparent;
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top-color: var(--line);
+}
+
+.maplibregl-ctrl-group button:not(:disabled):hover {
+  background-color: var(--glass-selected);
+}
+
+.maplibregl-ctrl-group .maplibregl-ctrl-icon {
+  filter: var(--map-icon-filter);
 }
