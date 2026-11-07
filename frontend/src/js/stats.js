@@ -1,7 +1,7 @@
 import { bars, chart, forgetCharts } from "/js/charts.js";
 import { duration, number, pace, raceDistanceName, unit } from "/js/format.js";
 import { language } from "/js/i18n.js";
-import { plural, requireAccount, setUpSync, t, typeName } from "/js/account.js";
+import { requireAccount, setUpSync, t, typeName } from "/js/account.js";
 import { localDay, setUpFilters } from "/js/filters.js";
 import { distanceUnit, elevationUnit, toDistance, toElevation } from "/js/units.js";
 
@@ -507,12 +507,11 @@ function calendar(container, dated, buckets) {
   const GAP = 3;
   const WEEKS = 53;
   const perDay = new Map();
-  for (const { time, distance_m: meters, duration_s: seconds } of dated) {
-    const entry = perDay.get(time) ?? { meters: 0, seconds: 0, count: 0 };
-    entry.meters += meters ?? 0;
-    entry.seconds += seconds ?? 0;
-    entry.count += 1;
-    perDay.set(time, entry);
+  for (const activity of dated) {
+    const entry = perDay.get(activity.time) ?? { meters: 0, activities: [] };
+    entry.meters += activity.distance_m ?? 0;
+    entry.activities.push(activity);
+    perDay.set(activity.time, entry);
   }
   const last = Math.min(parseDay(localDay(Date.now())), buckets.at(-1).time + 31 * DAY_MS);
   const end = new Date(last);
@@ -521,11 +520,21 @@ function calendar(container, dated, buckets) {
   start.setDate(start.getDate() - ((start.getDay() + 6) % 7) - (WEEKS - 1) * 7);
   const max = Math.max(1, ...[...perDay.values()].map(({ meters }) => meters));
 
+  const wrapper = document.createElement("div");
+  wrapper.className = "calendar-wrapper";
   const svg = document.createElementNS(SVG, "svg");
   svg.setAttribute("viewBox", `0 0 ${WEEKS * (SIZE + GAP)} ${7 * (SIZE + GAP)}`);
   svg.setAttribute("class", "calendar");
   svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", t("Distance per day over the last year"));
+  svg.setAttribute("aria-label", t("Distance per day over the last year. Use the arrow keys to go through the days."));
+  // One tab stop for the whole calendar: the arrow keys move from day to day.
+  svg.setAttribute("tabindex", "0");
+  const tooltip = document.createElement("div");
+  tooltip.className = "chart-tooltip calendar-tooltip";
+  tooltip.hidden = true;
+  tooltip.setAttribute("aria-live", "polite");
+
+  const days = [];
   for (let week = 0, date = new Date(start); week < WEEKS; week++) {
     for (let weekday = 0; weekday < 7; weekday++, date.setDate(date.getDate() + 1)) {
       if (date.getTime() > last) break;
@@ -538,16 +547,82 @@ function calendar(container, dated, buckets) {
       square.setAttribute("rx", 2);
       const level = entry ? Math.min(4, 1 + Math.floor((Math.sqrt(entry.meters / max) || 0) * 3.99)) : 0;
       square.setAttribute("class", `calendar-day level-${level}`);
-      const title = document.createElementNS(SVG, "title");
-      const label = date.toLocaleDateString(language, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
-      title.textContent = entry
-        ? `${label}: ${plural(entry.count, "activity", "activities")} · ${number(1)(toDistance(entry.meters))} ${distanceUnit}`
-        : label;
-      square.append(title);
+      square.dataset.index = days.length;
+      days.push({ time: date.getTime(), entry, square });
       svg.append(square);
     }
   }
-  container.append(svg);
+
+  let active = null;
+  function show(index) {
+    active?.square.classList.remove("active");
+    active = index == null ? null : days[index];
+    tooltip.hidden = active == null;
+    if (!active) return;
+    active.square.classList.add("active");
+    const { time, entry } = active;
+    const label = new Date(time).toLocaleDateString(language, {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    const heading = document.createElement("strong");
+    heading.textContent = label;
+    tooltip.replaceChildren(heading);
+    for (const activity of entry?.activities ?? []) {
+      const row = document.createElement("div");
+      row.className = "chart-tooltip-row";
+      const name = document.createElement("span");
+      name.textContent = activity.name || typeName(activity.activity_type);
+      const value = document.createElement("span");
+      value.className = "chart-tooltip-value";
+      const parts = [];
+      if (activity.distance_m) parts.push(`${number(1)(toDistance(activity.distance_m))} ${distanceUnit}`);
+      if (activity.duration_s) parts.push(duration(activity.duration_s));
+      value.textContent = parts.join(" · ");
+      row.append(name, value);
+      tooltip.append(row);
+    }
+    if (!entry) {
+      const none = document.createElement("div");
+      none.className = "muted";
+      none.textContent = t("No activities");
+      tooltip.append(none);
+    }
+    // Above the day, or below it in the top rows, and kept inside the card.
+    const box = active.square.getBoundingClientRect();
+    const outer = wrapper.getBoundingClientRect();
+    const width = tooltip.offsetWidth;
+    const left = box.left - outer.left + box.width / 2 - width / 2;
+    tooltip.style.left = `${Math.min(Math.max(0, left), outer.width - width)}px`;
+    const above = box.top - outer.top - tooltip.offsetHeight - 6;
+    const roomAbove = box.top - tooltip.offsetHeight - 6 > 0;
+    tooltip.style.top = `${roomAbove ? above : box.bottom - outer.top + 6}px`;
+  }
+
+  svg.addEventListener("pointermove", (event) => {
+    const index = event.target.dataset?.index;
+    if (index != null && days[index] !== active) show(Number(index));
+  });
+  svg.addEventListener("pointerleave", () => {
+    if (document.activeElement !== svg) show(null);
+  });
+  svg.addEventListener("focus", () => show(days.indexOf(active ?? days.at(-1))));
+  svg.addEventListener("blur", () => show(null));
+  svg.addEventListener("keydown", (event) => {
+    const step = { ArrowUp: -1, ArrowDown: 1, ArrowLeft: -7, ArrowRight: 7 }[event.key];
+    if (step == null) {
+      if (event.key === "Escape") show(null);
+      return;
+    }
+    event.preventDefault();
+    const index = active ? days.indexOf(active) : days.length - 1;
+    show(Math.min(days.length - 1, Math.max(0, index + step)));
+  });
+
+  wrapper.append(svg, tooltip);
+  container.append(wrapper);
 }
 
 /** The best official time over each distance, from the race results entered by hand. */

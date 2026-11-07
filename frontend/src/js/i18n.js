@@ -110,7 +110,9 @@ const GERMAN = {
   days: "Tage",
   Calendar: "Kalender",
   "Distance per day, darker is more": "Distanz pro Tag, dunkler ist mehr",
-  "Distance per day over the last year": "Distanz pro Tag im letzten Jahr",
+  "Distance per day over the last year. Use the arrow keys to go through the days.":
+    "Distanz pro Tag im letzten Jahr. Mit den Pfeiltasten gehst du durch die Tage.",
+  "No activities": "Keine Aktivitäten",
   "Personal records": "Bestzeiten",
   "Year over year": "Jahresvergleich",
   "Distance so far in each year": "Bisherige Distanz in jedem Jahr",

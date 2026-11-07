@@ -1458,6 +1458,35 @@ a.activity:hover {
   height: auto;
 }
 
+.calendar-wrapper {
+  position: relative;
+}
+
+.calendar:focus-visible {
+  outline: none;
+}
+
+.calendar-day.active {
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+
+/* Wide enough for an activity's name and its distance and time on one line. */
+.calendar-tooltip {
+  width: max-content;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.calendar-tooltip .chart-tooltip-row > * {
+  white-space: nowrap;
+}
+
+.calendar-tooltip .chart-tooltip-row {
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .calendar-day.level-0 {
   fill: var(--fill);
 }
