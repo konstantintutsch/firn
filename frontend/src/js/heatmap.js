@@ -28,8 +28,8 @@ const THEME_STORAGE_KEY = "theme";
 const SOURCE_ID = "runs";
 const HEAT_LAYER_ID = "runs-heat";
 const REFRESH_DELAY_MS = 150;
-/** Radius at the zoom the grid was built for, where cells are 2 px apart. */
-const HEAT_RADIUS_PX = 3;
+/** Radius at the zoom the grid was built for, where cells are 1 px apart. */
+const HEAT_RADIUS_PX = 2;
 /** Fetches beyond the viewport so that small pans do not show empty edges. */
 const VIEWPORT_PADDING = 0.25;
 
@@ -72,8 +72,8 @@ map.on("style.load", () => {
       paint: {
         "heatmap-weight": ["get", "weight"],
         "heatmap-radius": heatRadius(),
-        // A lone cell of maximum weight peaks at 0.4 times this, a line at about 0.75.
-        "heatmap-intensity": 1.7,
+        // A lone cell of maximum weight peaks at 0.4 times this, a line at about 1.
+        "heatmap-intensity": 1.3,
         "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"], ...THEMES[theme].heatStops],
       },
     },

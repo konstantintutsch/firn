@@ -19,6 +19,9 @@ pub type Pool = deadpool::Pool<AsyncPgConnection>;
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 /// Postgres allows 65535 bind parameters per statement, and a point uses 4.
 const POINTS_PER_INSERT: usize = 10_000;
+const EARTH_CIRCUMFERENCE_M: f64 = 40_075_017.0;
+/// Longer gaps mean lost GPS or a pause, where a straight line would be made up.
+const MAX_SEGMENT_M: f64 = 100.0;
 
 pub fn connect(database_url: &str) -> Result<Pool> {
     let manager = AsyncDieselConnectionManager::<AsyncPgConnection>::new(database_url);
@@ -152,24 +155,68 @@ pub struct Bounds {
     pub north: f64,
 }
 
-/// Bins points into a Web Mercator grid and counts the distinct runs per cell,
-/// so that standing still at a traffic light does not make a spot look popular.
-pub async fn heatmap_cells(pool: &Pool, cell_size: f64, bounds: &Bounds) -> Result<Vec<GridCell>> {
-    let cells = diesel::sql_query(
-        "SELECT ix, iy, count(*) AS runs FROM (
-             SELECT DISTINCT floor(x / $1)::bigint AS ix, floor(y / $1)::bigint AS iy, run_id
-             FROM track_points
-             WHERE lon BETWEEN $2 AND $3 AND lat BETWEEN $4 AND $5
-         ) AS visits
-         GROUP BY ix, iy",
+const POINT_CELLS_QUERY: &str = "
+    SELECT ix, iy, count(*) AS runs FROM (
+        SELECT DISTINCT floor(x / $1)::bigint AS ix, floor(y / $1)::bigint AS iy, run_id
+        FROM track_points
+        WHERE lon BETWEEN $2 AND $3 AND lat BETWEEN $4 AND $5
+    ) AS visits
+    GROUP BY ix, iy";
+
+const TRACK_CELLS_QUERY: &str = "
+    WITH points AS (
+        SELECT run_id, seq, lat, x, y,
+          lag(seq) OVER track AS previous_seq,
+          lag(x) OVER track - x AS dx,
+          lag(y) OVER track - y AS dy
+        FROM track_points
+        WHERE lon BETWEEN $2 AND $3 AND lat BETWEEN $4 AND $5
+        WINDOW track AS (PARTITION BY run_id ORDER BY seq)
+    ), segments AS (
+        SELECT run_id, x, y, dx, dy,
+          CASE
+              WHEN previous_seq = seq - 1
+                   AND sqrt(dx * dx + dy * dy) * $6 * cos(radians(lat)) <= $7
+              THEN floor(sqrt(dx * dx + dy * dy) / $1)::integer
+              ELSE 0
+          END AS steps
+        FROM points
     )
-    .bind::<Double, _>(cell_size)
-    .bind::<Double, _>(bounds.west)
-    .bind::<Double, _>(bounds.east)
-    .bind::<Double, _>(bounds.south)
-    .bind::<Double, _>(bounds.north)
-    .load(&mut pool.get().await?)
-    .await?;
+    SELECT ix, iy, count(*) AS runs FROM (
+        SELECT DISTINCT
+          floor((x + COALESCE(dx, 0) * step::double precision / (steps + 1)) / $1)::bigint AS ix,
+          floor((y + COALESCE(dy, 0) * step::double precision / (steps + 1)) / $1)::bigint AS iy,
+          run_id
+        FROM segments, generate_series(0, steps) AS step
+    ) AS visits
+    GROUP BY ix, iy";
+
+/// Bins tracks into a Web Mercator grid and counts the distinct runs per cell,
+/// so that standing still at a traffic light does not make a spot look popular.
+///
+/// Consecutive points are connected by interpolating along the segment in steps
+/// shorter than a cell. Only points inside the bounds are used, so a run that
+/// leaves and reenters them is not connected across the gap.
+pub async fn heatmap_cells(pool: &Pool, cell_size: f64, bounds: &Bounds) -> Result<Vec<GridCell>> {
+    let query = |sql| {
+        diesel::sql_query(sql)
+            .bind::<Double, _>(cell_size)
+            .bind::<Double, _>(bounds.west)
+            .bind::<Double, _>(bounds.east)
+            .bind::<Double, _>(bounds.south)
+            .bind::<Double, _>(bounds.north)
+    };
+    let mut connection = pool.get().await?;
+    // A segment spans at most about a cell here, so its end points are enough.
+    let cells = if cell_size * EARTH_CIRCUMFERENCE_M >= MAX_SEGMENT_M {
+        query(POINT_CELLS_QUERY).load(&mut connection).await?
+    } else {
+        query(TRACK_CELLS_QUERY)
+            .bind::<Double, _>(EARTH_CIRCUMFERENCE_M)
+            .bind::<Double, _>(MAX_SEGMENT_M)
+            .load(&mut connection)
+            .await?
+    };
     Ok(cells)
 }
 

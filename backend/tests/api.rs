@@ -114,10 +114,74 @@ async fn grid_stops_getting_finer_at_the_maximum_zoom() {
 
     let (_, requested) = get(&pool, &format!("/api/heatmap?zoom=12&{WORLD}")).await;
     assert_eq!(requested["grid_zoom"], 12);
-    let (_, finest) = get(&pool, &format!("/api/heatmap?zoom=15&{WORLD}")).await;
+    let (_, finest) = get(&pool, &format!("/api/heatmap?zoom=18&{WORLD}")).await;
     let (_, capped) = get(&pool, &format!("/api/heatmap?zoom=22&{WORLD}")).await;
-    assert_eq!(capped["grid_zoom"], 15);
+    assert_eq!(capped["grid_zoom"], 18);
     assert_eq!(capped["cells"], finest["cells"]);
+}
+
+/// Cells of a run along a west-east line from `BERLIN`, which spans `meters`.
+async fn cells_on_line(pool: &Pool, meters: f64, zoom: u8) -> Vec<Value> {
+    let metres_per_degree = 111_320.0 * BERLIN.lat.to_radians().cos();
+    let end = Point {
+        lat: BERLIN.lat,
+        lon: BERLIN.lon + meters / metres_per_degree,
+    };
+    add_run(pool, 1, &[BERLIN, end]).await;
+    let (_, body) = get(pool, &format!("/api/heatmap?zoom={zoom}&{WORLD}")).await;
+    body["cells"].as_array().unwrap().clone()
+}
+
+#[tokio::test]
+async fn connects_consecutive_points() {
+    let pool = common::test_pool().await;
+    // A cell at zoom 18 is 0.18 m wide at this latitude, so 50 m spans about 270.
+    let cells = cells_on_line(&pool, 50.0, 18).await;
+    assert!((260..=280).contains(&cells.len()), "{}", cells.len());
+    assert!(cells.iter().all(|cell| cell["runs"] == 1));
+}
+
+#[tokio::test]
+async fn does_not_connect_across_long_gaps() {
+    let pool = common::test_pool().await;
+    let cells = cells_on_line(&pool, 150.0, 18).await;
+    assert_eq!(cells.len(), 2);
+}
+
+#[tokio::test]
+async fn does_not_connect_points_on_both_sides_of_the_viewport_edge() {
+    let pool = common::test_pool().await;
+    let east = |meters: f64| Point {
+        lat: BERLIN.lat,
+        lon: BERLIN.lon + meters / (111_320.0 * BERLIN.lat.to_radians().cos()),
+    };
+    // Leaves the viewport in the middle: the outer points are not consecutive.
+    add_run(&pool, 1, &[BERLIN, east(20.0), east(40.0)]).await;
+    let south = BERLIN.lat - 0.001;
+    let north = BERLIN.lat + 0.001;
+    let middle = BERLIN.lon + 10.0 / (111_320.0 * BERLIN.lat.to_radians().cos());
+    let (_, body) = get(
+        &pool,
+        &format!("/api/heatmap?zoom=18&west=0&south={south}&east={middle}&north={north}"),
+    )
+    .await;
+    assert_eq!(body["cells"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn connected_runs_count_once_per_cell() {
+    let pool = common::test_pool().await;
+    let east = Point {
+        lat: BERLIN.lat,
+        lon: BERLIN.lon + 0.0002,
+    };
+    add_run(&pool, 1, &[BERLIN, east, BERLIN]).await;
+    add_run(&pool, 2, &[BERLIN, east]).await;
+
+    let (_, body) = get(&pool, &format!("/api/heatmap?zoom=18&{WORLD}")).await;
+    let cells = body["cells"].as_array().unwrap();
+    assert!(cells.len() > 10);
+    assert!(cells.iter().all(|cell| cell["runs"] == 2), "{cells:?}");
 }
 
 #[tokio::test]

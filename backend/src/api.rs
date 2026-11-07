@@ -14,10 +14,11 @@ use crate::db::{self, Bounds, GridCell, Pool};
 const MAX_ZOOM: u8 = 22;
 /// World width in pixels at zoom 0 for MapLibre's 512 px tiles.
 const WORLD_PIXELS: f64 = 512.0;
-const CELL_PIXELS: f64 = 2.0;
-/// A cell is about 3 m here. GPS tracks are sampled every few meters, so finer
-/// cells would break tracks into dots.
-const MAX_GRID_ZOOM: u8 = 15;
+const CELL_PIXELS: f64 = 1.0;
+/// The map's maximum zoom, where a cell is about 20 cm: far below GPS accuracy.
+const MAX_GRID_ZOOM: u8 = 18;
+/// About 1 cm, well below a cell. Fewer digits make large responses much smaller.
+const COORDINATE_SCALE: f64 = 1e7;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -153,10 +154,14 @@ fn to_heat_cell(cell: &GridCell, cell_size: f64) -> HeatCell {
     let x = (cell.ix as f64 + 0.5) * cell_size;
     let y = (cell.iy as f64 + 0.5) * cell_size;
     HeatCell {
-        lon: x * 360.0 - 180.0,
-        lat: (PI * (1.0 - 2.0 * y)).sinh().atan().to_degrees(),
+        lon: round_coordinate(x * 360.0 - 180.0),
+        lat: round_coordinate((PI * (1.0 - 2.0 * y)).sinh().atan().to_degrees()),
         runs: cell.runs,
     }
+}
+
+fn round_coordinate(degrees: f64) -> f64 {
+    (degrees * COORDINATE_SCALE).round() / COORDINATE_SCALE
 }
 
 #[derive(Serialize, ToSchema)]
