@@ -10,8 +10,6 @@
         const theme = localStorage.getItem("theme");
         if (theme) document.documentElement.dataset.theme = theme;
       } catch {}
-      // Only Chromium refracts through an SVG filter in backdrop-filter; other browsers keep the plain blur.
-      if (navigator.userAgentData) document.documentElement.classList.add("refract");
     </script>
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
@@ -19,7 +17,6 @@
     <link rel="stylesheet" href="/css/style.css">
   </head>
   <body class="page">
-    {% include "glass.njk" %}
     <header class="page-header">
       {% include "header.njk" %}
       <p id="sync-status" role="status"></p>
@@ -46,5 +43,6 @@
     {% include "nav.njk" %}
     {% include "account.njk" %}
     <script type="module" src="/js/stats.js"></script>
+    <script type="module" src="/js/glass.js"></script>
   </body>
 </html>

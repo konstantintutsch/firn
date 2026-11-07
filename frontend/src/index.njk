@@ -10,8 +10,6 @@
         const theme = localStorage.getItem("theme");
         if (theme) document.documentElement.dataset.theme = theme;
       } catch {}
-      // Only Chromium refracts through an SVG filter in backdrop-filter; other browsers keep the plain blur.
-      if (navigator.userAgentData) document.documentElement.classList.add("refract");
     </script>
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
@@ -20,80 +18,82 @@
     <link rel="stylesheet" href="/css/style.css">
   </head>
   <body>
-    {% include "glass.njk" %}
     <main id="map" aria-label="Heatmap of all activities" data-i18n-attrs="aria-label"></main>
     <section class="panel">
-      {% include "header.njk" %}
-      <div class="search">
-        <input id="search" type="search" placeholder="Search places and activities" aria-label="Search places and activities" data-i18n-attrs="placeholder aria-label" autocomplete="off">
-        <div id="search-results" class="search-results" hidden></div>
-      </div>
-      <p id="status" role="status"></p>
-      <p id="sync-status" role="status"></p>
-      <section id="detail" class="detail" hidden>
-        <div class="detail-header">
-          <div>
-            <h2 id="detail-title"></h2>
-            <p id="detail-meta" class="muted"></p>
-          </div>
-          <button id="detail-close" class="icon-button" type="button" aria-label="Show all activities" title="Show all activities" data-i18n-attrs="aria-label title">{% icon "close" %}</button>
+      <div class="panel-body">
+        {% include "header.njk" %}
+        <div class="search">
+          <input id="search" type="search" placeholder="Search places and activities" aria-label="Search places and activities" data-i18n-attrs="placeholder aria-label" autocomplete="off">
+          <div id="search-results" class="search-results" hidden></div>
         </div>
-        <p id="detail-description" class="detail-description"></p>
-        <p id="detail-status" class="muted" role="status"></p>
-        <div id="detail-profile" class="detail-profile" hidden>
-          <div id="profile-tabs" class="profile-tabs" role="group" aria-label="Profile" data-i18n-attrs="aria-label"></div>
-          <div id="profile-chart" class="profile-chart"></div>
-          <div id="profile-readout" class="profile-readout" aria-live="polite"></div>
+        <p id="status" role="status"></p>
+        <p id="sync-status" role="status"></p>
+        <section id="detail" class="detail" hidden>
+          <div class="detail-header">
+            <div>
+              <h2 id="detail-title"></h2>
+              <p id="detail-meta" class="muted"></p>
+            </div>
+            <button id="detail-close" class="icon-button" type="button" aria-label="Show all activities" title="Show all activities" data-i18n-attrs="aria-label title">{% icon "close" %}</button>
+          </div>
+          <p id="detail-description" class="detail-description"></p>
+          <p id="detail-status" class="muted" role="status"></p>
+          <div id="detail-profile" class="detail-profile" hidden>
+            <div id="profile-tabs" class="profile-tabs" role="group" aria-label="Profile" data-i18n-attrs="aria-label"></div>
+            <div id="profile-chart" class="profile-chart"></div>
+            <div id="profile-readout" class="profile-readout" aria-live="polite"></div>
+          </div>
+          <label id="track-color-field" class="track-color" hidden>
+            <span data-i18n>Track color</span>
+            <select id="track-color"></select>
+          </label>
+          <dl id="detail-metrics" class="metrics"></dl>
+          <section id="detail-splits" hidden>
+            <h3 data-i18n>Fastest splits</h3>
+            <dl class="metrics"></dl>
+          </section>
+          <section id="detail-zones" hidden>
+            <h3 data-i18n>Heart rate zones</h3>
+            <div></div>
+          </section>
+        </section>
+        <div id="browse">
+        <p id="stats"></p>
+        <details class="filters">
+          <summary><span data-i18n>Filters</span> <span id="filter-count"></span></summary>
+          <form id="filters">
+            <fieldset id="types-field" hidden>
+              <legend data-i18n>Activity type</legend>
+              <div id="types" class="types"></div>
+            </fieldset>
+            <label><span data-i18n>Title</span> <input name="title" type="search" autocomplete="off"></label>
+            <label><span data-i18n>Description</span> <input name="description" type="search" autocomplete="off"></label>
+            <label><span data-i18n>Location</span> <input name="location" type="search" autocomplete="off"></label>
+            <div class="range">
+              <label><span data-i18n>Min. km</span> <input name="min_distance_km" type="number" min="0" step="any"></label>
+              <label><span data-i18n>Max. km</span> <input name="max_distance_km" type="number" min="0" step="any"></label>
+            </div>
+            <div class="range">
+              <label><span data-i18n>Min. minutes</span> <input name="min_duration_min" type="number" min="0" step="any"></label>
+              <label><span data-i18n>Max. minutes</span> <input name="max_duration_min" type="number" min="0" step="any"></label>
+            </div>
+            <div class="range">
+              <label><span data-i18n>From</span> <input name="from" type="date"></label>
+              <label><span data-i18n>To</span> <input name="to" type="date"></label>
+            </div>
+            <button class="panel-button" type="reset" data-i18n>Clear filters</button>
+          </form>
+        </details>
         </div>
-        <label id="track-color-field" class="track-color" hidden>
-          <span data-i18n>Track color</span>
-          <select id="track-color"></select>
-        </label>
-        <dl id="detail-metrics" class="metrics"></dl>
-        <section id="detail-splits" hidden>
-          <h3 data-i18n>Fastest splits</h3>
-          <dl class="metrics"></dl>
-        </section>
-        <section id="detail-zones" hidden>
-          <h3 data-i18n>Heart rate zones</h3>
-          <div></div>
-        </section>
-      </section>
-      <div id="browse">
-      <p id="stats"></p>
-      <details class="filters">
-        <summary><span data-i18n>Filters</span> <span id="filter-count"></span></summary>
-        <form id="filters">
-          <fieldset id="types-field" hidden>
-            <legend data-i18n>Activity type</legend>
-            <div id="types" class="types"></div>
-          </fieldset>
-          <label><span data-i18n>Title</span> <input name="title" type="search" autocomplete="off"></label>
-          <label><span data-i18n>Description</span> <input name="description" type="search" autocomplete="off"></label>
-          <label><span data-i18n>Location</span> <input name="location" type="search" autocomplete="off"></label>
-          <div class="range">
-            <label><span data-i18n>Min. km</span> <input name="min_distance_km" type="number" min="0" step="any"></label>
-            <label><span data-i18n>Max. km</span> <input name="max_distance_km" type="number" min="0" step="any"></label>
-          </div>
-          <div class="range">
-            <label><span data-i18n>Min. minutes</span> <input name="min_duration_min" type="number" min="0" step="any"></label>
-            <label><span data-i18n>Max. minutes</span> <input name="max_duration_min" type="number" min="0" step="any"></label>
-          </div>
-          <div class="range">
-            <label><span data-i18n>From</span> <input name="from" type="date"></label>
-            <label><span data-i18n>To</span> <input name="to" type="date"></label>
-          </div>
-          <button class="panel-button" type="reset" data-i18n>Clear filters</button>
-        </form>
-      </details>
-      </div>
-      <div class="legend" id="legend" hidden>
-        <div id="legend-ramp" class="legend-ramp"></div>
-        <div class="legend-labels"><span id="legend-low" data-i18n>Fewer activities</span><span id="legend-high" data-i18n>More activities</span></div>
+        <div class="legend" id="legend" hidden>
+          <div id="legend-ramp" class="legend-ramp"></div>
+          <div class="legend-labels"><span id="legend-low" data-i18n>Fewer activities</span><span id="legend-high" data-i18n>More activities</span></div>
+        </div>
       </div>
     </section>
     {% include "nav.njk" %}
     {% include "account.njk" %}
     <script type="module" src="/js/heatmap.js"></script>
+    <script type="module" src="/js/glass.js"></script>
   </body>
 </html>

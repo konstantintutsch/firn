@@ -119,18 +119,53 @@ body {
   background: var(--glass);
   border: 0;
   box-shadow:
-    inset 0 0 0 1px var(--glass-rim-dim),
-    inset 0 2px 2px -1px var(--glass-rim),
-    inset 0 -2px 2px -1px var(--glass-rim-dim),
+    inset 0 2px 3px -2px var(--glass-rim),
     inset 0 0 6px 1px var(--glass-glow),
     0 0 0 0.5px var(--glass-outline),
     var(--glass-shadow);
   -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
+  /* glass.js sets the lens that bends the backdrop along the rim, where the browser can. */
+  backdrop-filter: var(--glass-filter) var(--glass-lens,);
 }
 
-.refract :is(.panel, .nav, .settings, .tile, .card, .activity-list, .chart-tooltip, .maplibregl-ctrl-group:not(:empty)) {
-  backdrop-filter: url(#glass-lens) var(--glass-filter);
+.tile,
+.card,
+.activity-list,
+.maplibregl-ctrl-group:not(:empty) {
+  position: relative;
+}
+
+/* The rim catches light at the top left and bottom right corners and fades along the sides. */
+.panel::after,
+.nav::after,
+.settings::after,
+.tile::after,
+.card::after,
+.activity-list::after,
+.chart-tooltip::after,
+.maplibregl-ctrl-group:not(:empty)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  corner-shape: inherit;
+  background: conic-gradient(
+    from -45deg,
+    var(--glass-rim),
+    var(--glass-glow) 70deg 110deg,
+    var(--glass-rim-dim) 180deg,
+    var(--glass-glow) 250deg 290deg,
+    var(--glass-rim)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  pointer-events: none;
 }
 
 .glass-filter {
@@ -144,10 +179,18 @@ body {
   width: min(280px, calc(100vw - 32px));
   /* Leaves room for the navigation bar below. */
   max-height: calc(100dvh - var(--nav-space));
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   box-sizing: border-box;
+  border-radius: 36px;
+  corner-shape: squircle;
+}
+
+/* Scrolls inside the panel, so that the rim stays put. */
+.panel-body {
+  min-height: 0;
+  overflow-y: auto;
   padding: 16px 18px;
-  border-radius: 26px;
 }
 
 .panel.has-detail {
@@ -360,7 +403,8 @@ h1 {
 .brand-icon {
   width: 26px;
   height: 26px;
-  border-radius: 7px;
+  border-radius: 10px;
+  corner-shape: squircle;
   box-shadow: 0 1px 3px rgb(0 0 0 / 20%);
 }
 
@@ -408,7 +452,8 @@ input {
   padding: 6px 10px;
   background: var(--fill);
   border: 1px solid var(--glass-edge);
-  border-radius: 10px;
+  border-radius: 14px;
+  corner-shape: squircle;
   color: var(--ink);
   font: inherit;
 }
@@ -444,7 +489,8 @@ select:focus-visible {
   padding: 6px 10px;
   background: transparent;
   border: 0;
-  border-radius: 12px;
+  border-radius: 16px;
+  corner-shape: squircle;
   color: var(--ink);
   font: inherit;
   text-align: left;
@@ -478,6 +524,7 @@ select:focus-visible {
 
 #filters {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   margin-top: 8px;
 }
@@ -535,7 +582,7 @@ legend {
 
 .range {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -726,7 +773,8 @@ a {
   margin-inline: auto;
   height: 88px;
   margin-bottom: 12px;
-  border-radius: 22px;
+  border-radius: 30px;
+  corner-shape: squircle;
   box-shadow: 0 10px 30px rgb(91 33 182 / 30%);
 }
 
@@ -750,7 +798,8 @@ a {
   width: min(360px, calc(100vw - 32px));
   box-sizing: border-box;
   padding: 18px;
-  border-radius: 28px;
+  border-radius: 40px;
+  corner-shape: squircle;
   color: var(--ink);
 }
 
@@ -817,7 +866,8 @@ a {
 .activity-list {
   margin: 12px 0;
   padding: 6px;
-  border-radius: 24px;
+  border-radius: 34px;
+  corner-shape: squircle;
   list-style: none;
 }
 
@@ -829,7 +879,8 @@ a {
   display: grid;
   gap: 1px;
   padding: 10px 14px;
-  border-radius: 18px;
+  border-radius: 26px;
+  corner-shape: squircle;
   color: var(--ink);
   text-decoration: none;
   overflow-wrap: anywhere;
@@ -879,7 +930,8 @@ a.activity:focus-visible {
   display: grid;
   gap: 2px;
   padding: 12px 16px;
-  border-radius: 20px;
+  border-radius: 28px;
+  corner-shape: squircle;
 }
 
 .tile span {
@@ -901,7 +953,8 @@ a.activity:focus-visible {
 .card {
   min-width: 0;
   padding: 16px 18px;
-  border-radius: 24px;
+  border-radius: 34px;
+  corner-shape: squircle;
 }
 
 .card h3 {
@@ -993,7 +1046,8 @@ a.activity:focus-visible {
   z-index: 1;
   min-width: 120px;
   padding: 8px 12px;
-  border-radius: 14px;
+  border-radius: 20px;
+  corner-shape: squircle;
   font-size: 12px;
   pointer-events: none;
 }
