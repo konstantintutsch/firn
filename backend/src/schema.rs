@@ -1,7 +1,7 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    runs (id) {
+    activities (id) {
         id -> Int8,
         name -> Text,
         activity_type -> Text,
@@ -19,8 +19,8 @@ diesel::table! {
 }
 
 diesel::table! {
-    track_points (run_id, seq) {
-        run_id -> Int8,
+    track_points (activity_id, seq) {
+        activity_id -> Int8,
         seq -> Int4,
         lat -> Float8,
         lon -> Float8,
@@ -29,6 +29,6 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(track_points -> runs (run_id));
+diesel::joinable!(track_points -> activities (activity_id));
 
-diesel::allow_tables_to_appear_in_same_query!(runs, track_points,);
+diesel::allow_tables_to_appear_in_same_query!(activities, track_points,);

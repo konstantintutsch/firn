@@ -12,10 +12,10 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::db::{self, Filter, Pool, RunTrack};
+use crate::db::{self, ActivityTrack, Filter, Pool};
 use crate::garmin::GarminClient;
 use crate::heatmap::{self, Position, Viewport};
-use crate::sync::{Report, sync_runs};
+use crate::sync::{Report, sync_activities};
 
 const MAX_ZOOM: u8 = 22;
 /// About 1 cm. Fewer digits make large responses much smaller.
@@ -46,7 +46,7 @@ pub struct AppState {
     sync: Arc<Mutex<SyncStatus>>,
     /// Loaded on the first request and again after a sync, because the heatmap
     /// walks every track on every request, which would be slow from the database.
-    tracks: Arc<tokio::sync::Mutex<Option<Arc<Vec<RunTrack>>>>>,
+    tracks: Arc<tokio::sync::Mutex<Option<Arc<Vec<ActivityTrack>>>>>,
 }
 
 impl AppState {
@@ -59,7 +59,7 @@ impl AppState {
         }
     }
 
-    async fn tracks(&self) -> anyhow::Result<Arc<Vec<RunTrack>>> {
+    async fn tracks(&self) -> anyhow::Result<Arc<Vec<ActivityTrack>>> {
         let mut tracks = self.tracks.lock().await;
         if let Some(tracks) = tracks.as_ref() {
             return Ok(tracks.clone());
@@ -238,8 +238,8 @@ async fn heatmap(
     let lines = tokio::task::spawn_blocking(move || {
         let tracks: Vec<&[Position]> = tracks
             .iter()
-            .filter(|run| matching.contains(&run.id))
-            .map(|run| run.track.as_slice())
+            .filter(|activity| matching.contains(&activity.id))
+            .map(|activity| activity.track.as_slice())
             .collect();
         heatmap::heat_lines(&tracks, &viewport, query.zoom)
     })
@@ -313,8 +313,8 @@ async fn activities(
     let tracks = state.tracks().await?;
     let bounds: HashMap<i64, Viewport> = tracks
         .iter()
-        .filter(|run| found.iter().any(|activity| activity.id == run.id))
-        .filter_map(|run| Some((run.id, heatmap::bounds(&run.track)?)))
+        .filter(|saved| found.iter().any(|activity| activity.id == saved.id))
+        .filter_map(|saved| Some((saved.id, heatmap::bounds(&saved.track)?)))
         .collect();
 
     Ok(Json(ActivityList {
@@ -483,7 +483,7 @@ async fn run_sync(state: AppState, api_key: String) {
         let state = state.clone();
         tokio::spawn(async move {
             let mut client = GarminClient::new(&state.garmin.base_url, &api_key)?;
-            sync_runs(
+            sync_activities(
                 &state.pool,
                 &mut client,
                 state.garmin.download_pause,

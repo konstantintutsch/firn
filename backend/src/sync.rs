@@ -17,7 +17,7 @@ pub struct Report {
 
 /// Saves every activity with GPS and its track. Safe to interrupt and rerun: finished
 /// activities are skipped, and only a failed or new one costs a download.
-pub async fn sync_runs(
+pub async fn sync_activities(
     pool: &Pool,
     client: &mut GarminClient,
     pause: Duration,
@@ -33,7 +33,7 @@ pub async fn sync_runs(
         }
         start += page.len() as u32;
         page.retain(|activity| activity.has_track);
-        db::upsert_runs(pool, &page).await?;
+        db::upsert_activities(pool, &page).await?;
         activities.extend(page);
     }
     report.listed = activities.len();

@@ -7,8 +7,8 @@ use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
 use runmap::db::{self, Pool};
 use runmap::garmin::GarminError;
-use runmap::schema::{runs, track_points};
-use runmap::sync::{Report, sync_runs};
+use runmap::schema::{activities, track_points};
+use runmap::sync::{Report, sync_activities};
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -79,12 +79,12 @@ async fn mount_file(server: &MockServer, id: i64, expected_calls: u64) {
 }
 
 async fn run_sync(pool: &Pool, server: &MockServer) -> Result<Report, GarminError> {
-    sync_runs(pool, &mut common::client(server), Duration::ZERO, |_| {}).await
+    sync_activities(pool, &mut common::client(server), Duration::ZERO, |_| {}).await
 }
 
 async fn point_count(pool: &Pool, id: i64) -> i64 {
     track_points::table
-        .filter(track_points::run_id.eq(id))
+        .filter(track_points::activity_id.eq(id))
         .count()
         .get_result(&mut pool.get().await.unwrap())
         .await
@@ -127,9 +127,13 @@ async fn saves_all_pages_and_keeps_raw_data() {
     );
     assert_eq!(point_count(&pool, 2).await, 2);
 
-    let (name, original, summary): (String, Option<Vec<u8>>, Value) = runs::table
+    let (name, original, summary): (String, Option<Vec<u8>>, Value) = activities::table
         .find(2)
-        .select((runs::name, runs::original_zip, runs::summary))
+        .select((
+            activities::name,
+            activities::original_zip,
+            activities::summary,
+        ))
         .first(&mut pool.get().await.unwrap())
         .await
         .unwrap();

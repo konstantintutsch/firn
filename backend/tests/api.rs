@@ -46,7 +46,7 @@ async fn add_run(pool: &Pool, id: i64, points: &[Point]) {
         has_track: true,
         summary,
     };
-    db::upsert_runs(pool, &[activity]).await.unwrap();
+    db::upsert_activities(pool, &[activity]).await.unwrap();
     db::save_track(pool, id, Some(b"zip".as_slice()), points)
         .await
         .unwrap();
@@ -282,7 +282,7 @@ async fn add_activity(pool: &Pool, id: i64, summary: Value, points: &[Point]) {
         has_track: true,
         summary: full,
     };
-    db::upsert_runs(pool, &[activity]).await.unwrap();
+    db::upsert_activities(pool, &[activity]).await.unwrap();
     db::save_track(pool, id, Some(b"zip".as_slice()), points)
         .await
         .unwrap();

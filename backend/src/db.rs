@@ -15,7 +15,7 @@ use serde_json::Value;
 
 use crate::garmin::Activity;
 use crate::heatmap::Track;
-use crate::schema::{runs, track_points};
+use crate::schema::{activities, track_points};
 use crate::track::Point;
 
 pub type Pool = deadpool::Pool<AsyncPgConnection>;
@@ -44,8 +44,8 @@ pub async fn migrate(pool: &Pool) -> Result<()> {
 }
 
 #[derive(Insertable)]
-#[diesel(table_name = runs)]
-struct NewRun<'a> {
+#[diesel(table_name = activities)]
+struct NewActivity<'a> {
     id: i64,
     name: &'a str,
     activity_type: &'a str,
@@ -56,10 +56,10 @@ struct NewRun<'a> {
 }
 
 /// Inserts or updates activity metadata. Never touches a run's saved track.
-pub async fn upsert_runs(pool: &Pool, activities: &[Activity]) -> Result<()> {
+pub async fn upsert_activities(pool: &Pool, activities: &[Activity]) -> Result<()> {
     let rows: Vec<_> = activities
         .iter()
-        .map(|activity| NewRun {
+        .map(|activity| NewActivity {
             id: activity.id,
             name: &activity.name,
             activity_type: &activity.activity_type,
@@ -69,17 +69,17 @@ pub async fn upsert_runs(pool: &Pool, activities: &[Activity]) -> Result<()> {
             summary: &activity.summary,
         })
         .collect();
-    diesel::insert_into(runs::table)
+    diesel::insert_into(activities::table)
         .values(&rows)
-        .on_conflict(runs::id)
+        .on_conflict(activities::id)
         .do_update()
         .set((
-            runs::name.eq(excluded(runs::name)),
-            runs::activity_type.eq(excluded(runs::activity_type)),
-            runs::started_at.eq(excluded(runs::started_at)),
-            runs::distance_m.eq(excluded(runs::distance_m)),
-            runs::duration_s.eq(excluded(runs::duration_s)),
-            runs::summary.eq(excluded(runs::summary)),
+            activities::name.eq(excluded(activities::name)),
+            activities::activity_type.eq(excluded(activities::activity_type)),
+            activities::started_at.eq(excluded(activities::started_at)),
+            activities::distance_m.eq(excluded(activities::distance_m)),
+            activities::duration_s.eq(excluded(activities::duration_s)),
+            activities::summary.eq(excluded(activities::summary)),
         ))
         .execute(&mut pool.get().await?)
         .await?;
@@ -87,9 +87,9 @@ pub async fn upsert_runs(pool: &Pool, activities: &[Activity]) -> Result<()> {
 }
 
 pub async fn is_track_synced(pool: &Pool, id: i64) -> Result<bool> {
-    let synced_at: Option<DateTime<Utc>> = runs::table
+    let synced_at: Option<DateTime<Utc>> = activities::table
         .find(id)
-        .select(runs::track_synced_at)
+        .select(activities::track_synced_at)
         .first(&mut pool.get().await?)
         .await?;
     Ok(synced_at.is_some())
@@ -107,7 +107,7 @@ pub async fn save_track(
         .enumerate()
         .map(|(seq, point)| {
             (
-                track_points::run_id.eq(id),
+                track_points::activity_id.eq(id),
                 track_points::seq.eq(seq as i32),
                 track_points::lat.eq(point.lat),
                 track_points::lon.eq(point.lon),
@@ -117,7 +117,7 @@ pub async fn save_track(
     let mut connection = pool.get().await?;
     connection
         .transaction::<_, diesel::result::Error, _>(async |connection| {
-            diesel::delete(track_points::table.filter(track_points::run_id.eq(id)))
+            diesel::delete(track_points::table.filter(track_points::activity_id.eq(id)))
                 .execute(&mut *connection)
                 .await?;
             for chunk in rows.chunks(POINTS_PER_INSERT) {
@@ -126,10 +126,10 @@ pub async fn save_track(
                     .execute(&mut *connection)
                     .await?;
             }
-            diesel::update(runs::table.find(id))
+            diesel::update(activities::table.find(id))
                 .set((
-                    runs::original_zip.eq(original_zip),
-                    runs::track_synced_at.eq(diesel::dsl::now),
+                    activities::original_zip.eq(original_zip),
+                    activities::track_synced_at.eq(diesel::dsl::now),
                 ))
                 .execute(&mut *connection)
                 .await?;
@@ -140,21 +140,21 @@ pub async fn save_track(
 }
 
 /// Loads the Web Mercator positions of all tracks, each in recording order.
-pub async fn load_tracks(pool: &Pool) -> Result<Vec<RunTrack>> {
+pub async fn load_tracks(pool: &Pool) -> Result<Vec<ActivityTrack>> {
     let rows: Vec<(i64, Option<f64>, Option<f64>)> = track_points::table
-        .select((track_points::run_id, track_points::x, track_points::y))
-        .order((track_points::run_id, track_points::seq))
+        .select((track_points::activity_id, track_points::x, track_points::y))
+        .order((track_points::activity_id, track_points::seq))
         .load(&mut pool.get().await?)
         .await?;
 
-    let mut tracks: Vec<RunTrack> = Vec::new();
-    for (run_id, x, y) in rows {
+    let mut tracks: Vec<ActivityTrack> = Vec::new();
+    for (activity_id, x, y) in rows {
         // Never NULL: the database generates them from columns that cannot be.
         let (Some(x), Some(y)) = (x, y) else { continue };
         match tracks.last_mut() {
-            Some(last) if last.id == run_id => last.track.push([x, y]),
-            _ => tracks.push(RunTrack {
-                id: run_id,
+            Some(last) if last.id == activity_id => last.track.push([x, y]),
+            _ => tracks.push(ActivityTrack {
+                id: activity_id,
                 track: vec![[x, y]],
             }),
         }
@@ -162,7 +162,7 @@ pub async fn load_tracks(pool: &Pool) -> Result<Vec<RunTrack>> {
     Ok(tracks)
 }
 
-pub struct RunTrack {
+pub struct ActivityTrack {
     pub id: i64,
     pub track: Track,
 }
@@ -188,58 +188,58 @@ impl Filter {
     /// Older syncs saved activities without GPS, which have no place on a map.
     fn apply<'a, ST: 'a>(
         &self,
-        mut query: runs::BoxedQuery<'a, Pg, ST>,
-    ) -> runs::BoxedQuery<'a, Pg, ST> {
+        mut query: activities::BoxedQuery<'a, Pg, ST>,
+    ) -> activities::BoxedQuery<'a, Pg, ST> {
         query = query.filter(exists(
-            track_points::table.filter(track_points::run_id.eq(runs::id)),
+            track_points::table.filter(track_points::activity_id.eq(activities::id)),
         ));
         if let Some(id) = self.id {
-            query = query.filter(runs::id.eq(id));
+            query = query.filter(activities::id.eq(id));
         }
         for term in search_terms(self.query.as_deref().unwrap_or_default()) {
-            let text = runs::search_text.ilike(contains(&term.text));
+            let text = activities::search_text.ilike(contains(&term.text));
             query = match term.amount {
                 Some(Amount::Meters(meters)) => {
                     let (low, high) = around(meters);
-                    query.filter(text.or(runs::distance_m.between(low, high)))
+                    query.filter(text.or(activities::distance_m.between(low, high)))
                 }
                 Some(Amount::Seconds(seconds)) => {
                     let (low, high) = around(seconds);
-                    query.filter(text.or(runs::duration_s.between(low, high)))
+                    query.filter(text.or(activities::duration_s.between(low, high)))
                 }
                 None => query.filter(text),
             };
         }
         if !self.activity_types.is_empty() {
-            query = query.filter(runs::activity_type.eq_any(self.activity_types.clone()));
+            query = query.filter(activities::activity_type.eq_any(self.activity_types.clone()));
         }
         if let Some(title) = &self.title {
-            query = query.filter(runs::name.ilike(contains(title)));
+            query = query.filter(activities::name.ilike(contains(title)));
         }
         if let Some(description) = &self.description {
-            query = query.filter(runs::description.ilike(contains(description)));
+            query = query.filter(activities::description.ilike(contains(description)));
         }
         if let Some(location) = &self.location {
-            query = query.filter(runs::location.ilike(contains(location)));
+            query = query.filter(activities::location.ilike(contains(location)));
         }
         if let Some(min) = self.min_distance_m {
-            query = query.filter(runs::distance_m.ge(min));
+            query = query.filter(activities::distance_m.ge(min));
         }
         if let Some(max) = self.max_distance_m {
-            query = query.filter(runs::distance_m.le(max));
+            query = query.filter(activities::distance_m.le(max));
         }
         if let Some(min) = self.min_duration_s {
-            query = query.filter(runs::duration_s.ge(min));
+            query = query.filter(activities::duration_s.ge(min));
         }
         if let Some(max) = self.max_duration_s {
-            query = query.filter(runs::duration_s.le(max));
+            query = query.filter(activities::duration_s.le(max));
         }
         if let Some(from) = self.from {
-            query = query.filter(runs::started_local.ge(from.to_string()));
+            query = query.filter(activities::started_local.ge(from.to_string()));
         }
         // A prefix sorts before all times on its day, so this needs the next day.
         if let Some(next_day) = self.to.and_then(|to| to.succ_opt()) {
-            query = query.filter(runs::started_local.lt(next_day.to_string()));
+            query = query.filter(activities::started_local.lt(next_day.to_string()));
         }
         query
     }
@@ -321,14 +321,14 @@ fn contains(text: &str) -> String {
 /// The activities that match, for the heatmap to pick from its tracks.
 pub async fn matching_ids(pool: &Pool, filter: &Filter) -> Result<HashSet<i64>> {
     let ids: Vec<i64> = filter
-        .apply(runs::table.select(runs::id).into_boxed())
+        .apply(activities::table.select(activities::id).into_boxed())
         .load(&mut pool.get().await?)
         .await?;
     Ok(ids.into_iter().collect())
 }
 
 #[derive(Queryable, Selectable)]
-#[diesel(table_name = runs)]
+#[diesel(table_name = activities)]
 pub struct ActivitySummary {
     pub id: i64,
     pub name: String,
@@ -348,11 +348,11 @@ pub async fn search_activities(
 ) -> Result<Vec<ActivitySummary>> {
     Ok(filter
         .apply(
-            runs::table
+            activities::table
                 .select(ActivitySummary::as_select())
                 .into_boxed(),
         )
-        .order((runs::started_at.desc(), runs::id.desc()))
+        .order((activities::started_at.desc(), activities::id.desc()))
         .limit(limit)
         .load(&mut pool.get().await?)
         .await?)
@@ -360,13 +360,13 @@ pub async fn search_activities(
 
 /// Each activity type that has a track, with how many activities have it, most first.
 pub async fn activity_types(pool: &Pool) -> Result<Vec<(String, i64)>> {
-    Ok(runs::table
+    Ok(activities::table
         .filter(exists(
-            track_points::table.filter(track_points::run_id.eq(runs::id)),
+            track_points::table.filter(track_points::activity_id.eq(activities::id)),
         ))
-        .group_by(runs::activity_type)
-        .select((runs::activity_type, count_star()))
-        .order((count_star().desc(), runs::activity_type))
+        .group_by(activities::activity_type)
+        .select((activities::activity_type, count_star()))
+        .order((count_star().desc(), activities::activity_type))
         .load(&mut pool.get().await?)
         .await?)
 }
@@ -379,8 +379,8 @@ pub struct Totals {
 pub async fn totals(pool: &Pool, filter: &Filter) -> Result<Totals> {
     let (count, distance): (i64, Option<f64>) = filter
         .apply(
-            runs::table
-                .select((count_star(), sum(runs::distance_m)))
+            activities::table
+                .select((count_star(), sum(activities::distance_m)))
                 .into_boxed(),
         )
         .first(&mut pool.get().await?)
