@@ -61,7 +61,11 @@ pub fn random_token() -> String {
 }
 
 pub fn sha256(text: &str) -> Vec<u8> {
-    Sha256::digest(text.as_bytes()).to_vec()
+    sha256_bytes(text.as_bytes())
+}
+
+pub fn sha256_bytes(bytes: &[u8]) -> Vec<u8> {
+    Sha256::digest(bytes).to_vec()
 }
 
 /// The PKCE code challenge for a verifier, with the S256 method.

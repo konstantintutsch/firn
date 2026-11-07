@@ -39,6 +39,20 @@
         <p id="settings-message" role="status"></p>
       </section>
       <section class="card">
+        <h2 data-i18n>Your data</h2>
+        <p class="muted" data-i18n>An export holds all activities with their files and photos, and the health data. Importing it restores them, here or in another Runmap.</p>
+        <p class="muted" data-i18n>Import also takes a ZIP of FIT, GPX or TCX files from other apps and devices.</p>
+        <div class="panel-actions">
+          <a class="panel-button" href="/api/export" download data-i18n>Export</a>
+          <label class="panel-button file-button">
+            <span data-i18n>Import ZIP</span>
+            <input id="import-file" type="file" accept=".zip,application/zip">
+          </label>
+        </div>
+        <progress id="import-progress" max="1" value="0" hidden></progress>
+        <p id="import-message" role="status"></p>
+      </section>
+      <section class="card">
         <h2 data-i18n>Appearance</h2>
         <div id="theme-picker" class="theme-picker" role="group" aria-label="Theme" data-i18n-attrs="aria-label">
           <button class="panel-button" type="button" data-theme-choice="system" data-i18n>System</button>

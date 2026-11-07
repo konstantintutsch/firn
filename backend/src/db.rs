@@ -905,6 +905,113 @@ pub async fn activity_records(pool: &Pool, filter: &Filter) -> Result<Vec<Activi
         .await?)
 }
 
+/// The IDs of all of the account's activities, oldest first.
+pub async fn activity_ids(pool: &Pool, user_id: i64) -> Result<Vec<i64>> {
+    Ok(activities::table
+        .filter(activities::user_id.eq(user_id))
+        .order((activities::started_at, activities::id))
+        .select(activities::id)
+        .load(&mut pool.get().await?)
+        .await?)
+}
+
+/// Everything about activities that an export holds, apart from files.
+pub struct ActivityExport {
+    pub id: i64,
+    pub summary: Value,
+    pub details: Option<Value>,
+    pub workouts: Option<Value>,
+    /// Image IDs with their media types, in Garmin's order.
+    pub images: Vec<(String, String)>,
+}
+
+pub async fn activity_exports(
+    pool: &Pool,
+    user_id: i64,
+    ids: &[i64],
+) -> Result<Vec<ActivityExport>> {
+    let mut connection = pool.get().await?;
+    let rows: Vec<(i64, Value, Option<Value>, Option<Value>)> = activities::table
+        .filter(activities::user_id.eq(user_id))
+        .filter(activities::id.eq_any(ids))
+        .order((activities::started_at, activities::id))
+        .select((
+            activities::id,
+            activities::summary,
+            activities::details,
+            activities::workouts,
+        ))
+        .load(&mut connection)
+        .await?;
+    let images: Vec<(i64, String, String)> = activity_images::table
+        .filter(activity_images::activity_id.eq_any(ids))
+        .order((activity_images::activity_id, activity_images::seq))
+        .select((
+            activity_images::activity_id,
+            activity_images::image_id,
+            activity_images::content_type,
+        ))
+        .load(&mut connection)
+        .await?;
+    let mut by_activity: HashMap<i64, Vec<(String, String)>> = HashMap::new();
+    for (id, image_id, content_type) in images {
+        by_activity
+            .entry(id)
+            .or_default()
+            .push((image_id, content_type));
+    }
+    Ok(rows
+        .into_iter()
+        .map(|(id, summary, details, workouts)| ActivityExport {
+            id,
+            images: by_activity.remove(&id).unwrap_or_default(),
+            summary,
+            details,
+            workouts,
+        })
+        .collect())
+}
+
+/// A page of the account's Garmin documents, after `after` as kind and period.
+pub async fn documents(
+    pool: &Pool,
+    user_id: i64,
+    after: Option<(String, String)>,
+    limit: i64,
+) -> Result<Vec<(String, String, Option<Value>)>> {
+    let mut query = garmin_documents::table
+        .filter(garmin_documents::user_id.eq(user_id))
+        .order((garmin_documents::kind, garmin_documents::period))
+        .select((
+            garmin_documents::kind,
+            garmin_documents::period,
+            garmin_documents::data,
+        ))
+        .limit(limit)
+        .into_boxed();
+    if let Some((kind, period)) = after {
+        query = query.filter(
+            garmin_documents::kind
+                .gt(kind.clone())
+                .or(garmin_documents::kind
+                    .eq(kind)
+                    .and(garmin_documents::period.gt(period))),
+        );
+    }
+    Ok(query.load(&mut pool.get().await?).await?)
+}
+
+/// Whose an activity is: `None` if it is not saved, `Some(None)` if it is from
+/// before accounts.
+pub async fn owner(pool: &Pool, id: i64) -> Result<Option<Option<i64>>> {
+    Ok(activities::table
+        .find(id)
+        .select(activities::user_id)
+        .first(&mut pool.get().await?)
+        .await
+        .optional()?)
+}
+
 /// How many files are moved per query, to keep memory use low.
 const FILES_PER_MOVE: i64 = 20;
 

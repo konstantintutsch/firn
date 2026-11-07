@@ -437,7 +437,11 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     document.querySelector("#detail-gpx").href = `${file}?format=gpx`;
     document.querySelector("#detail-original").hidden = !hasFile;
     document.querySelector("#detail-gpx").hidden = samples.position == null;
+    // Imported files have negative IDs, since Garmin does not know them.
+    const fromGarmin = activity.id > 0;
     document.querySelector("#detail-garmin").href = `https://connect.garmin.com/modern/activity/${activity.id}`;
+    document.querySelector("#detail-garmin").hidden = !fromGarmin;
+    document.querySelector("#detail-resync").hidden = !fromGarmin;
     actionsElement.hidden = false;
   }
 

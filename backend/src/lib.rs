@@ -9,4 +9,5 @@ pub mod secret;
 pub mod statistics;
 pub mod sync;
 pub mod track;
+pub mod transfer;
 pub mod wellness;

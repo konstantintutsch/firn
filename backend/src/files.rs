@@ -69,6 +69,16 @@ impl FileStore {
         write(&self.image_path(activity_id, image_id), data).await
     }
 
+    /// A new path for a temporary file, on the same disk as the files, which an
+    /// export or import can need much space for.
+    pub async fn temporary_path(&self, prefix: &str) -> Result<PathBuf> {
+        let dir = self.root.join("tmp");
+        tokio::fs::create_dir_all(&dir)
+            .await
+            .with_context(|| format!("could not create {}", dir.display()))?;
+        Ok(dir.join(format!("{prefix}-{}", secret::random_token())))
+    }
+
     /// Removes everything of an activity.
     pub async fn remove_activity(&self, activity_id: i64) -> Result<()> {
         remove_dir(&self.activity_dir(activity_id)).await

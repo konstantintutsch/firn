@@ -233,7 +233,7 @@ async function showLinkedActivity() {
   const id = new URLSearchParams(location.search).get("activity");
   if (!id) return;
   history.replaceState(null, "", location.pathname + location.hash);
-  if (/^\d+$/.test(id)) select({ id: Number(id) }, { fit: true });
+  if (/^-?\d+$/.test(id)) select({ id: Number(id) }, { fit: true });
   else showStatus(t("Could not find this activity."));
 }
 

@@ -998,6 +998,50 @@ a {
   margin-top: 14px;
 }
 
+.settings-page .card > .muted {
+  margin: 8px 0 0;
+}
+
+.settings-page .card > .panel-actions {
+  margin-top: 14px;
+}
+
+/* A label that looks like a button and opens the file picker. */
+.file-button {
+  position: relative;
+  cursor: pointer;
+}
+
+/* Undoes the look of the settings form's labels. */
+.settings-page .file-button {
+  display: inline-flex;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+#import-message {
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+
+.file-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.file-button:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+#import-progress {
+  width: 100%;
+  margin-top: 12px;
+  accent-color: var(--accent);
+}
+
 #sign-out {
   margin-top: 16px;
 }
