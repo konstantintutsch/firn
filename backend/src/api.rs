@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use tokio::task::AbortHandle;
+
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -43,6 +45,7 @@ const MAX_SAMPLES: usize = 3000;
         stats,
         sync_status,
         start_sync,
+        cancel_sync,
         auth::login,
         auth::callback,
         auth::logout,
@@ -73,6 +76,8 @@ pub struct AppState {
     pub(crate) auth: Arc<Auth>,
     /// By account.
     sync: Arc<Mutex<HashMap<i64, SyncStatus>>>,
+    /// The running syncs by account, to cancel them.
+    sync_tasks: Arc<Mutex<HashMap<i64, AbortHandle>>>,
     /// By account. Loaded on the first request and again after a sync, because the
     /// heatmap walks every track on every request, which would be slow from the database.
     tracks: Arc<tokio::sync::Mutex<HashMap<i64, Arc<Vec<ActivityTrack>>>>>,
@@ -85,12 +90,24 @@ impl AppState {
             garmin: Arc::new(garmin),
             auth: Arc::new(auth),
             sync: Arc::default(),
+            sync_tasks: Arc::default(),
             tracks: Arc::default(),
         }
     }
 
     pub fn pool(&self) -> &Pool {
         &self.pool
+    }
+
+    /// Stops the account's running sync. False if none runs.
+    pub(crate) fn cancel_sync(&self, user_id: i64) -> bool {
+        match self.sync_tasks.lock().unwrap().get(&user_id) {
+            Some(task) => {
+                task.abort();
+                true
+            }
+            None => false,
+        }
     }
 
     async fn tracks(&self, user_id: i64) -> anyhow::Result<Arc<Vec<ActivityTrack>>> {
@@ -115,7 +132,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/activity-types", get(activity_types))
         .route("/api/stats", get(stats))
-        .route("/api/sync", get(sync_status).post(start_sync))
+        .route(
+            "/api/sync",
+            get(sync_status).post(start_sync).delete(cancel_sync),
+        )
         .route("/api/auth/login", get(auth::login))
         .route("/api/auth/callback", get(auth::callback))
         .route("/api/auth/logout", post(auth::logout))
@@ -138,6 +158,7 @@ pub struct ErrorBody {
     error: String,
 }
 
+#[derive(Debug)]
 pub enum ApiError {
     BadRequest(&'static str),
     Unauthorized,
@@ -686,7 +707,7 @@ async fn stats(
     }))
 }
 
-#[derive(Clone, Copy, Default, Serialize, ToSchema)]
+#[derive(Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 enum SyncState {
     #[default]
@@ -694,12 +715,17 @@ enum SyncState {
     Running,
     Succeeded,
     Failed,
+    Cancelled,
 }
 
-/// Lives in memory: after a restart, the next sync finds what is still missing.
-#[derive(Clone, Default, Serialize, ToSchema)]
+/// A running sync lives in memory. The last finished one is also saved with the
+/// account, so that it survives a restart. After a restart, the next sync finds
+/// what is still missing.
+#[derive(Clone, Default, Serialize, Deserialize, ToSchema)]
 struct SyncStatus {
     state: SyncState,
+    /// When the sync ended, for finished syncs.
+    finished_at: Option<DateTime<Utc>>,
     /// Activities found on Garmin so far.
     listed: usize,
     /// Activities that this sync has to download.
@@ -727,6 +753,7 @@ impl SyncStatus {
             health_fetched: report.health_fetched,
             health_failed: report.health_failed,
             error: None,
+            finished_at: None,
         }
     }
 }
@@ -743,9 +770,42 @@ impl SyncStatus {
 async fn sync_status(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-) -> Json<SyncStatus> {
-    let statuses = state.sync.lock().unwrap();
-    Json(statuses.get(&user.id).cloned().unwrap_or_default())
+) -> Result<Json<SyncStatus>, ApiError> {
+    if let Some(status) = state.sync.lock().unwrap().get(&user.id) {
+        return Ok(Json(status.clone()));
+    }
+    let saved = db::last_sync(&state.pool, user.id)
+        .await?
+        // A status saved by an older version may not fit, which is no reason to fail.
+        .and_then(|saved| serde_json::from_value(saved).ok());
+    Ok(Json(saved.unwrap_or_default()))
+}
+
+/// Stops the account's running sync. What it saved so far stays, and the next
+/// sync continues from there.
+///
+/// Requires the `X-Requested-With` header.
+#[utoipa::path(
+    delete,
+    path = "/api/sync",
+    responses(
+        (status = 204, description = "The sync stopped"),
+        (status = 401, description = "Not signed in", body = ErrorBody),
+        (status = 403, description = "The header is missing", body = ErrorBody),
+        (status = 409, description = "No sync is running", body = ErrorBody),
+    )
+)]
+async fn cancel_sync(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    headers: HeaderMap,
+) -> Result<StatusCode, ApiError> {
+    require_header(&headers)?;
+    if state.cancel_sync(user.id) {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::Conflict("no sync is running"))
+    }
 }
 
 /// Starts saving everything from Garmin that is not saved yet, in the background:
@@ -768,6 +828,12 @@ async fn start_sync(
     headers: HeaderMap,
 ) -> Result<(StatusCode, Json<SyncStatus>), ApiError> {
     require_header(&headers)?;
+    let status = start_sync_of(&state, &user)?;
+    Ok((StatusCode::ACCEPTED, Json(status)))
+}
+
+/// Starts a sync of the account in the background, unless one is running.
+fn start_sync_of(state: &AppState, user: &db::User) -> Result<SyncStatus, ApiError> {
     let Some(sealed) = &user.garmin_api_key else {
         return Err(ApiError::Conflict(
             "No Garmin API key is saved. Add one in the settings",
@@ -778,15 +844,42 @@ async fn start_sync(
     let status = SyncStatus::running(&Report::default());
     {
         let mut statuses = state.sync.lock().unwrap();
-        let current = statuses.entry(user.id).or_default();
-        if matches!(current.state, SyncState::Running) {
+        if statuses
+            .get(&user.id)
+            .is_some_and(|current| matches!(current.state, SyncState::Running))
+        {
             return Err(ApiError::Conflict("a sync is already running"));
         }
-        *current = status.clone();
+        statuses.insert(user.id, status.clone());
     }
 
-    tokio::spawn(run_sync(state, user.id, api_key));
-    Ok((StatusCode::ACCEPTED, Json(status)))
+    tokio::spawn(run_sync(state.clone(), user.id, api_key));
+    Ok(status)
+}
+
+/// Starts a sync of every account with a Garmin key every `interval`, so that
+/// new activities show up without anyone selecting Sync.
+pub async fn sync_periodically(state: AppState, interval: Duration) {
+    let mut ticks = tokio::time::interval(interval);
+    // The first tick is immediate. Skipping it leaves a restart time to settle.
+    ticks.tick().await;
+    loop {
+        ticks.tick().await;
+        let users = match db::users_with_keys(&state.pool).await {
+            Ok(users) => users,
+            Err(error) => {
+                tracing::error!("{error:#}");
+                continue;
+            }
+        };
+        for user in users {
+            match start_sync_of(&state, &user) {
+                Ok(_) => tracing::info!(user_id = user.id, "started an automatic sync"),
+                Err(ApiError::Conflict(_)) => {}
+                Err(error) => tracing::warn!(user_id = user.id, ?error, "no automatic sync"),
+            }
+        }
+    }
 }
 
 async fn run_sync(state: AppState, user_id: i64, api_key: String) {
@@ -813,35 +906,52 @@ async fn run_sync(state: AppState, user_id: i64, api_key: String) {
         })
     };
 
+    state
+        .sync_tasks
+        .lock()
+        .unwrap()
+        .insert(user_id, task.abort_handle());
     // Awaits a separate task, so that a panic cannot leave the state at running.
     let result = task.await;
+    state.sync_tasks.lock().unwrap().remove(&user_id);
     // Before the status changes, because that is what makes the page reload the map.
     state.tracks.lock().await.remove(&user_id);
 
-    let mut statuses = state.sync.lock().unwrap();
-    let status = statuses.entry(user_id).or_default();
-    match result {
-        Ok(Ok(report)) => {
-            *status = SyncStatus {
-                state: SyncState::Succeeded,
-                ..SyncStatus::running(&report)
-            };
+    let saved = {
+        let mut statuses = state.sync.lock().unwrap();
+        let status = statuses.entry(user_id).or_default();
+        match result {
+            Ok(Ok(report)) => {
+                *status = SyncStatus {
+                    state: SyncState::Succeeded,
+                    ..SyncStatus::running(&report)
+                };
+            }
+            Ok(Err(error)) => {
+                tracing::error!(%error, "sync failed");
+                status.state = SyncState::Failed;
+                // Database errors can name tables and queries, which are no use to the user.
+                status.error = Some(match error {
+                    GarminError::Database(_) => {
+                        "the sync could not save the data. See the logs".to_owned()
+                    }
+                    error => error.to_string(),
+                });
+            }
+            Err(error) if error.is_cancelled() => {
+                tracing::info!(user_id, "sync cancelled");
+                status.state = SyncState::Cancelled;
+            }
+            Err(error) => {
+                tracing::error!(%error, "sync crashed");
+                status.state = SyncState::Failed;
+                status.error = Some("the sync crashed. See the logs".to_owned());
+            }
         }
-        Ok(Err(error)) => {
-            tracing::error!(%error, "sync failed");
-            status.state = SyncState::Failed;
-            // Database errors can name tables and queries, which are no use to the user.
-            status.error = Some(match error {
-                GarminError::Database(_) => {
-                    "the sync could not save the data. See the logs".to_owned()
-                }
-                error => error.to_string(),
-            });
-        }
-        Err(error) => {
-            tracing::error!(%error, "sync crashed");
-            status.state = SyncState::Failed;
-            status.error = Some("the sync crashed. See the logs".to_owned());
-        }
+        status.finished_at = Some(Utc::now());
+        serde_json::to_value(&*status).expect("the status is plain data")
+    };
+    if let Err(error) = db::save_last_sync(&state.pool, user_id, &saved).await {
+        tracing::error!("{error:#}");
     }
 }

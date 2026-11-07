@@ -225,6 +225,7 @@ export function syncProgress(sync) {
 
 export function syncResult({ state, error, downloaded, failed, health_failed: healthFailed }) {
   if (state === "failed") return t(error);
+  if (state === "cancelled") return t("Sync stopped. The next sync continues where it stopped.");
   const saved =
     downloaded === 0
       ? t("No new activities.")

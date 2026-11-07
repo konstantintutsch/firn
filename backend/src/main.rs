@@ -40,6 +40,9 @@ struct Cli {
     /// How far back health data goes at least, for accounts with few activities.
     #[arg(long, env = "HEALTH_HISTORY_DAYS", default_value_t = 365)]
     health_history_days: u64,
+    /// Syncs every account with a Garmin key every this many hours. 0 turns it off.
+    #[arg(long, env = "SYNC_INTERVAL_HOURS", default_value_t = 0)]
+    sync_interval_hours: u64,
 }
 
 /// Secrets are not command-line options: those end up in the shell history.
@@ -95,6 +98,11 @@ async fn main() -> Result<()> {
         },
         Auth::new(oidc, secret_box),
     );
+
+    if cli.sync_interval_hours > 0 {
+        let interval = Duration::from_secs(cli.sync_interval_hours * 3600);
+        tokio::spawn(api::sync_periodically(state.clone(), interval));
+    }
 
     let listener = TcpListener::bind(cli.bind).await?;
     tracing::info!(bind = %cli.bind, "listening");

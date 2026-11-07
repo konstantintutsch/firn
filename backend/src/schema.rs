@@ -80,6 +80,7 @@ diesel::table! {
         name -> Nullable<Text>,
         garmin_api_key -> Nullable<Bytea>,
         created_at -> Timestamptz,
+        last_sync -> Nullable<Jsonb>,
     }
 }
 

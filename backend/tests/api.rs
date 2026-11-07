@@ -655,6 +655,57 @@ async fn failed_sync_reports_the_error_without_the_key() {
     assert!(!finished.to_string().contains(common::API_KEY));
 }
 
+async fn cancel_sync(state: &AppState) -> StatusCode {
+    let request = Request::delete("/api/sync")
+        .header("cookie", common::cookie(state.pool()).await)
+        .header("x-requested-with", "runmap");
+    router(state.clone())
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap()
+        .status()
+}
+
+#[tokio::test]
+async fn a_running_sync_can_be_cancelled() {
+    let server = MockServer::start().await;
+    mount_garmin(&server, Duration::from_secs(30)).await;
+    let pool = common::test_pool().await;
+    let state = common::state(pool, &server.uri(), Some(common::API_KEY)).await;
+
+    assert_eq!(cancel_sync(&state).await, StatusCode::CONFLICT);
+    request_sync(&state, true).await;
+    // Gives the sync a moment to start its request to Garmin.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(cancel_sync(&state).await, StatusCode::NO_CONTENT);
+    let finished = finished_sync(&state).await;
+    assert_eq!(finished["state"], "cancelled");
+    assert!(finished["finished_at"].is_string());
+}
+
+#[tokio::test]
+async fn last_sync_survives_a_restart() {
+    let server = MockServer::start().await;
+    mount_garmin(&server, Duration::ZERO).await;
+    let pool = common::test_pool().await;
+    let state = common::state(pool.clone(), &server.uri(), Some(common::API_KEY)).await;
+    request_sync(&state, true).await;
+    assert_eq!(finished_sync(&state).await["state"], "succeeded");
+
+    // A new state has nothing in memory, like after a restart.
+    let restarted = common::state(pool, &server.uri(), Some(common::API_KEY)).await;
+    for _ in 0..100 {
+        let status = sync_status(&restarted).await;
+        if status["state"] == "succeeded" {
+            assert_eq!(status["downloaded"], 1);
+            assert!(status["finished_at"].is_string());
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("the last sync was not saved");
+}
+
 #[tokio::test]
 async fn map_shows_new_runs_after_a_sync() {
     let server = MockServer::start().await;

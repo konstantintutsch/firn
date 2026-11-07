@@ -682,6 +682,32 @@ pub async fn sign_in_user(
     Ok(result)
 }
 
+/// The status of the account's last finished sync.
+pub async fn last_sync(pool: &Pool, user_id: i64) -> Result<Option<Value>> {
+    Ok(users::table
+        .find(user_id)
+        .select(users::last_sync)
+        .first(&mut pool.get().await?)
+        .await?)
+}
+
+pub async fn save_last_sync(pool: &Pool, user_id: i64, status: &Value) -> Result<()> {
+    diesel::update(users::table.find(user_id))
+        .set(users::last_sync.eq(status))
+        .execute(&mut pool.get().await?)
+        .await?;
+    Ok(())
+}
+
+/// The accounts that have a Garmin key, for the automatic sync.
+pub async fn users_with_keys(pool: &Pool) -> Result<Vec<User>> {
+    Ok(users::table
+        .filter(users::garmin_api_key.is_not_null())
+        .select(User::as_select())
+        .load(&mut pool.get().await?)
+        .await?)
+}
+
 pub async fn set_garmin_key(pool: &Pool, user_id: i64, sealed: Option<&[u8]>) -> Result<()> {
     diesel::update(users::table.find(user_id))
         .set(users::garmin_api_key.eq(sealed))

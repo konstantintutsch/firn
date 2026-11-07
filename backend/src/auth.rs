@@ -556,5 +556,7 @@ pub async fn delete_garmin_key(
 ) -> Result<StatusCode, ApiError> {
     require_header(&headers)?;
     db::set_garmin_key(&state.pool, user.id, None).await?;
+    // Without the key, a running sync should not keep using it.
+    state.cancel_sync(user.id);
     Ok(StatusCode::NO_CONTENT)
 }
