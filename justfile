@@ -51,7 +51,7 @@ psql:
 
 # Start the app with a local Authelia at https://authelia.localhost:9091. Sign in as alice or bob, password runmap
 authelia: authelia-secrets
-    docker compose -f compose.yaml -f dev/authelia/compose.yaml up --build --detach --wait
+    docker compose -f docker-compose.yaml -f dev/authelia/docker-compose.yaml up --build --detach --wait
 
 # Create the test CA, certificate and signing key of the local Authelia, unless they exist
 [private]

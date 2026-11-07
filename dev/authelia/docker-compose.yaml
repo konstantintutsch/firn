@@ -1,5 +1,5 @@
 # Adds a local Authelia to sign in with. Start it with `just authelia`. Paths
-# are relative to the main compose.yaml, which comes first.
+# are relative to the main docker-compose.yaml, which comes first.
 services:
   authelia:
     image: authelia/authelia:4.39

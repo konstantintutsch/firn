@@ -53,7 +53,7 @@ pushes them to the Gitea container registry. Add the secret `REGISTRY_TOKEN`,
 an access token with the `write:package` scope. The workflow file lists the
 other settings.
 
-`examples/compose.yaml` runs those images behind your reverse proxy. Copy it
+`examples/docker-compose.yaml` runs those images behind your reverse proxy. Copy it
 with `examples/.env.example` as `.env`, fill that in and run
 `docker compose up -d`.
 

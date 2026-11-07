@@ -48,7 +48,7 @@ identity_providers:
       - client_id: runmap
         client_name: Runmap
         # The hash of test-only-client-secret, which is OIDC_CLIENT_SECRET in
-        # compose.yaml next to this file.
+        # docker-compose.yaml next to this file.
         client_secret: '$pbkdf2-sha512$310000$i2KIlL1bwkNha6wLz8HaZA$PMDgZuOondW.ZUk8W64Xxs7WQ5MLxn0g4jRrq3VDgkkCQWxrkdvxoJongHt7PNe/2GAOIDy3bUxOEX0z9uPt3g'
         token_endpoint_auth_method: client_secret_basic
         require_pkce: true
