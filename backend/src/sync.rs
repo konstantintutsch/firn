@@ -73,9 +73,11 @@ pub async fn sync_activities(
     tracing::info!(user_id, activities = report.listed, "listed activities");
     db::skip_activities_without_images(pool, user_id).await?;
 
+    let ids: Vec<i64> = activities.iter().map(|activity| activity.id).collect();
+    let mut missing = db::missing_many(pool, user_id, &ids).await?;
     let mut pending = Vec::new();
     for activity in &activities {
-        if let Some(missing) = db::missing(pool, user_id, activity.id).await?
+        if let Some(missing) = missing.remove(&activity.id)
             && (missing.track || missing.details || missing.workouts || missing.images)
         {
             pending.push((activity, missing));

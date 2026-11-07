@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
@@ -112,8 +112,45 @@ pub struct Missing {
 }
 
 /// `None` if the activity belongs to another account.
+/// When the track was saved, and whether details, workouts and images were.
+type MissingRow = (Option<DateTime<Utc>>, bool, bool, bool);
+
+impl Missing {
+    fn from_row((synced_at, has_details, has_workouts, has_images): MissingRow) -> Self {
+        Self {
+            track: synced_at.is_none(),
+            details: !has_details,
+            workouts: !has_workouts,
+            images: !has_images,
+        }
+    }
+}
+
+/// What is missing for each of the account's activities in `ids`, in one query.
+/// Activities of other accounts are left out.
+pub async fn missing_many(pool: &Pool, user_id: i64, ids: &[i64]) -> Result<HashMap<i64, Missing>> {
+    let rows: Vec<(i64, MissingRow)> = activities::table
+        .filter(activities::id.eq_any(ids))
+        .filter(activities::user_id.eq(user_id))
+        .select((
+            activities::id,
+            (
+                activities::track_synced_at,
+                activities::details.is_not_null(),
+                activities::workouts.is_not_null(),
+                activities::images_synced_at.is_not_null(),
+            ),
+        ))
+        .load(&mut pool.get().await?)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, row)| (id, Missing::from_row(row)))
+        .collect())
+}
+
 pub async fn missing(pool: &Pool, user_id: i64, id: i64) -> Result<Option<Missing>> {
-    let row: Option<(Option<DateTime<Utc>>, bool, bool, bool)> = activities::table
+    let row: Option<MissingRow> = activities::table
         .find(id)
         .filter(activities::user_id.eq(user_id))
         .select((
@@ -125,14 +162,7 @@ pub async fn missing(pool: &Pool, user_id: i64, id: i64) -> Result<Option<Missin
         .first(&mut pool.get().await?)
         .await
         .optional()?;
-    Ok(row.map(
-        |(synced_at, has_details, has_workouts, has_images)| Missing {
-            track: synced_at.is_none(),
-            details: !has_details,
-            workouts: !has_workouts,
-            images: !has_images,
-        },
-    ))
+    Ok(row.map(Missing::from_row))
 }
 
 /// Marks the images of activities as done whose saved details list none, so that
