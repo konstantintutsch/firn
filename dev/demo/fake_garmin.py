@@ -24,6 +24,11 @@ PORT = 8000
 # The address the backend reaches this server at, for the photo links.
 PUBLIC_BASE = "http://fake-garmin:8000"
 
+def out_and_back(points):
+    """There and back the same way, as one closed route."""
+    return points + points[-2::-1]
+
+
 # Routes as waypoints, as (latitude, longitude). Loops end where they start.
 PLACES = {
     "Berlin": {
@@ -47,11 +52,43 @@ PLACES = {
                 (52.4890, 13.2610), (52.4800, 13.2480), (52.4660, 13.2420), (52.4560, 13.2310),
                 (52.4480, 13.2450), (52.4600, 13.2620), (52.4760, 13.2700), (52.4890, 13.2610),
             ],
+            "Landwehrkanal": out_and_back([
+                (52.5045, 13.3650), (52.5010, 13.3800), (52.4985, 13.3950), (52.4960, 13.4100),
+                (52.4930, 13.4250), (52.4950, 13.4350),
+            ]),
+            "Volkspark Friedrichshain": [
+                (52.5280, 13.4280), (52.5300, 13.4370), (52.5260, 13.4450), (52.5220, 13.4380),
+                (52.5235, 13.4300), (52.5280, 13.4280),
+            ],
+            "Treptower Park": [
+                (52.4930, 13.4600), (52.4900, 13.4720), (52.4840, 13.4800), (52.4820, 13.4700),
+                (52.4870, 13.4610), (52.4930, 13.4600),
+            ],
+            "Mauerweg": out_and_back([
+                (52.5440, 13.4020), (52.5400, 13.3960), (52.5350, 13.3890), (52.5300, 13.3820),
+                (52.5250, 13.3760),
+            ]),
+        },
+        # Long rides out of town and back. Runs never take them.
+        "rides": {
+            "Potsdam": out_and_back([
+                (52.5145, 13.3501), (52.4880, 13.2700), (52.4500, 13.2000), (52.4200, 13.1300),
+                (52.4000, 13.0600), (52.3950, 13.0450),
+            ]),
+            "Müggelsee": out_and_back([
+                (52.4900, 13.4700), (52.4600, 13.5500), (52.4450, 13.6300), (52.4350, 13.6600),
+                (52.4300, 13.6200),
+            ]),
+        },
+        # How often each route is taken, so that the heat varies from street to street.
+        "weights": {
+            "Tiergarten": 6, "Spree": 5, "Landwehrkanal": 4, "Tempelhofer Feld": 3,
+            "Volkspark Friedrichshain": 2, "Treptower Park": 2, "Mauerweg": 1, "Grunewald": 1,
         },
     },
     "Hamburg": {
         "timezone": 1,
-        "elevation": 10,
+        "elevation": 25,
         "routes": {
             "Alster": [
                 (53.5560, 10.0010), (53.5620, 9.9970), (53.5700, 9.9990), (53.5770, 10.0040),
@@ -267,11 +304,17 @@ def pick(rng, choices):
 
 def make_activities(today):
     rng = random.Random(SEED)
-    loops = {
-        (city, name): catmull_rom(points)
+    route_points = {
+        (city, name): points
         for city, place in PLACES.items()
-        for name, points in place["routes"].items()
+        for name, points in {**place["routes"], **place.get("rides", {})}.items()
     }
+
+    def varied(key):
+        """The route with each waypoint moved a little, like a slightly different way each time."""
+        points = [(lat + rng.gauss(0, 0.0006), lon + rng.gauss(0, 0.0009)) for lat, lon in route_points[key][:-1]]
+        return catmull_rom(points + points[:1])
+
     activities = []
     files = {}
     images = {}
@@ -315,11 +358,16 @@ def make_activities(today):
         else:
             activity_type, _, speed, km = pick(rng, GPS_TYPES)
             routes = list(place["routes"])
-            route = "Grunewald" if activity_type in ("trail_running", "hiking") and city == "Berlin" else rng.choice(routes)
+            weights = [place.get("weights", {}).get(name, 1) for name in routes]
+            route = rng.choices(routes, weights)[0]
+            if activity_type in ("trail_running", "hiking") and city == "Berlin":
+                route = "Grunewald"
+            elif activity_type == "cycling" and place.get("rides") and rng.random() < 0.6:
+                route = rng.choice(list(place["rides"]))
         speed *= 0.92 + 0.12 * progress + rng.uniform(-0.05, 0.05)
         distance = rng.uniform(*km) * 1000
         name = f"{city} {typename(activity_type)}"
-        samples = track(loops[(city, route)], distance, speed, started, place["elevation"], activity_type, progress, rng)
+        samples = track(varied((city, route)), distance, speed, started, place["elevation"], activity_type, progress, rng)
         summary = base_summary(next_id, activity_type, name, local, started, samples[-1]["elapsed"])
         summary.update(track_summary(samples, activity_type, progress, rng))
         summary["locationName"] = city

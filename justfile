@@ -77,3 +77,12 @@ demo:
 # Stop the demo and delete its made-up data
 demo-down:
     docker compose -f dev/demo/docker-compose.yaml down --volumes
+
+# Take the README screenshots from the demo, never from your own data, and stop the demo
+screenshots: demo
+    docker run --rm --network runmap-demo_default \
+        --volume "$PWD/docs/screenshots:/out" \
+        --volume "$PWD/dev/demo/screenshots.mjs:/work/screenshots.mjs:ro" \
+        --workdir /work mcr.microsoft.com/playwright:v1.55.0-noble \
+        sh -c 'npm install --silent --no-save playwright@1.55.0 && node screenshots.mjs'
+    just demo-down

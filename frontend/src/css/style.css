@@ -176,7 +176,7 @@ body {
   flex: none;
 }
 
-.panel-toggle {
+.panel .panel-toggle {
   display: none;
 }
 
@@ -1685,7 +1685,7 @@ a.activity:hover {
     padding: 14px;
   }
 
-  .panel-toggle {
+  .panel .panel-toggle {
     display: inline-flex;
     position: absolute;
     top: 14px;
