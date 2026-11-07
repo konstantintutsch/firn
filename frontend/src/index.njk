@@ -11,6 +11,8 @@
         if (theme) document.documentElement.dataset.theme = theme;
       } catch {}
     </script>
+    <meta name="theme-color" content="#f6f7f8" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0f1214" media="(prefers-color-scheme: dark)">
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
     <link rel="manifest" href="/manifest.webmanifest">
@@ -23,7 +25,10 @@
       <div class="panel-body">
         {% include "header.njk" %}
         <div class="search">
-          <input id="search" type="search" placeholder="Search places and activities" aria-label="Search places and activities" data-i18n-attrs="placeholder aria-label" autocomplete="off">
+          <div class="search-field">
+            {% icon "search" %}
+            <input id="search" type="search" placeholder="Search places and activities" aria-label="Search places and activities" data-i18n-attrs="placeholder aria-label" autocomplete="off">
+          </div>
           <div id="search-results" class="search-results" hidden></div>
         </div>
         <p id="status" role="status"></p>
@@ -94,6 +99,5 @@
     {% include "nav.njk" %}
     {% include "account.njk" %}
     <script type="module" src="/js/heatmap.js"></script>
-    <script type="module" src="/js/glass.js"></script>
   </body>
 </html>
