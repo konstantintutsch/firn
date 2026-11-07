@@ -1,12 +1,8 @@
-# Runmap from prebuilt images, for a server with its own reverse proxy that
-# terminates HTTPS and forwards to 127.0.0.1:8080.
-#
-# Copy this file and .env.example next to each other, rename the latter to .env,
-# fill it in, set RUNMAP_IMAGES, then run `docker compose up -d`.
+# Runmap from prebuilt images, for a server with a reverse proxy that serves
+# HTTPS and forwards to 127.0.0.1:8080. Put .env next to this file, from
+# .env.example, and run `docker compose up -d`.
 
 name: runmap
-
-x-database-url: &database-url postgres://runmap:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db/runmap
 
 services:
   db:
@@ -14,35 +10,27 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: runmap
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: runmap
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - db:/var/lib/postgresql
     healthcheck:
-      test: [CMD-SHELL, pg_isready -U runmap -d runmap]
+      test: [CMD-SHELL, pg_isready -U runmap]
       interval: 5s
-      timeout: 3s
       retries: 30
 
-  # The web image forwards /api to a service of exactly this name.
+  # The frontend forwards /api to a service of exactly this name.
   api:
-    # Like gitea.example.com/you, where the Images workflow pushes to.
-    image: ${RUNMAP_IMAGES:?Set RUNMAP_IMAGES in .env}/runmap-api:${RUNMAP_VERSION:-latest}
+    image: ${RUNMAP_IMAGES:?Set RUNMAP_IMAGES in .env}/backend:${RUNMAP_VERSION:-latest}
     restart: unless-stopped
+    env_file: .env
     environment:
-      DATABASE_URL: *database-url
-      APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env}
-      # Like https://runmap.example.com, the address the proxy serves.
-      PUBLIC_URL: ${PUBLIC_URL:?Set PUBLIC_URL in .env}
-      OIDC_ISSUER: ${OIDC_ISSUER:?Set OIDC_ISSUER in .env}
-      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?Set OIDC_CLIENT_ID in .env}
-      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      DATABASE_URL: postgres://runmap:${POSTGRES_PASSWORD}@db/runmap
     depends_on:
       db:
         condition: service_healthy
 
   web:
-    image: ${RUNMAP_IMAGES}/runmap-web:${RUNMAP_VERSION:-latest}
+    image: ${RUNMAP_IMAGES}/frontend:${RUNMAP_VERSION:-latest}
     restart: unless-stopped
     ports:
       - 127.0.0.1:8080:80

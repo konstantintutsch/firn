@@ -47,18 +47,14 @@ Only use this to try Runmap out: the configuration's secrets are public.
 
 ## Running it on a server
 
-The **Images** workflow in `.gitea/workflows/images.yaml` builds the
-`runmap-api` and `runmap-web` images on Gitea Actions and pushes them to the
-Gitea container registry. Add the secret `REGISTRY_TOKEN`, an access token with
-the `write:package` scope. The workflow file lists the other settings.
+The **Images** workflow in `.gitea/workflows/images.yaml` builds the images
+`<owner>/runmap/backend` and `<owner>/runmap/frontend` on Gitea Actions and
+pushes them to the Gitea container registry. Add the secret `REGISTRY_TOKEN`,
+an access token with the `write:package` scope. The workflow file lists the
+other settings.
 
-`examples/` holds Docker Compose setups that run those images:
-
-- `compose.yaml`: for a server with its own reverse proxy.
-- `caddy/`: with Caddy, which gets a certificate from Let's Encrypt.
-- `traefik/`: for a server that already runs Traefik.
-
-Copy one with `examples/.env.example` as `.env`, fill it in and run
+`examples/compose.yaml` runs those images behind your reverse proxy. Copy it
+with `examples/.env.example` as `.env`, fill that in and run
 `docker compose up -d`.
 
 ## What a sync saves

@@ -1,5 +1,6 @@
-# Builds the api and web images, and pushes them to the container registry of
-# this Gitea instance. Pull requests only build, to check that the images work.
+# Builds the backend and frontend images, and pushes them to the container
+# registry of this Gitea instance as <owner>/<repository>/<component>. Pull
+# requests only build, to check that the images work.
 #
 # Set up:
 # - Secret REGISTRY_TOKEN: an access token with the write:package scope.
@@ -31,11 +32,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image: runmap-api
-            context: backend
+          - component: backend
             target: runtime
-          - image: runmap-web
-            context: frontend
+          - component: frontend
             target: ""
     steps:
       - uses: actions/checkout@v4
@@ -48,10 +47,9 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           registry="${REGISTRY:-${SERVER_URL#*://}}"
-          owner="${REPOSITORY%%/*}"
           # Registries only accept lowercase names.
           echo "registry=${registry%/}" >> "$GITHUB_OUTPUT"
-          echo "image=${registry%/}/${owner,,}/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+          echo "image=${registry%/}/${REPOSITORY,,}/${{ matrix.component }}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/metadata-action@v5
         id: meta
@@ -85,7 +83,7 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
-          context: ${{ matrix.context }}
+          context: ${{ matrix.component }}
           target: ${{ matrix.target }}
           platforms: ${{ vars.PLATFORMS || 'linux/amd64' }}
           push: ${{ github.event_name != 'pull_request' }}
