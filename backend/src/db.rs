@@ -13,6 +13,7 @@ use diesel_async::{AsyncConnection, AsyncMigrationHarness, AsyncPgConnection, Ru
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use serde_json::Value;
 
+use crate::files::FileStore;
 use crate::garmin::Activity;
 use crate::heatmap::{self, Track, Viewport};
 use crate::schema::{
@@ -193,10 +194,10 @@ pub async fn details(pool: &Pool, id: i64) -> Result<Option<Value>> {
         .flatten())
 }
 
+/// An image whose data is in the file store.
 pub struct Image {
     pub id: String,
     pub content_type: String,
-    pub data: Vec<u8>,
 }
 
 /// Replaces the images of an activity atomically and marks them as done.
@@ -210,7 +211,6 @@ pub async fn save_images(pool: &Pool, id: i64, images: &[Image]) -> Result<()> {
                 activity_images::image_id.eq(&image.id),
                 activity_images::seq.eq(seq as i32),
                 activity_images::content_type.eq(&image.content_type),
-                activity_images::data.eq(&image.data),
             )
         })
         .collect();
@@ -247,19 +247,19 @@ pub async fn image_ids(pool: &Pool, id: i64) -> Result<Vec<String>> {
         .await?)
 }
 
-/// One image of an account's activity, with its media type.
-pub async fn image(
+/// The media type of one image of an account's activity, if it has that image.
+pub async fn image_type(
     pool: &Pool,
     user_id: i64,
     id: i64,
     image_id: &str,
-) -> Result<Option<(String, Vec<u8>)>> {
+) -> Result<Option<String>> {
     Ok(activity_images::table
         .inner_join(activities::table)
         .filter(activities::user_id.eq(user_id))
         .filter(activity_images::activity_id.eq(id))
         .filter(activity_images::image_id.eq(image_id))
-        .select((activity_images::content_type, activity_images::data))
+        .select(activity_images::content_type)
         .first(&mut pool.get().await?)
         .await
         .optional()?)
@@ -284,12 +284,8 @@ pub async fn save_workouts(pool: &Pool, id: i64, workouts: &Value) -> Result<()>
 }
 
 /// Stores a track atomically and marks the run as done. `None` means no track exists.
-pub async fn save_track(
-    pool: &Pool,
-    id: i64,
-    original_zip: Option<&[u8]>,
-    points: &[Point],
-) -> Result<()> {
+/// Replaces the track of an activity. Its original file goes to the file store.
+pub async fn save_track(pool: &Pool, id: i64, points: &[Point]) -> Result<()> {
     let rows: Vec<_> = points
         .iter()
         .enumerate()
@@ -315,10 +311,7 @@ pub async fn save_track(
                     .await?;
             }
             diesel::update(activities::table.find(id))
-                .set((
-                    activities::original_zip.eq(original_zip),
-                    activities::track_synced_at.eq(diesel::dsl::now),
-                ))
+                .set(activities::track_synced_at.eq(diesel::dsl::now))
                 .execute(&mut *connection)
                 .await?;
             Ok(())
@@ -566,19 +559,15 @@ pub async fn search_activities(
 }
 
 /// One activity of an account, with Garmin's summary and the original file.
-pub async fn activity_with_file(
+pub async fn activity_with_summary(
     pool: &Pool,
     user_id: i64,
     id: i64,
-) -> Result<Option<(ActivitySummary, Value, Option<Vec<u8>>)>> {
+) -> Result<Option<(ActivitySummary, Value)>> {
     Ok(activities::table
         .filter(activities::user_id.eq(user_id))
         .filter(activities::id.eq(id))
-        .select((
-            ActivitySummary::as_select(),
-            activities::summary,
-            activities::original_zip,
-        ))
+        .select((ActivitySummary::as_select(), activities::summary))
         .first(&mut pool.get().await?)
         .await
         .optional()?)
@@ -903,6 +892,64 @@ pub async fn activity_records(pool: &Pool, filter: &Filter) -> Result<Vec<Activi
         )
         .load(&mut pool.get().await?)
         .await?)
+}
+
+/// How many files are moved per query, to keep memory use low.
+const FILES_PER_MOVE: i64 = 20;
+
+/// Moves original files and images that older versions kept in the database to
+/// the file store. Each file is written before its column is cleared, so an
+/// interrupted move continues on the next start.
+pub async fn move_files_to_store(pool: &Pool, files: &FileStore) -> Result<()> {
+    let mut moved = 0;
+    loop {
+        let originals: Vec<(i64, Option<Vec<u8>>)> = activities::table
+            .filter(activities::original_zip.is_not_null())
+            .select((activities::id, activities::original_zip))
+            .limit(FILES_PER_MOVE)
+            .load(&mut pool.get().await?)
+            .await?;
+        if originals.is_empty() {
+            break;
+        }
+        for (id, zip) in originals {
+            files.save_original(id, zip.as_deref()).await?;
+            diesel::update(activities::table.find(id))
+                .set(activities::original_zip.eq(None::<Vec<u8>>))
+                .execute(&mut pool.get().await?)
+                .await?;
+            moved += 1;
+        }
+    }
+    loop {
+        let images: Vec<(i64, String, Option<Vec<u8>>)> = activity_images::table
+            .filter(activity_images::data.is_not_null())
+            .select((
+                activity_images::activity_id,
+                activity_images::image_id,
+                activity_images::data,
+            ))
+            .limit(FILES_PER_MOVE)
+            .load(&mut pool.get().await?)
+            .await?;
+        if images.is_empty() {
+            break;
+        }
+        for (id, image_id, data) in images {
+            files
+                .save_image(id, &image_id, &data.unwrap_or_default())
+                .await?;
+            diesel::update(activity_images::table.find((id, &image_id)))
+                .set(activity_images::data.eq(None::<Vec<u8>>))
+                .execute(&mut pool.get().await?)
+                .await?;
+            moved += 1;
+        }
+    }
+    if moved > 0 {
+        tracing::info!(moved, "moved files from the database to the file store");
+    }
+    Ok(())
 }
 
 #[cfg(test)]

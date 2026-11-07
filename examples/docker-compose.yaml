@@ -27,6 +27,9 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgres://runmap:${POSTGRES_PASSWORD}@db/runmap
+    volumes:
+      # Original files and photos of the activities.
+      - data:/data
     depends_on:
       db:
         condition: service_healthy
@@ -42,3 +45,4 @@ services:
 
 volumes:
   db:
+  data:

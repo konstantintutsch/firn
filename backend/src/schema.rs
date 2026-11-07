@@ -28,7 +28,7 @@ diesel::table! {
         image_id -> Text,
         seq -> Int4,
         content_type -> Text,
-        data -> Bytea,
+        data -> Nullable<Bytea>,
     }
 }
 

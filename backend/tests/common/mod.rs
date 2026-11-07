@@ -5,6 +5,7 @@ use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use runmap::api::{AppState, GarminSettings};
 use runmap::auth::{Auth, OidcSettings, SESSION_COOKIE};
 use runmap::db::{self, Pool};
+use runmap::files::FileStore;
 use runmap::garmin::GarminClient;
 use runmap::secret::{self, SecretBox};
 use std::io::Write;
@@ -37,6 +38,20 @@ pub async fn test_pool() -> Pool {
     let pool = db::connect(&format!("{base}/{name}")).unwrap();
     db::migrate(&pool).await.unwrap();
     pool
+}
+
+/// A file store of its own for each test database, named after it.
+pub async fn files(pool: &Pool) -> FileStore {
+    #[derive(diesel::QueryableByName)]
+    struct Name {
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        name: String,
+    }
+    let Name { name } = diesel::sql_query("SELECT current_database() AS name")
+        .get_result(&mut pool.get().await.unwrap())
+        .await
+        .unwrap();
+    FileStore::new(std::env::temp_dir().join("runmap-tests").join(name))
 }
 
 pub const API_KEY: &str = "test-key";
@@ -93,8 +108,10 @@ pub async fn state_with_oidc(
     db::set_garmin_key(&pool, user_id, sealed.as_deref())
         .await
         .unwrap();
+    let files = files(&pool).await;
     AppState::new(
         pool,
+        files,
         GarminSettings {
             base_url: base_url.to_owned(),
             api_key: None,

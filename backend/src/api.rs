@@ -16,6 +16,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::auth::{self, Auth, CurrentUser};
 use crate::db::{self, ActivityTrack, Filter, Pool};
+use crate::files::FileStore;
 use crate::garmin::{GarminClient, GarminError};
 use crate::heatmap::{self, Position, Viewport};
 use crate::statistics;
@@ -81,6 +82,7 @@ pub struct AppState {
     pub(crate) pool: Pool,
     pub(crate) garmin: Arc<GarminSettings>,
     pub(crate) auth: Arc<Auth>,
+    pub(crate) files: FileStore,
     /// By account.
     sync: Arc<Mutex<HashMap<i64, SyncStatus>>>,
     /// The running syncs by account, to cancel them.
@@ -91,9 +93,10 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(pool: Pool, garmin: GarminSettings, auth: Auth) -> Self {
+    pub fn new(pool: Pool, files: FileStore, garmin: GarminSettings, auth: Auth) -> Self {
         Self {
             pool,
+            files,
             garmin: Arc::new(garmin),
             auth: Arc::new(auth),
             sync: Arc::default(),
@@ -584,10 +587,10 @@ async fn activity(
     CurrentUser(user): CurrentUser,
     Path(id): Path<i64>,
 ) -> Result<Json<ActivityDetail>, ApiError> {
-    let (activity, summary, original_zip) = db::activity_with_file(&state.pool, user.id, id)
+    let (activity, summary) = db::activity_with_summary(&state.pool, user.id, id)
         .await?
         .ok_or(ApiError::NotFound("no such activity"))?;
-    let samples = match original_zip {
+    let samples = match state.files.original(id).await? {
         Some(zip) => tokio::task::spawn_blocking(move || track::parse_samples(&zip))
             .await
             .map_err(anyhow::Error::from)?
@@ -644,7 +647,12 @@ async fn activity_image(
     CurrentUser(user): CurrentUser,
     Path((id, image_id)): Path<(i64, String)>,
 ) -> Result<Response, ApiError> {
-    let (content_type, data) = db::image(&state.pool, user.id, id, &image_id)
+    let content_type = db::image_type(&state.pool, user.id, id, &image_id)
+        .await?
+        .ok_or(ApiError::NotFound("no such image"))?;
+    let data = state
+        .files
+        .image(id, &image_id)
         .await?
         .ok_or(ApiError::NotFound("no such image"))?;
     Ok((
@@ -924,6 +932,7 @@ async fn run_sync(state: AppState, user_id: i64, api_key: String) {
             };
             sync_all(
                 &state.pool,
+                &state.files,
                 &mut client,
                 user_id,
                 HealthRange {

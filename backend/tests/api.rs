@@ -58,9 +58,7 @@ async fn add_run(pool: &Pool, id: i64, points: &[Point]) {
     db::upsert_activities(pool, common::user(pool).await, &[activity])
         .await
         .unwrap();
-    db::save_track(pool, id, Some(b"zip".as_slice()), points)
-        .await
-        .unwrap();
+    db::save_track(pool, id, points).await.unwrap();
 }
 
 const BERLIN: Point = Point {
@@ -296,9 +294,7 @@ async fn add_activity(pool: &Pool, id: i64, summary: Value, points: &[Point]) {
     db::upsert_activities(pool, common::user(pool).await, &[activity])
         .await
         .unwrap();
-    db::save_track(pool, id, Some(b"zip".as_slice()), points)
-        .await
-        .unwrap();
+    db::save_track(pool, id, points).await.unwrap();
 }
 
 async fn add_two_activities(pool: &Pool) {
@@ -756,9 +752,10 @@ async fn activity_has_its_summary_and_samples() {
         },
     ]);
     let zip = common::zip_of(&[("1.fit", &fit)]);
-    db::save_track(&pool, 1, Some(&zip), &[BERLIN])
-        .await
-        .unwrap();
+    db::save_track(&pool, 1, &[BERLIN]).await.unwrap();
+    let files = common::files(&pool).await;
+    files.save_original(1, Some(&zip)).await.unwrap();
+    files.save_original(2, Some(b"zip")).await.unwrap();
 
     let (status, body) = get(&pool, "/api/activities/1").await;
     assert_eq!(status, StatusCode::OK);

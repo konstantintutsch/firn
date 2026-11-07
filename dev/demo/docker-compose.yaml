@@ -39,6 +39,8 @@ services:
       GARMIN_BASE_URL: http://fake-garmin:8000
       DOWNLOAD_PAUSE_MS: 0
       PUBLIC_URL: http://localhost:8090
+    volumes:
+      - data:/data
     depends_on:
       db:
         condition: service_healthy
@@ -51,3 +53,6 @@ services:
       - 127.0.0.1:8090:80
     depends_on:
       - backend
+
+volumes:
+  data:

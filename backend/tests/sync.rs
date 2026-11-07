@@ -83,6 +83,7 @@ async fn run_sync(pool: &Pool, server: &MockServer) -> Result<Report, GarminErro
     let user_id = common::user(pool).await;
     sync_activities(
         pool,
+        &common::files(pool).await,
         &mut common::client(server),
         user_id,
         Duration::ZERO,
@@ -142,17 +143,14 @@ async fn saves_all_pages_and_keeps_raw_data() {
     );
     assert_eq!(point_count(&pool, 2).await, 2);
 
-    let (name, original, summary): (String, Option<Vec<u8>>, Value) = activities::table
+    let (name, summary): (String, Value) = activities::table
         .find(2)
-        .select((
-            activities::name,
-            activities::original_zip,
-            activities::summary,
-        ))
+        .select((activities::name, activities::summary))
         .first(&mut pool.get().await.unwrap())
         .await
         .unwrap();
     assert_eq!(name, "Run 2");
+    let original = common::files(&pool).await.original(2).await.unwrap();
     assert_eq!(original, Some(original_zip()));
     assert_eq!(summary["startLatitude"], 52.5);
 }
@@ -745,9 +743,11 @@ async fn saves_activity_images_without_sending_the_token() {
     let user_id = common::user(&pool).await;
     assert_eq!(db::image_ids(&pool, 1).await.unwrap(), ["a"]);
     assert_eq!(
-        db::image(&pool, user_id, 1, "a").await.unwrap(),
-        Some(("image/jpeg".to_owned(), b"jpeg".to_vec()))
+        db::image_type(&pool, user_id, 1, "a").await.unwrap(),
+        Some("image/jpeg".to_owned())
     );
+    let image = common::files(&pool).await.image(1, "a").await.unwrap();
+    assert_eq!(image, Some(b"jpeg".to_vec()));
 }
 
 #[tokio::test]
@@ -790,4 +790,45 @@ async fn image_that_garmin_refuses_is_skipped_for_good() {
     assert_eq!((report.downloaded, report.failed), (1, 0));
     assert_eq!(run_sync(&pool, &server).await.unwrap().to_download, 0);
     assert!(db::image_ids(&pool, 1).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn files_from_the_database_move_to_the_file_store() {
+    use runmap::schema::activity_images;
+
+    let (pool, server) = setup().await;
+    mount_list(&server, &[vec![activity(1, "running", true)]]).await;
+    mount_file(&server, 1, 1).await;
+    run_sync(&pool, &server).await.unwrap();
+    // As older versions saved them.
+    let mut connection = pool.get().await.unwrap();
+    diesel::update(activities::table.find(1))
+        .set(activities::original_zip.eq(Some(b"old zip".to_vec())))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    diesel::insert_into(activity_images::table)
+        .values((
+            activity_images::activity_id.eq(1),
+            activity_images::image_id.eq("a"),
+            activity_images::seq.eq(0),
+            activity_images::content_type.eq("image/png"),
+            activity_images::data.eq(Some(b"png".to_vec())),
+        ))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+
+    let files = common::files(&pool).await;
+    db::move_files_to_store(&pool, &files).await.unwrap();
+    assert_eq!(files.original(1).await.unwrap(), Some(b"old zip".to_vec()));
+    assert_eq!(files.image(1, "a").await.unwrap(), Some(b"png".to_vec()));
+    let (zip, data): (Option<Vec<u8>>, Option<Vec<u8>>) = activities::table
+        .inner_join(activity_images::table)
+        .select((activities::original_zip, activity_images::data))
+        .first(&mut pool.get().await.unwrap())
+        .await
+        .unwrap();
+    assert_eq!((zip, data), (None, None));
 }

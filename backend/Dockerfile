@@ -17,7 +17,10 @@ FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system runmap
+    && useradd --system runmap \
+    && mkdir /data && chown runmap /data
 COPY --from=build /usr/local/bin/runmap /usr/local/bin/runmap
 USER runmap
+# Original files and photos. A new volume takes over the owner from here.
+VOLUME /data
 ENTRYPOINT ["runmap"]

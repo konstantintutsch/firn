@@ -7,6 +7,7 @@ use clap::Parser;
 use runmap::api::{self, AppState, GarminSettings};
 use runmap::auth::{Auth, OidcSettings};
 use runmap::db;
+use runmap::files::FileStore;
 use runmap::garmin::DEFAULT_BASE_URL;
 use runmap::secret::SecretBox;
 use tokio::net::TcpListener;
@@ -18,6 +19,9 @@ use tracing_subscriber::EnvFilter;
 struct Cli {
     #[arg(long, env = "DATABASE_URL", hide_env_values = true)]
     database_url: String,
+    /// Where original files and photos are kept.
+    #[arg(long, env = "DATA_DIR", default_value = "/data")]
+    data_dir: PathBuf,
     #[arg(long, env = "BIND_ADDRESS", default_value = "0.0.0.0:3000")]
     bind: SocketAddr,
     /// The address people open the app at, where the provider sends them back to.
@@ -64,6 +68,8 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let pool = db::connect(&cli.database_url)?;
     db::migrate(&pool).await?;
+    let files = FileStore::new(&cli.data_dir);
+    db::move_files_to_store(&pool, &files).await?;
 
     let secret_box = SecretBox::new(&secret_env("APP_SECRET").unwrap_or_default())?;
     let extra_roots = match &cli.oidc_ca_cert {
@@ -89,6 +95,7 @@ async fn main() -> Result<()> {
     };
     let state = AppState::new(
         pool,
+        files,
         GarminSettings {
             base_url: cli.garmin_base_url,
             api_key: secret_env("GARMIN_PERSONAL_API_KEY"),

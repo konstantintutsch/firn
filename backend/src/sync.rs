@@ -5,6 +5,7 @@ use chrono::{Days, NaiveDate};
 use serde_json::{Value, json};
 
 use crate::db::{self, Pool};
+use crate::files::FileStore;
 use crate::garmin::{self, Activity, GarminClient, GarminError};
 use crate::track;
 use crate::wellness::{self, KINDS, Kind, Period};
@@ -28,13 +29,14 @@ pub struct Report {
 /// Safe to interrupt and rerun: finished work is skipped.
 pub async fn sync_all(
     pool: &Pool,
+    files: &FileStore,
     client: &mut GarminClient,
     user_id: i64,
     health: HealthRange,
     pause: Duration,
     on_progress: impl Fn(&Report),
 ) -> Result<Report, GarminError> {
-    let mut report = sync_activities(pool, client, user_id, pause, &on_progress).await?;
+    let mut report = sync_activities(pool, files, client, user_id, pause, &on_progress).await?;
     sync_health(
         pool,
         client,
@@ -52,6 +54,7 @@ pub async fn sync_all(
 /// GPS are saved too, for the statistics, but only GPS tracks go on the map.
 pub async fn sync_activities(
     pool: &Pool,
+    files: &FileStore,
     client: &mut GarminClient,
     user_id: i64,
     pause: Duration,
@@ -89,7 +92,7 @@ pub async fn sync_activities(
     for (activity, missing) in pending {
         let result = async {
             if missing.track {
-                save_original(pool, client, activity).await?;
+                save_original(pool, files, client, activity).await?;
             }
             let mut details = None;
             if missing.details {
@@ -106,7 +109,7 @@ pub async fn sync_activities(
                     .await?;
             }
             if missing.images {
-                save_images(pool, client, activity.id, details).await?;
+                save_images(pool, files, client, activity.id, details).await?;
             }
             Ok(())
         }
@@ -138,6 +141,7 @@ fn stops_sync(error: &GarminError) -> bool {
 
 async fn save_original(
     pool: &Pool,
+    files: &FileStore,
     client: &mut GarminClient,
     activity: &Activity,
 ) -> Result<(), GarminError> {
@@ -145,7 +149,8 @@ async fn save_original(
         Ok(zip) => zip,
         Err(GarminError::NotFound) => {
             tracing::warn!(id = activity.id, "Garmin has no file for this activity");
-            db::save_track(pool, activity.id, None, &[]).await?;
+            files.save_original(activity.id, None).await?;
+            db::save_track(pool, activity.id, &[]).await?;
             return Ok(());
         }
         Err(error) => return Err(error),
@@ -156,13 +161,16 @@ async fn save_original(
     } else {
         Vec::new()
     };
-    db::save_track(pool, activity.id, Some(&zip), &points).await?;
+    // The file first: a saved track marks the activity as done.
+    files.save_original(activity.id, Some(&zip)).await?;
+    db::save_track(pool, activity.id, &points).await?;
     Ok(())
 }
 
 /// Downloads the photos that the details list. `fresh` are details fetched just now.
 async fn save_images(
     pool: &Pool,
+    files: &FileStore,
     client: &mut GarminClient,
     id: i64,
     fresh: Option<Value>,
@@ -185,6 +193,7 @@ async fn save_images(
         }
     };
     let mut saved = Vec::new();
+    let mut downloads = Vec::new();
     for image in garmin::activity_images(&details) {
         let (data, content_type) = match client.download_image(&image.url).await {
             Ok(download) => download,
@@ -195,12 +204,17 @@ async fn save_images(
             }
             Err(error) => return Err(error),
         };
+        downloads.push((image.id.clone(), data));
         saved.push(db::Image {
             id: image.id,
             content_type,
-            data,
         });
     }
+    let downloads: Vec<(&str, &[u8])> = downloads
+        .iter()
+        .map(|(image_id, data)| (image_id.as_str(), data.as_slice()))
+        .collect();
+    files.save_images(id, &downloads).await?;
     db::save_images(pool, id, &saved).await?;
     Ok(())
 }

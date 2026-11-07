@@ -28,6 +28,8 @@ services:
         required: false
     environment:
       DATABASE_URL: *database-url
+    volumes:
+      - data:/data
     depends_on:
       db:
         condition: service_healthy
@@ -93,5 +95,6 @@ services:
 
 volumes:
   db:
+  data:
   cargo-registry:
   cargo-target:
