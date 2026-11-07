@@ -29,7 +29,9 @@ jobs:
   # The same checks as `just lint` and `just test`, against a throwaway database.
   backend:
     runs-on: ubuntu-latest
-    container: rust:1.99-bookworm
+    # A Node image, since the runner starts actions like checkout with the job
+    # container's node. Rust comes from rustup, in the version of the Dockerfile.
+    container: node:24-bookworm
     services:
       postgres:
         image: postgres:18-alpine
@@ -44,7 +46,11 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
-      - run: rustup component add rustfmt clippy
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --profile minimal --default-toolchain 1.99 --component rustfmt,clippy
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- --deny warnings
       - run: cargo test --locked
