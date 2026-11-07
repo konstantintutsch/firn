@@ -1,38 +1,78 @@
 # Runmap
 
-A heatmap of all your Garmin activities with GPS on a global map. Search for
-places and activities, and filter the map by type, title, description, location,
-length, duration and date.
+A heatmap of all your Garmin activities with GPS on a global map, and statistics
+on your training, sleep and health. Search for places and activities, and filter
+the map by type, title, description, location, length, duration and date.
+
+Several people can use one Runmap. Each signs in through OpenID Connect and adds
+their own Garmin key, and sees only their own data.
 
 ## Getting started
 
-Requires Docker and [just](https://just.systems).
+Requires Docker, [just](https://just.systems) and an OpenID Connect provider,
+like Authentik, Keycloak, Authelia or Google.
 
-1. Create a Personal API key on
-   [Garmin Connect](https://connect.garmin.com/app/settings/personalApiToken).
-2. Copy `.env.example` to `.env` and add the key.
-3. Run `just up` and open <http://localhost:8080>.
-4. Select **Sync** to save your activities. Select it again at any time to add new ones.
+1. Create an OpenID Connect client at your provider, with the redirect URI
+   `http://localhost:8080/api/auth/callback`.
+2. Copy `.env.example` to `.env`. Fill in `APP_SECRET`, `OIDC_ISSUER`,
+   `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`.
+3. Run `just up`, open <http://localhost:8080> and sign in.
+4. Create a Personal API key on
+   [Garmin Connect](https://connect.garmin.com/app/settings/personalApiToken)
+   and add it under **Settings**.
+5. Select **Sync** to save your data. Select it again at any time to add new data.
+
+To serve Runmap at another address, set `PUBLIC_URL` to it and `WEB_BIND` to
+`0.0.0.0`, and register `${PUBLIC_URL}/api/auth/callback` at the provider. Use
+HTTPS, for example through a reverse proxy: sign-in cookies are only marked
+secure if `PUBLIC_URL` starts with `https://`.
 
 `just` lists all commands. The API documentation is at
 <http://localhost:8080/api/docs>.
+
+## What a sync saves
+
+Runmap copies everything the Garmin Personal API offers:
+
+- Every activity, with or without GPS: the summary, the details and the original
+  file. Only activities with GPS go on the map.
+- Health data from the first activity on, and at least one year back: daily
+  summaries, sleep, HRV, heart rate, stress, Body Battery, steps, intensity
+  minutes, floors, SpO2, respiration, hydration, weight and body composition,
+  fitness age, food logs, menstrual cycle, profile settings and heart rate zones.
+
+Each Garmin response is stored as it came, in `garmin_documents`. The statistics
+page reads daily values from them. Garmin does not document these responses, so
+a value that Garmin moved may be missing from the charts, but never from the
+saved data.
+
+The first sync makes one request per day for some kinds of data, which takes a
+while for a long history. A sync can be interrupted: the next one continues
+where it stopped, and always fetches the last few days again, since Garmin keeps
+updating them.
+
+## Upgrading from a version without accounts
+
+The first account to sign in takes over all saved activities. If `.env` still
+holds `GARMIN_PERSONAL_API_KEY`, that account also takes over the key.
 
 ## Garmin access
 
 Runmap uses the [Garmin Connect Personal API](https://developer.garmin.com/gc-developer-program/personal/personal-api),
 which is meant for personal use. Keys expire after the period you chose when
-creating them. The app tells you when a key stops working: create a new one,
-update `.env` and run `just up`.
+creating them. The app tells you when a key stops working: create a new one and
+add it under **Settings**.
 
 ## Data and privacy
 
-- The API key gives access to your Garmin data. Keep `.env` private. The `api`
-  container holds the key to run syncs. It never returns the key or stores it
-  in the database.
+- A Garmin key gives access to your Garmin data. Runmap stores it encrypted with
+  `APP_SECRET`, and never returns it. Keep `.env` private: without `APP_SECRET`,
+  a copy of the database does not reveal the keys. Changing `APP_SECRET` makes
+  saved keys unreadable, so everyone has to add theirs again.
 - Each activity keeps the original ZIP file from Garmin in Postgres.
-- The map shows where you go, including near your home, and the API has no
-  login. The app therefore only listens on localhost, and only accepts requests
-  addressed to `localhost` or `127.0.0.1`.
+- Sessions last 30 days. The database stores only a hash of each session token.
+- The map shows where you go, including near your home. All data requires a
+  session, and each account sees only its own data.
 - Map tiles come from [OpenFreeMap](https://openfreemap.org), which sees the
   areas you view.
 - Place search uses [Photon](https://photon.komoot.io), which sees what you type

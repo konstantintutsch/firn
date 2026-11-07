@@ -1,9 +1,12 @@
 #![allow(dead_code)]
 
+use chrono::{Duration as Days, Utc};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use runmap::api::{AppState, GarminSettings};
+use runmap::auth::{Auth, OidcSettings, SESSION_COOKIE};
 use runmap::db::{self, Pool};
 use runmap::garmin::GarminClient;
+use runmap::secret::{self, SecretBox};
 use std::io::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -37,15 +40,68 @@ pub async fn test_pool() -> Pool {
 }
 
 pub const API_KEY: &str = "test-key";
+pub const SECRET: &str = "a secret that is long enough for tests";
+pub const ISSUER: &str = "https://issuer.example";
 
-pub fn state(pool: Pool, base_url: &str, api_key: Option<&str>) -> AppState {
+pub fn secret_box() -> SecretBox {
+    SecretBox::new(SECRET).unwrap()
+}
+
+/// The account that tests act as, created on first use.
+pub async fn user(pool: &Pool) -> i64 {
+    user_named(pool, "tester").await
+}
+
+pub async fn user_named(pool: &Pool, subject: &str) -> i64 {
+    let (user, _) = db::sign_in_user(pool, ISSUER, subject, None, Some(subject))
+        .await
+        .unwrap();
+    user.id
+}
+
+/// A `Cookie` header with a new session of the account.
+pub async fn cookie_for(pool: &Pool, user_id: i64) -> String {
+    let token = secret::random_token();
+    db::create_session(
+        pool,
+        user_id,
+        &secret::sha256(&token),
+        Utc::now() + Days::days(1),
+    )
+    .await
+    .unwrap();
+    format!("{SESSION_COOKIE}={token}")
+}
+
+pub async fn cookie(pool: &Pool) -> String {
+    cookie_for(pool, user(pool).await).await
+}
+
+/// Saves `api_key` as the Garmin key of the test account.
+pub async fn state(pool: Pool, base_url: &str, api_key: Option<&str>) -> AppState {
+    state_with_oidc(pool, base_url, api_key, None).await
+}
+
+pub async fn state_with_oidc(
+    pool: Pool,
+    base_url: &str,
+    api_key: Option<&str>,
+    oidc: Option<OidcSettings>,
+) -> AppState {
+    let user_id = user(&pool).await;
+    let sealed = api_key.map(|key| secret_box().seal(key).unwrap());
+    db::set_garmin_key(&pool, user_id, sealed.as_deref())
+        .await
+        .unwrap();
     AppState::new(
         pool,
         GarminSettings {
             base_url: base_url.to_owned(),
-            api_key: api_key.map(str::to_owned),
+            api_key: None,
             download_pause: Duration::ZERO,
+            health_history_days: 2,
         },
+        Auth::new(oidc, secret_box()),
     )
 }
 

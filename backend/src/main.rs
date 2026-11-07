@@ -4,14 +4,18 @@ use std::time::Duration;
 use anyhow::Result;
 use clap::Parser;
 use runmap::api::{self, AppState, GarminSettings};
+use runmap::auth::{Auth, OidcSettings};
 use runmap::db;
 use runmap::garmin::DEFAULT_BASE_URL;
+use runmap::secret::SecretBox;
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
 
 /// Pause between track downloads, to stay gentle on Garmin's servers.
 const DOWNLOAD_PAUSE: Duration = Duration::from_millis(500);
+/// How far back health data goes at least, for accounts with few activities.
+const HEALTH_HISTORY_DAYS: u64 = 365;
 
 /// Saves Garmin activities and serves them as a heatmap.
 #[derive(Parser)]
@@ -20,6 +24,22 @@ struct Cli {
     database_url: String,
     #[arg(long, env = "BIND_ADDRESS", default_value = "0.0.0.0:3000")]
     bind: SocketAddr,
+    /// The address people open the app at, where the provider sends them back to.
+    #[arg(long, env = "PUBLIC_URL", default_value = "http://localhost:8080")]
+    public_url: String,
+    /// The OpenID Connect issuer, like `https://auth.example.com/application/o/runmap/`.
+    #[arg(long, env = "OIDC_ISSUER")]
+    oidc_issuer: Option<String>,
+    #[arg(long, env = "OIDC_CLIENT_ID")]
+    oidc_client_id: Option<String>,
+}
+
+/// Secrets are not command-line options: those end up in the shell history.
+fn secret_env(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
 }
 
 #[tokio::main]
@@ -34,17 +54,28 @@ async fn main() -> Result<()> {
     let pool = db::connect(&cli.database_url)?;
     db::migrate(&pool).await?;
 
-    // Not a command-line option: those end up in the shell history.
-    let api_key = std::env::var("GARMIN_PERSONAL_API_KEY")
-        .ok()
-        .filter(|key| !key.trim().is_empty());
+    let secret_box = SecretBox::new(&secret_env("APP_SECRET").unwrap_or_default())?;
+    let oidc = match (cli.oidc_issuer, cli.oidc_client_id) {
+        (Some(issuer), Some(client_id)) => Some(OidcSettings {
+            issuer,
+            client_id,
+            client_secret: secret_env("OIDC_CLIENT_SECRET"),
+            public_url: cli.public_url,
+        }),
+        _ => {
+            tracing::warn!("OIDC_ISSUER or OIDC_CLIENT_ID is not set, so nobody can sign in");
+            None
+        }
+    };
     let state = AppState::new(
         pool,
         GarminSettings {
             base_url: DEFAULT_BASE_URL.to_owned(),
-            api_key,
+            api_key: secret_env("GARMIN_PERSONAL_API_KEY"),
             download_pause: DOWNLOAD_PAUSE,
+            health_history_days: HEALTH_HISTORY_DAYS,
         },
+        Auth::new(oidc, secret_box),
     );
 
     let listener = TcpListener::bind(cli.bind).await?;

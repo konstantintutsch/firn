@@ -17,13 +17,7 @@
   <body>
     <main id="map" aria-label="Heatmap of all activities"></main>
     <section class="panel">
-      <div class="panel-header">
-        <h1>Runmap</h1>
-        <div class="panel-actions">
-          <button id="sync-button" class="panel-button" type="button">Sync</button>
-          <button id="theme-toggle" class="panel-button" type="button"></button>
-        </div>
-      </div>
+      {% include "header.njk" %}
       <div class="search">
         <input id="search" type="search" placeholder="Search places and activities" aria-label="Search places and activities" autocomplete="off">
         <div id="search-results" class="search-results" hidden></div>
@@ -65,6 +59,7 @@
         <div class="legend-labels"><span>Fewer activities</span><span>More activities</span></div>
       </div>
     </section>
+    {% include "account.njk" %}
     <script type="module" src="/js/heatmap.js"></script>
   </body>
 </html>

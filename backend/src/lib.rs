@@ -1,7 +1,11 @@
 pub mod api;
+pub mod auth;
 pub mod db;
 pub mod garmin;
 pub mod heatmap;
 pub mod schema;
+pub mod secret;
+pub mod statistics;
 pub mod sync;
 pub mod track;
+pub mod wellness;

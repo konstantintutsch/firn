@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, NaiveDate, Utc};
-use diesel::dsl::{count_star, exists, sum};
+use diesel::dsl::{count_star, exists, min, sum};
 use diesel::pg::Pg;
 use diesel::prelude::*;
 use diesel::upsert::excluded;
@@ -15,7 +15,7 @@ use serde_json::Value;
 
 use crate::garmin::Activity;
 use crate::heatmap::Track;
-use crate::schema::{activities, track_points};
+use crate::schema::{activities, daily_metrics, garmin_documents, sessions, track_points, users};
 use crate::track::Point;
 
 pub type Pool = deadpool::Pool<AsyncPgConnection>;
@@ -47,6 +47,7 @@ pub async fn migrate(pool: &Pool) -> Result<()> {
 #[diesel(table_name = activities)]
 struct NewActivity<'a> {
     id: i64,
+    user_id: i64,
     name: &'a str,
     activity_type: &'a str,
     started_at: DateTime<Utc>,
@@ -55,12 +56,14 @@ struct NewActivity<'a> {
     summary: &'a Value,
 }
 
-/// Inserts or updates activity metadata. Never touches a run's saved track.
-pub async fn upsert_activities(pool: &Pool, activities: &[Activity]) -> Result<()> {
+/// Inserts or updates activity metadata. Never touches a run's saved track, and
+/// never moves an activity that another account saved already.
+pub async fn upsert_activities(pool: &Pool, user_id: i64, activities: &[Activity]) -> Result<()> {
     let rows: Vec<_> = activities
         .iter()
         .map(|activity| NewActivity {
             id: activity.id,
+            user_id,
             name: &activity.name,
             activity_type: &activity.activity_type,
             started_at: activity.started_at,
@@ -80,19 +83,48 @@ pub async fn upsert_activities(pool: &Pool, activities: &[Activity]) -> Result<(
             activities::distance_m.eq(excluded(activities::distance_m)),
             activities::duration_s.eq(excluded(activities::duration_s)),
             activities::summary.eq(excluded(activities::summary)),
+            activities::user_id.eq(diesel::dsl::sql::<
+                diesel::sql_types::Nullable<diesel::sql_types::Int8>,
+            >(
+                "coalesce(activities.user_id, excluded.user_id)"
+            )),
         ))
         .execute(&mut pool.get().await?)
         .await?;
     Ok(())
 }
 
-pub async fn is_track_synced(pool: &Pool, id: i64) -> Result<bool> {
-    let synced_at: Option<DateTime<Utc>> = activities::table
+/// What a sync still has to download for an activity.
+pub struct Missing {
+    pub track: bool,
+    pub details: bool,
+}
+
+/// `None` if the activity belongs to another account.
+pub async fn missing(pool: &Pool, user_id: i64, id: i64) -> Result<Option<Missing>> {
+    let row: Option<(Option<DateTime<Utc>>, bool)> = activities::table
         .find(id)
-        .select(activities::track_synced_at)
+        .filter(activities::user_id.eq(user_id))
+        .select((
+            activities::track_synced_at,
+            activities::details.is_not_null(),
+        ))
         .first(&mut pool.get().await?)
+        .await
+        .optional()?;
+    Ok(row.map(|(synced_at, has_details)| Missing {
+        track: synced_at.is_none(),
+        details: !has_details,
+    }))
+}
+
+/// `details` is an empty object if Garmin had none, so that no sync asks again.
+pub async fn save_details(pool: &Pool, id: i64, details: &Value) -> Result<()> {
+    diesel::update(activities::table.find(id))
+        .set(activities::details.eq(details))
+        .execute(&mut pool.get().await?)
         .await?;
-    Ok(synced_at.is_some())
+    Ok(())
 }
 
 /// Stores a track atomically and marks the run as done. `None` means no track exists.
@@ -139,9 +171,11 @@ pub async fn save_track(
     Ok(())
 }
 
-/// Loads the Web Mercator positions of all tracks, each in recording order.
-pub async fn load_tracks(pool: &Pool) -> Result<Vec<ActivityTrack>> {
+/// Loads the Web Mercator positions of an account's tracks, each in recording order.
+pub async fn load_tracks(pool: &Pool, user_id: i64) -> Result<Vec<ActivityTrack>> {
     let rows: Vec<(i64, Option<f64>, Option<f64>)> = track_points::table
+        .inner_join(activities::table)
+        .filter(activities::user_id.eq(user_id))
         .select((track_points::activity_id, track_points::x, track_points::y))
         .order((track_points::activity_id, track_points::seq))
         .load(&mut pool.get().await?)
@@ -170,6 +204,8 @@ pub struct ActivityTrack {
 /// Limits which activities count. All set fields must match.
 #[derive(Debug, Default, Clone)]
 pub struct Filter {
+    /// The account whose activities count.
+    pub user_id: i64,
     pub id: Option<i64>,
     pub query: Option<String>,
     pub activity_types: Vec<String>,
@@ -185,14 +221,16 @@ pub struct Filter {
 }
 
 impl Filter {
-    /// Older syncs saved activities without GPS, which have no place on a map.
+    /// Activities without GPS have no place on a map.
     fn apply<'a, ST: 'a>(
         &self,
         mut query: activities::BoxedQuery<'a, Pg, ST>,
     ) -> activities::BoxedQuery<'a, Pg, ST> {
-        query = query.filter(exists(
-            track_points::table.filter(track_points::activity_id.eq(activities::id)),
-        ));
+        query = query
+            .filter(activities::user_id.eq(self.user_id))
+            .filter(exists(
+                track_points::table.filter(track_points::activity_id.eq(activities::id)),
+            ));
         if let Some(id) = self.id {
             query = query.filter(activities::id.eq(id));
         }
@@ -359,8 +397,9 @@ pub async fn search_activities(
 }
 
 /// Each activity type that has a track, with how many activities have it, most first.
-pub async fn activity_types(pool: &Pool) -> Result<Vec<(String, i64)>> {
+pub async fn activity_types(pool: &Pool, user_id: i64) -> Result<Vec<(String, i64)>> {
     Ok(activities::table
+        .filter(activities::user_id.eq(user_id))
         .filter(exists(
             track_points::table.filter(track_points::activity_id.eq(activities::id)),
         ))
@@ -389,6 +428,264 @@ pub async fn totals(pool: &Pool, filter: &Filter) -> Result<Totals> {
         activities: count,
         distance_m: distance.unwrap_or(0.0),
     })
+}
+
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = users)]
+pub struct User {
+    pub id: i64,
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub garmin_api_key: Option<Vec<u8>>,
+}
+
+/// Finds or creates the account of an OpenID Connect identity. The first account
+/// claims the activities that were saved before accounts existed.
+pub async fn sign_in_user(
+    pool: &Pool,
+    issuer: &str,
+    subject: &str,
+    email: Option<&str>,
+    name: Option<&str>,
+) -> Result<(User, bool)> {
+    let mut connection = pool.get().await?;
+    let result = connection
+        .transaction::<_, diesel::result::Error, _>(async |connection| {
+            // Serializes first sign-ins, so that only one account can be first.
+            diesel::sql_query("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE")
+                .execute(&mut *connection)
+                .await?;
+            let existing: Option<User> = users::table
+                .filter(users::oidc_issuer.eq(issuer))
+                .filter(users::oidc_subject.eq(subject))
+                .select(User::as_select())
+                .first(&mut *connection)
+                .await
+                .optional()?;
+            if let Some(user) = existing {
+                let user = diesel::update(users::table.find(user.id))
+                    .set((users::email.eq(email), users::name.eq(name)))
+                    .returning(User::as_returning())
+                    .get_result(&mut *connection)
+                    .await?;
+                return Ok((user, false));
+            }
+            let is_first = users::table
+                .count()
+                .get_result::<i64>(&mut *connection)
+                .await?
+                == 0;
+            let user = diesel::insert_into(users::table)
+                .values((
+                    users::oidc_issuer.eq(issuer),
+                    users::oidc_subject.eq(subject),
+                    users::email.eq(email),
+                    users::name.eq(name),
+                ))
+                .returning(User::as_returning())
+                .get_result(&mut *connection)
+                .await?;
+            if is_first {
+                diesel::update(activities::table.filter(activities::user_id.is_null()))
+                    .set(activities::user_id.eq(user.id))
+                    .execute(&mut *connection)
+                    .await?;
+            }
+            Ok((user, is_first))
+        })
+        .await?;
+    Ok(result)
+}
+
+pub async fn set_garmin_key(pool: &Pool, user_id: i64, sealed: Option<&[u8]>) -> Result<()> {
+    diesel::update(users::table.find(user_id))
+        .set(users::garmin_api_key.eq(sealed))
+        .execute(&mut pool.get().await?)
+        .await?;
+    Ok(())
+}
+
+pub async fn create_session(
+    pool: &Pool,
+    user_id: i64,
+    token_hash: &[u8],
+    expires_at: DateTime<Utc>,
+) -> Result<()> {
+    diesel::insert_into(sessions::table)
+        .values((
+            sessions::token_hash.eq(token_hash),
+            sessions::user_id.eq(user_id),
+            sessions::expires_at.eq(expires_at),
+        ))
+        .execute(&mut pool.get().await?)
+        .await?;
+    Ok(())
+}
+
+/// The account of a session that has not expired.
+pub async fn session_user(pool: &Pool, token_hash: &[u8]) -> Result<Option<User>> {
+    Ok(sessions::table
+        .inner_join(users::table)
+        .filter(sessions::token_hash.eq(token_hash))
+        .filter(sessions::expires_at.gt(diesel::dsl::now))
+        .select(User::as_select())
+        .first(&mut pool.get().await?)
+        .await
+        .optional()?)
+}
+
+/// Also removes expired sessions of all accounts, which nothing else cleans up.
+pub async fn delete_session(pool: &Pool, token_hash: &[u8]) -> Result<()> {
+    diesel::delete(
+        sessions::table.filter(
+            sessions::token_hash
+                .eq(token_hash)
+                .or(sessions::expires_at.le(diesel::dsl::now)),
+        ),
+    )
+    .execute(&mut pool.get().await?)
+    .await?;
+    Ok(())
+}
+
+/// The periods of a kind that are saved already.
+pub async fn document_periods(pool: &Pool, user_id: i64, kind: &str) -> Result<HashSet<String>> {
+    let periods: Vec<String> = garmin_documents::table
+        .filter(garmin_documents::user_id.eq(user_id))
+        .filter(garmin_documents::kind.eq(kind))
+        .select(garmin_documents::period)
+        .load(&mut pool.get().await?)
+        .await?;
+    Ok(periods.into_iter().collect())
+}
+
+/// Saves a response and the daily values read from it, replacing earlier ones.
+pub async fn save_document(
+    pool: &Pool,
+    user_id: i64,
+    kind: &str,
+    period: &str,
+    data: Option<&Value>,
+    metrics: &[(NaiveDate, &str, f64)],
+) -> Result<()> {
+    let rows: Vec<_> = metrics
+        .iter()
+        .map(|(day, metric, value)| {
+            (
+                daily_metrics::user_id.eq(user_id),
+                daily_metrics::day.eq(*day),
+                daily_metrics::metric.eq(*metric),
+                daily_metrics::value.eq(*value),
+            )
+        })
+        .collect();
+    let mut connection = pool.get().await?;
+    connection
+        .transaction::<_, diesel::result::Error, _>(async |connection| {
+            diesel::insert_into(garmin_documents::table)
+                .values((
+                    garmin_documents::user_id.eq(user_id),
+                    garmin_documents::kind.eq(kind),
+                    garmin_documents::period.eq(period),
+                    garmin_documents::data.eq(data),
+                ))
+                .on_conflict((
+                    garmin_documents::user_id,
+                    garmin_documents::kind,
+                    garmin_documents::period,
+                ))
+                .do_update()
+                .set((
+                    garmin_documents::data.eq(excluded(garmin_documents::data)),
+                    garmin_documents::fetched_at.eq(diesel::dsl::now),
+                ))
+                .execute(&mut *connection)
+                .await?;
+            if !rows.is_empty() {
+                diesel::insert_into(daily_metrics::table)
+                    .values(&rows)
+                    .on_conflict((
+                        daily_metrics::user_id,
+                        daily_metrics::metric,
+                        daily_metrics::day,
+                    ))
+                    .do_update()
+                    .set(daily_metrics::value.eq(excluded(daily_metrics::value)))
+                    .execute(&mut *connection)
+                    .await?;
+            }
+            Ok(())
+        })
+        .await?;
+    Ok(())
+}
+
+/// The first day of saved activities in local time, where the health data starts.
+pub async fn first_activity_day(pool: &Pool, user_id: i64) -> Result<Option<NaiveDate>> {
+    let first: Option<String> = activities::table
+        .filter(activities::user_id.eq(user_id))
+        .select(min(activities::started_local))
+        .first(&mut pool.get().await?)
+        .await?;
+    Ok(first.and_then(|text| NaiveDate::parse_from_str(text.get(..10)?, "%Y-%m-%d").ok()))
+}
+
+/// Daily values from `from` to `to`, sorted by metric and day.
+pub async fn daily_metrics(
+    pool: &Pool,
+    user_id: i64,
+    from: Option<NaiveDate>,
+    to: Option<NaiveDate>,
+) -> Result<Vec<(String, NaiveDate, f64)>> {
+    let mut query = daily_metrics::table
+        .filter(daily_metrics::user_id.eq(user_id))
+        .select((
+            daily_metrics::metric,
+            daily_metrics::day,
+            daily_metrics::value,
+        ))
+        .order((daily_metrics::metric, daily_metrics::day))
+        .into_boxed();
+    if let Some(from) = from {
+        query = query.filter(daily_metrics::day.ge(from));
+    }
+    if let Some(to) = to {
+        query = query.filter(daily_metrics::day.le(to));
+    }
+    Ok(query.load(&mut pool.get().await?).await?)
+}
+
+#[derive(Queryable, Selectable)]
+#[diesel(table_name = activities)]
+pub struct ActivityRecord {
+    pub id: i64,
+    pub name: String,
+    pub activity_type: String,
+    pub started_local: Option<String>,
+    pub distance_m: Option<f64>,
+    pub duration_s: Option<f64>,
+    pub summary: Value,
+}
+
+/// All activities of an account, with or without GPS, oldest first.
+pub async fn activity_records(
+    pool: &Pool,
+    user_id: i64,
+    from: Option<NaiveDate>,
+    to: Option<NaiveDate>,
+) -> Result<Vec<ActivityRecord>> {
+    let mut query = activities::table
+        .filter(activities::user_id.eq(user_id))
+        .select(ActivityRecord::as_select())
+        .order((activities::started_at, activities::id))
+        .into_boxed();
+    if let Some(from) = from {
+        query = query.filter(activities::started_local.ge(from.to_string()));
+    }
+    if let Some(next_day) = to.and_then(|to| to.succ_opt()) {
+        query = query.filter(activities::started_local.lt(next_day.to_string()));
+    }
+    Ok(query.load(&mut pool.get().await?).await?)
 }
 
 #[cfg(test)]

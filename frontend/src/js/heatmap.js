@@ -1,4 +1,5 @@
 import * as maplibregl from "/vendor/maplibre-gl.mjs";
+import { currentTheme, onThemeChange, plural, requireAccount, setUpSync, typeName } from "/js/account.js";
 
 const THEMES = {
   light: {
@@ -22,8 +23,6 @@ const THEMES = {
     ],
   },
 };
-const THEME_STORAGE_KEY = "theme";
-const SYNC_POLL_MS = 1000;
 const SOURCE_ID = "activities";
 const HEAT_LAYER_ID = "activities-heat";
 const DOT_LAYER_ID = "activities-dots";
@@ -45,9 +44,6 @@ const NOT_LOADED = "Could not load activities. Is the API running?";
 const statsElement = document.querySelector("#stats");
 const statusElement = document.querySelector("#status");
 const legendElement = document.querySelector("#legend");
-const themeToggle = document.querySelector("#theme-toggle");
-const syncButton = document.querySelector("#sync-button");
-const syncStatusElement = document.querySelector("#sync-status");
 const searchInput = document.querySelector("#search");
 const searchResults = document.querySelector("#search-results");
 const selectionElement = document.querySelector("#selection");
@@ -57,7 +53,8 @@ const filtersForm = document.querySelector("#filters");
 const filterCount = document.querySelector("#filter-count");
 const typesField = document.querySelector("#types-field");
 const typesElement = document.querySelector("#types");
-const systemDark = matchMedia("(prefers-color-scheme: dark)");
+
+await requireAccount();
 
 let theme = currentTheme();
 
@@ -81,7 +78,6 @@ let filterTimer = null;
 let selectedId = null;
 let lines = [];
 let isFirstStyle = true;
-let isSyncRunning = false;
 
 // Fires again after each theme change, because a new style drops source and layer.
 map.on("style.load", () => {
@@ -123,7 +119,11 @@ map.on("style.load", () => {
     loadStats();
     loadTypes();
     refresh();
-    pollSync();
+    setUpSync(() => {
+      loadStats();
+      loadTypes();
+      refresh();
+    });
   }
 });
 
@@ -132,36 +132,10 @@ map.on("moveend", () => {
   refreshTimer = setTimeout(refresh, REFRESH_DELAY_MS);
 });
 
-themeToggle.addEventListener("click", () => {
-  const next = theme === "dark" ? "light" : "dark";
-  document.documentElement.dataset.theme = next;
-  try {
-    localStorage.setItem(THEME_STORAGE_KEY, next);
-  } catch {
-    // Without storage the choice still applies until the page is reloaded.
-  }
-  applyTheme();
-});
-
-systemDark.addEventListener("change", applyTheme);
-updateThemeToggle();
-
-function currentTheme() {
-  return document.documentElement.dataset.theme ?? (systemDark.matches ? "dark" : "light");
-}
-
-function applyTheme() {
-  const next = currentTheme();
-  if (next === theme) return;
+onThemeChange((next) => {
   theme = next;
-  updateThemeToggle();
   map.setStyle(THEMES[theme].styleUrl, { diff: false });
-}
-
-function updateThemeToggle() {
-  themeToggle.textContent = theme === "dark" ? "Light" : "Dark";
-  themeToggle.setAttribute("aria-label", `Switch to ${theme === "dark" ? "light" : "dark"} mode`);
-}
+});
 
 /** Draws the heat above roads, which would cut through it, but below the labels on top. */
 function layerAboveHeat() {
@@ -289,11 +263,6 @@ async function loadTypes() {
     }),
   );
   typesField.hidden = types.length === 0;
-}
-
-function typeName(type) {
-  const words = type.replaceAll("_", " ");
-  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 function applyFilters() {
@@ -485,76 +454,4 @@ filtersForm.addEventListener("submit", (event) => event.preventDefault());
 
 function showStatus(message) {
   statusElement.textContent = message;
-}
-
-syncButton.addEventListener("click", async () => {
-  syncButton.disabled = true;
-  syncStatusElement.textContent = "Starting…";
-  try {
-    const response = await fetch("/api/sync", {
-      method: "POST",
-      headers: { "X-Requested-With": "runmap" },
-    });
-    if (response.ok) {
-      isSyncRunning = true;
-    } else if (response.status !== 409 || !(await isSyncActive())) {
-      const { error } = await response.json();
-      syncButton.disabled = false;
-      syncStatusElement.textContent = error;
-      return;
-    }
-    pollSync();
-  } catch {
-    syncButton.disabled = false;
-    syncStatusElement.textContent = "Could not start the sync. Is the API running?";
-  }
-});
-
-async function isSyncActive() {
-  const response = await fetch("/api/sync");
-  return response.ok && (await response.json()).state === "running";
-}
-
-/** Also runs on page load, to pick up a sync that is already running. */
-async function pollSync() {
-  let sync;
-  try {
-    const response = await fetch("/api/sync");
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    sync = await response.json();
-  } catch {
-    setTimeout(pollSync, SYNC_POLL_MS);
-    return;
-  }
-
-  if (sync.state === "running") {
-    isSyncRunning = true;
-    syncButton.disabled = true;
-    syncStatusElement.textContent = syncProgress(sync);
-    setTimeout(pollSync, SYNC_POLL_MS);
-  } else if (isSyncRunning) {
-    isSyncRunning = false;
-    syncButton.disabled = false;
-    syncStatusElement.textContent = syncResult(sync);
-    loadStats();
-    loadTypes();
-    refresh();
-  }
-}
-
-function syncProgress({ to_download: total, downloaded, failed }) {
-  if (total === 0) return "Looking for new activities…";
-  return `Saving activity ${Math.min(downloaded + failed + 1, total)} of ${total}…`;
-}
-
-function syncResult({ state, error, downloaded, failed }) {
-  if (state === "failed") return error;
-  const saved =
-    downloaded === 0 ? "No new activities." : `Saved ${plural(downloaded, "new activity")}.`;
-  return failed === 0 ? saved : `${saved} ${plural(failed, "activity")} failed. Sync again to retry.`;
-}
-
-function plural(count, noun) {
-  const word = count === 1 ? noun : noun.replace(/y$/, "ie") + "s";
-  return `${count.toLocaleString()} ${word}`;
 }

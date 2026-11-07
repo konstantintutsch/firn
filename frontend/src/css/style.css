@@ -5,6 +5,13 @@
   --panel: rgb(255 255 255 / 90%);
   --line: rgb(0 0 0 / 14%);
   --ramp: linear-gradient(90deg, #f06414, #e03c14, #d6246e, #7b1fa2, #2e1065);
+  --surface: #fcfcfb;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
   color-scheme: light;
 }
 
@@ -16,6 +23,13 @@
     --panel: rgb(18 20 26 / 88%);
     --line: rgb(255 255 255 / 12%);
     --ramp: linear-gradient(90deg, #8e3fc4, #d13a78, #f4743b, #fbd25d, #fff7d6);
+    --surface: #1a1a19;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
     color-scheme: dark;
   }
 }
@@ -27,6 +41,13 @@
   --panel: rgb(18 20 26 / 88%);
   --line: rgb(255 255 255 / 12%);
   --ramp: linear-gradient(90deg, #8e3fc4, #d13a78, #f4743b, #fbd25d, #fff7d6);
+  --surface: #1a1a19;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
   color-scheme: dark;
 }
 
@@ -278,5 +299,364 @@ legend {
   margin-top: 4px;
   color: var(--ink-muted);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+a {
+  color: inherit;
+}
+
+.muted {
+  color: var(--ink-muted);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.tabs a {
+  padding: 2px 8px;
+  border-radius: 6px;
+  color: var(--ink-muted);
+  text-decoration: none;
+}
+
+.tabs a:hover,
+.tabs a[aria-current="page"] {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.sign-in {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--page);
+}
+
+.sign-in[hidden] {
+  display: none;
+}
+
+.sign-in-card {
+  max-width: 320px;
+  text-align: center;
+}
+
+.sign-in-card p {
+  margin: 8px 0 16px;
+  color: var(--ink-muted);
+}
+
+.primary-button {
+  display: inline-block;
+  padding: 6px 18px;
+  background: var(--ink);
+  border-radius: 6px;
+  color: var(--page);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.settings {
+  width: min(360px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 16px;
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink);
+}
+
+.settings::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+
+.settings h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.settings form {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.settings label {
+  display: grid;
+  gap: 4px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.settings #sign-out {
+  margin-top: 12px;
+}
+
+/* The statistics page scrolls like a document instead of sitting on a map. */
+.page {
+  height: auto;
+  min-height: 100%;
+}
+
+.page-header {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px 16px 0;
+}
+
+#sync-status {
+  color: var(--ink-muted);
+}
+
+.statistics {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 8px 16px 32px;
+}
+
+.statistics h2 {
+  margin: 24px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.range-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.range-picker [aria-pressed="true"] {
+  background: var(--line);
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.tile {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.tile span {
+  font-size: 12px;
+}
+
+.tile strong {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.card h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.card > p {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 8px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chart-swatch {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.chart-plot {
+  position: relative;
+  margin-top: 8px;
+}
+
+.chart-plot svg {
+  display: block;
+  overflow: visible;
+  touch-action: pan-y;
+}
+
+.chart-grid {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+
+.chart-baseline {
+  stroke: var(--axis);
+  stroke-width: 1;
+}
+
+.chart-tick {
+  fill: var(--ink-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-crosshair {
+  stroke: var(--axis);
+  stroke-width: 1;
+}
+
+.chart-dot {
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.chart-highlight {
+  fill: var(--line);
+  opacity: 0.5;
+}
+
+.chart-tooltip {
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  min-width: 120px;
+  padding: 6px 8px;
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.chart-tooltip[hidden] {
+  display: none;
+}
+
+.chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.chart-tooltip-value {
+  margin-left: auto;
+  padding-left: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-data {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.chart-data summary {
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.chart-data table {
+  display: block;
+  max-height: 240px;
+  overflow: auto;
+  margin-top: 4px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-data th,
+.chart-data td {
+  padding: 2px 12px 2px 0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.chart-data th {
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
+.bars {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 40%) 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.bar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar-track {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bar {
+  height: 12px;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+}
+
+.bar-value {
+  flex: none;
+  color: var(--ink-muted);
   font-variant-numeric: tabular-nums;
 }

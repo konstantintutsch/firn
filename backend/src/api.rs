@@ -5,17 +5,19 @@ use std::time::Duration;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
+use crate::auth::{self, Auth, CurrentUser};
 use crate::db::{self, ActivityTrack, Filter, Pool};
 use crate::garmin::GarminClient;
 use crate::heatmap::{self, Position, Viewport};
-use crate::sync::{Report, sync_activities};
+use crate::statistics;
+use crate::sync::{HealthRange, Report, sync_all};
 
 const MAX_ZOOM: u8 = 22;
 /// About 1 cm. Fewer digits make large responses much smaller.
@@ -29,43 +31,68 @@ const MAX_SEARCH_LIMIT: i64 = 100;
         title = "runmap",
         description = "Heatmap of activities saved from Garmin Connect"
     ),
-    paths(heatmap, activities, activity_types, stats, sync_status, start_sync)
+    paths(
+        heatmap,
+        activities,
+        activity_types,
+        stats,
+        sync_status,
+        start_sync,
+        auth::login,
+        auth::callback,
+        auth::logout,
+        auth::me,
+        auth::set_garmin_key,
+        auth::delete_garmin_key,
+        statistics::activity_statistics,
+        statistics::health_statistics,
+    )
 )]
 pub struct ApiDoc;
 
 pub struct GarminSettings {
     pub base_url: String,
+    /// The key from before accounts existed, which the first account takes over.
     pub api_key: Option<String>,
     pub download_pause: Duration,
+    /// How far back health data goes at least.
+    pub health_history_days: u64,
 }
 
 #[derive(Clone)]
 pub struct AppState {
-    pool: Pool,
-    garmin: Arc<GarminSettings>,
-    sync: Arc<Mutex<SyncStatus>>,
-    /// Loaded on the first request and again after a sync, because the heatmap
-    /// walks every track on every request, which would be slow from the database.
-    tracks: Arc<tokio::sync::Mutex<Option<Arc<Vec<ActivityTrack>>>>>,
+    pub(crate) pool: Pool,
+    pub(crate) garmin: Arc<GarminSettings>,
+    pub(crate) auth: Arc<Auth>,
+    /// By account.
+    sync: Arc<Mutex<HashMap<i64, SyncStatus>>>,
+    /// By account. Loaded on the first request and again after a sync, because the
+    /// heatmap walks every track on every request, which would be slow from the database.
+    tracks: Arc<tokio::sync::Mutex<HashMap<i64, Arc<Vec<ActivityTrack>>>>>,
 }
 
 impl AppState {
-    pub fn new(pool: Pool, garmin: GarminSettings) -> Self {
+    pub fn new(pool: Pool, garmin: GarminSettings, auth: Auth) -> Self {
         Self {
             pool,
             garmin: Arc::new(garmin),
+            auth: Arc::new(auth),
             sync: Arc::default(),
             tracks: Arc::default(),
         }
     }
 
-    async fn tracks(&self) -> anyhow::Result<Arc<Vec<ActivityTrack>>> {
+    pub fn pool(&self) -> &Pool {
+        &self.pool
+    }
+
+    async fn tracks(&self, user_id: i64) -> anyhow::Result<Arc<Vec<ActivityTrack>>> {
         let mut tracks = self.tracks.lock().await;
-        if let Some(tracks) = tracks.as_ref() {
+        if let Some(tracks) = tracks.get(&user_id) {
             return Ok(tracks.clone());
         }
-        let loaded = Arc::new(db::load_tracks(&self.pool).await?);
-        *tracks = Some(loaded.clone());
+        let loaded = Arc::new(db::load_tracks(&self.pool, user_id).await?);
+        tracks.insert(user_id, loaded.clone());
         Ok(loaded)
     }
 }
@@ -77,19 +104,35 @@ pub fn router(state: AppState) -> Router {
         .route("/api/activity-types", get(activity_types))
         .route("/api/stats", get(stats))
         .route("/api/sync", get(sync_status).post(start_sync))
+        .route("/api/auth/login", get(auth::login))
+        .route("/api/auth/callback", get(auth::callback))
+        .route("/api/auth/logout", post(auth::logout))
+        .route("/api/me", get(auth::me))
+        .route(
+            "/api/me/garmin-key",
+            put(auth::set_garmin_key).delete(auth::delete_garmin_key),
+        )
+        .route(
+            "/api/statistics/activities",
+            get(statistics::activity_statistics),
+        )
+        .route("/api/statistics/health", get(statistics::health_statistics))
         .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()))
         .with_state(state)
 }
 
 #[derive(Serialize, ToSchema)]
-struct ErrorBody {
+pub struct ErrorBody {
     error: String,
 }
 
-enum ApiError {
+pub enum ApiError {
     BadRequest(&'static str),
+    Unauthorized,
     Forbidden(&'static str),
     Conflict(&'static str),
+    /// Garmin failed in a way the person can act on.
+    BadGateway(String),
     Internal(anyhow::Error),
 }
 
@@ -97,7 +140,9 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, error) = match self {
             ApiError::BadRequest(message) => (StatusCode::BAD_REQUEST, message.to_owned()),
+            ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "sign in first".to_owned()),
             ApiError::Forbidden(message) => (StatusCode::FORBIDDEN, message.to_owned()),
+            ApiError::BadGateway(message) => (StatusCode::BAD_GATEWAY, message),
             ApiError::Conflict(message) => (StatusCode::CONFLICT, message.to_owned()),
             ApiError::Internal(error) => {
                 tracing::error!("{error:#}");
@@ -114,6 +159,16 @@ impl IntoResponse for ApiError {
 impl From<anyhow::Error> for ApiError {
     fn from(error: anyhow::Error) -> Self {
         ApiError::Internal(error)
+    }
+}
+
+/// Guards requests that change something. Browsers do not let other websites
+/// send the `X-Requested-With` header without permission, which this API never grants.
+pub fn require_header(headers: &HeaderMap) -> Result<(), ApiError> {
+    if headers.contains_key("x-requested-with") {
+        Ok(())
+    } else {
+        Err(ApiError::Forbidden("X-Requested-With header is required"))
     }
 }
 
@@ -156,14 +211,16 @@ struct FilterQuery {
     to: Option<NaiveDate>,
 }
 
-impl From<FilterQuery> for Filter {
-    fn from(query: FilterQuery) -> Self {
+impl FilterQuery {
+    fn into_filter(self, user_id: i64) -> Filter {
+        let query = self;
         let text = |value: Option<String>| {
             value
                 .map(|value| value.trim().to_owned())
                 .filter(|value| !value.is_empty())
         };
-        Self {
+        Filter {
+            user_id,
             id: query.id,
             query: text(query.q),
             activity_types: query
@@ -210,10 +267,12 @@ struct Heatmap {
     responses(
         (status = 200, body = Heatmap),
         (status = 400, description = "Invalid viewport or zoom", body = ErrorBody),
+        (status = 401, description = "Not signed in", body = ErrorBody),
     )
 )]
 async fn heatmap(
     State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
     Query(query): Query<HeatmapQuery>,
     Query(filter): Query<FilterQuery>,
 ) -> Result<Json<Heatmap>, ApiError> {
@@ -233,8 +292,8 @@ async fn heatmap(
     }
 
     let viewport = Viewport::from_degrees(query.west, query.south, query.east, query.north);
-    let matching = db::matching_ids(&state.pool, &filter.into()).await?;
-    let tracks = state.tracks().await?;
+    let matching = db::matching_ids(&state.pool, &filter.into_filter(user.id)).await?;
+    let tracks = state.tracks(user.id).await?;
     let lines = tokio::task::spawn_blocking(move || {
         let tracks: Vec<&[Position]> = tracks
             .iter()
@@ -298,10 +357,12 @@ struct ActivityList {
     responses(
         (status = 200, body = ActivityList),
         (status = 400, description = "Invalid limit", body = ErrorBody),
+        (status = 401, description = "Not signed in", body = ErrorBody),
     )
 )]
 async fn activities(
     State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
     Query(search): Query<SearchQuery>,
     Query(filter): Query<FilterQuery>,
 ) -> Result<Json<ActivityList>, ApiError> {
@@ -309,8 +370,8 @@ async fn activities(
     if !(1..=MAX_SEARCH_LIMIT).contains(&limit) {
         return Err(ApiError::BadRequest("limit must be from 1 to 100"));
     }
-    let found = db::search_activities(&state.pool, &filter.into(), limit).await?;
-    let tracks = state.tracks().await?;
+    let found = db::search_activities(&state.pool, &filter.into_filter(user.id), limit).await?;
+    let tracks = state.tracks(user.id).await?;
     let bounds: HashMap<i64, Viewport> = tracks
         .iter()
         .filter(|saved| found.iter().any(|activity| activity.id == saved.id))
@@ -353,14 +414,20 @@ struct ActivityTypeList {
     types: Vec<ActivityType>,
 }
 
-/// All activity types among the saved activities.
+/// All activity types among the saved activities with GPS.
 #[utoipa::path(
     get,
     path = "/api/activity-types",
-    responses((status = 200, body = ActivityTypeList))
+    responses(
+        (status = 200, body = ActivityTypeList),
+        (status = 401, description = "Not signed in", body = ErrorBody),
+    )
 )]
-async fn activity_types(State(state): State<AppState>) -> Result<Json<ActivityTypeList>, ApiError> {
-    let types = db::activity_types(&state.pool).await?;
+async fn activity_types(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+) -> Result<Json<ActivityTypeList>, ApiError> {
+    let types = db::activity_types(&state.pool, user.id).await?;
     Ok(Json(ActivityTypeList {
         types: types
             .into_iter()
@@ -378,18 +445,22 @@ struct Stats {
     distance_m: f64,
 }
 
-/// Totals across the matching activities.
+/// Totals across the matching activities with GPS.
 #[utoipa::path(
     get,
     path = "/api/stats",
     params(FilterQuery),
-    responses((status = 200, body = Stats))
+    responses(
+        (status = 200, body = Stats),
+        (status = 401, description = "Not signed in", body = ErrorBody),
+    )
 )]
 async fn stats(
     State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
     Query(filter): Query<FilterQuery>,
 ) -> Result<Json<Stats>, ApiError> {
-    let totals = db::totals(&state.pool, &filter.into()).await?;
+    let totals = db::totals(&state.pool, &filter.into_filter(user.id)).await?;
     Ok(Json(Stats {
         activities: totals.activities,
         distance_m: totals.distance_m,
@@ -410,13 +481,18 @@ enum SyncState {
 #[derive(Clone, Default, Serialize, ToSchema)]
 struct SyncStatus {
     state: SyncState,
-    /// Activities with GPS found on Garmin so far.
+    /// Activities found on Garmin so far.
     listed: usize,
-    /// Tracks that this sync has to download.
+    /// Activities that this sync has to download.
     to_download: usize,
     downloaded: usize,
-    /// Tracks that could not be saved. The next sync retries them.
+    /// Activities that could not be saved. The next sync retries them.
     failed: usize,
+    /// Requests for health data, like sleep or HRV, that this sync has to make.
+    health_to_fetch: usize,
+    health_fetched: usize,
+    /// Health data that could not be saved. The next sync retries it.
+    health_failed: usize,
     error: Option<String>,
 }
 
@@ -428,66 +504,90 @@ impl SyncStatus {
             to_download: report.to_download,
             downloaded: report.downloaded,
             failed: report.failed,
+            health_to_fetch: report.health_to_fetch,
+            health_fetched: report.health_fetched,
+            health_failed: report.health_failed,
             error: None,
         }
     }
 }
 
-/// Progress of the current or last sync.
-#[utoipa::path(get, path = "/api/sync", responses((status = 200, body = SyncStatus)))]
-async fn sync_status(State(state): State<AppState>) -> Json<SyncStatus> {
-    Json(state.sync.lock().unwrap().clone())
+/// Progress of the account's current or last sync.
+#[utoipa::path(
+    get,
+    path = "/api/sync",
+    responses(
+        (status = 200, body = SyncStatus),
+        (status = 401, description = "Not signed in", body = ErrorBody),
+    )
+)]
+async fn sync_status(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+) -> Json<SyncStatus> {
+    let statuses = state.sync.lock().unwrap();
+    Json(statuses.get(&user.id).cloned().unwrap_or_default())
 }
 
-/// Starts saving all activities with GPS that are not saved yet, in the background.
+/// Starts saving everything from Garmin that is not saved yet, in the background:
+/// activities with their files and details, then health data like sleep and HRV.
 ///
-/// Requires the `X-Requested-With` header. Browsers do not let other websites
-/// send it without permission, which this API never grants.
+/// Requires the `X-Requested-With` header.
 #[utoipa::path(
     post,
     path = "/api/sync",
     responses(
         (status = 202, description = "The sync started", body = SyncStatus),
+        (status = 401, description = "Not signed in", body = ErrorBody),
         (status = 403, description = "The header is missing", body = ErrorBody),
         (status = 409, description = "A sync is running or no API key is set", body = ErrorBody),
     )
 )]
 async fn start_sync(
     State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
     headers: HeaderMap,
 ) -> Result<(StatusCode, Json<SyncStatus>), ApiError> {
-    if !headers.contains_key("x-requested-with") {
-        return Err(ApiError::Forbidden("X-Requested-With header is required"));
-    }
-    let Some(api_key) = state.garmin.api_key.clone() else {
+    require_header(&headers)?;
+    let Some(sealed) = &user.garmin_api_key else {
         return Err(ApiError::Conflict(
-            "GARMIN_PERSONAL_API_KEY is not set. Add it to .env and run just up",
+            "No Garmin API key is saved. Add one in the settings",
         ));
     };
+    let api_key = state.auth.secret_box.open(sealed)?;
 
     let status = SyncStatus::running(&Report::default());
     {
-        let mut current = state.sync.lock().unwrap();
+        let mut statuses = state.sync.lock().unwrap();
+        let current = statuses.entry(user.id).or_default();
         if matches!(current.state, SyncState::Running) {
             return Err(ApiError::Conflict("a sync is already running"));
         }
         *current = status.clone();
     }
 
-    tokio::spawn(run_sync(state, api_key));
+    tokio::spawn(run_sync(state, user.id, api_key));
     Ok((StatusCode::ACCEPTED, Json(status)))
 }
 
-async fn run_sync(state: AppState, api_key: String) {
+async fn run_sync(state: AppState, user_id: i64, api_key: String) {
     let task = {
         let state = state.clone();
         tokio::spawn(async move {
             let mut client = GarminClient::new(&state.garmin.base_url, &api_key)?;
-            sync_activities(
+            let set_status = |status: SyncStatus| {
+                state.sync.lock().unwrap().insert(user_id, status);
+            };
+            sync_all(
                 &state.pool,
                 &mut client,
+                user_id,
+                HealthRange {
+                    today: chrono::Local::now().date_naive(),
+                    history_days: state.garmin.health_history_days,
+                },
                 state.garmin.download_pause,
-                |report| *state.sync.lock().unwrap() = SyncStatus::running(report),
+                |report| set_status(SyncStatus::running(report)),
             )
             .await
         })
@@ -496,9 +596,10 @@ async fn run_sync(state: AppState, api_key: String) {
     // Awaits a separate task, so that a panic cannot leave the state at running.
     let result = task.await;
     // Before the status changes, because that is what makes the page reload the map.
-    *state.tracks.lock().await = None;
+    state.tracks.lock().await.remove(&user_id);
 
-    let mut status = state.sync.lock().unwrap();
+    let mut statuses = state.sync.lock().unwrap();
+    let status = statuses.entry(user_id).or_default();
     match result {
         Ok(Ok(report)) => {
             *status = SyncStatus {

@@ -2,13 +2,14 @@ mod common;
 
 use std::time::Duration;
 
+use chrono::NaiveDate;
 use common::{API_KEY, fit_of, semicircles, zip_of};
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
 use runmap::db::{self, Pool};
 use runmap::garmin::GarminError;
-use runmap::schema::{activities, track_points};
-use runmap::sync::{Report, sync_activities};
+use runmap::schema::{activities, garmin_documents, track_points};
+use runmap::sync::{HealthRange, Report, sync_activities, sync_health};
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -79,7 +80,20 @@ async fn mount_file(server: &MockServer, id: i64, expected_calls: u64) {
 }
 
 async fn run_sync(pool: &Pool, server: &MockServer) -> Result<Report, GarminError> {
-    sync_activities(pool, &mut common::client(server), Duration::ZERO, |_| {}).await
+    let user_id = common::user(pool).await;
+    sync_activities(
+        pool,
+        &mut common::client(server),
+        user_id,
+        Duration::ZERO,
+        |_| {},
+    )
+    .await
+}
+
+async fn is_track_synced(pool: &Pool, id: i64) -> bool {
+    let user_id = common::user(pool).await;
+    !db::missing(pool, user_id, id).await.unwrap().unwrap().track
 }
 
 async fn point_count(pool: &Pool, id: i64) -> i64 {
@@ -122,7 +136,8 @@ async fn saves_all_pages_and_keeps_raw_data() {
             listed: 3,
             to_download: 3,
             downloaded: 3,
-            failed: 0
+            failed: 0,
+            ..Default::default()
         }
     );
     assert_eq!(point_count(&pool, 2).await, 2);
@@ -168,7 +183,7 @@ async fn second_sync_downloads_only_new_runs() {
 }
 
 #[tokio::test]
-async fn activities_without_gps_are_left_out() {
+async fn activities_without_gps_are_saved_but_left_off_the_map() {
     let (pool, server) = setup().await;
     mount_list(
         &server,
@@ -180,24 +195,31 @@ async fn activities_without_gps_are_left_out() {
         ]],
     )
     .await;
-    for id in 1..=3 {
-        mount_file(&server, id, 0).await;
+    for id in 1..=4 {
+        mount_file(&server, id, 1).await;
     }
-    mount_file(&server, 4, 1).await;
 
     let report = run_sync(&pool, &server).await.unwrap();
     assert_eq!(
         report,
         Report {
-            listed: 1,
-            to_download: 1,
-            downloaded: 1,
-            failed: 0
+            listed: 4,
+            to_download: 4,
+            downloaded: 4,
+            failed: 0,
+            ..Default::default()
         }
     );
-    let totals = db::totals(&pool, &Default::default()).await.unwrap();
+    let filter = db::Filter {
+        user_id: common::user(&pool).await,
+        ..Default::default()
+    };
+    let totals = db::totals(&pool, &filter).await.unwrap();
     assert_eq!(totals.activities, 1);
-    assert!(db::is_track_synced(&pool, 4).await.unwrap());
+    // The virtual run's file has a track, but in a virtual world.
+    assert_eq!(point_count(&pool, 2).await, 0);
+    assert!(is_track_synced(&pool, 2).await);
+    assert!(is_track_synced(&pool, 4).await);
 }
 
 #[tokio::test]
@@ -256,11 +278,12 @@ async fn broken_file_is_skipped_and_retried_later() {
             listed: 2,
             to_download: 2,
             downloaded: 1,
-            failed: 1
+            failed: 1,
+            ..Default::default()
         }
     );
-    assert!(!db::is_track_synced(&pool, 1).await.unwrap());
-    assert!(db::is_track_synced(&pool, 2).await.unwrap());
+    assert!(!is_track_synced(&pool, 1).await);
+    assert!(is_track_synced(&pool, 2).await);
 }
 
 #[tokio::test]
@@ -288,7 +311,8 @@ async fn forbidden_file_is_skipped_and_others_still_download() {
             listed: 2,
             to_download: 2,
             downloaded: 1,
-            failed: 1
+            failed: 1,
+            ..Default::default()
         }
     );
 }
@@ -393,4 +417,166 @@ async fn refused_api_key_is_reported_without_retry() {
 
     let result = run_sync(&pool, &server).await;
     assert!(matches!(result, Err(GarminError::InvalidApiKey)));
+}
+
+#[tokio::test]
+async fn saves_activity_details() {
+    let (pool, server) = setup().await;
+    mount_list(&server, &[vec![activity(1, "running", true)]]).await;
+    mount_file(&server, 1, 1).await;
+    Mock::given(method("GET"))
+        .and(path("/activity-service/activity/1"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"summaryDTO": {"averageHR": 150}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    run_sync(&pool, &server).await.unwrap();
+    // Nothing is left to download, so a second sync asks for nothing.
+    assert_eq!(run_sync(&pool, &server).await.unwrap().to_download, 0);
+    let details: Option<Value> = activities::table
+        .find(1)
+        .select(activities::details)
+        .first(&mut pool.get().await.unwrap())
+        .await
+        .unwrap();
+    assert_eq!(details.unwrap()["summaryDTO"]["averageHR"], 150);
+}
+
+fn day(text: &str) -> NaiveDate {
+    text.parse().unwrap()
+}
+
+async fn run_health(pool: &Pool, server: &MockServer, today: &str) -> Report {
+    let user_id = common::user(pool).await;
+    let mut report = Report::default();
+    sync_health(
+        pool,
+        &mut common::client(server),
+        user_id,
+        HealthRange {
+            today: day(today),
+            history_days: 10,
+        },
+        Duration::ZERO,
+        &mut report,
+        |_| {},
+    )
+    .await
+    .unwrap();
+    report
+}
+
+async fn health_requests(server: &MockServer, path: &str) -> usize {
+    server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|request| request.url.path() == path)
+        .count()
+}
+
+#[tokio::test]
+async fn saves_health_data_and_reads_daily_values() {
+    let (pool, server) = setup().await;
+    Mock::given(method("GET"))
+        .and(path("/sleep-service/sleep/dailySleep"))
+        .and(query_param("date", "2026-03-09"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "dailySleepDTO": {
+                "calendarDate": "2026-03-09",
+                "sleepTimeSeconds": 28800,
+                "sleepScores": {"overall": {"value": 88}},
+            }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::path_regex("^/hrv-service/hrv/daily/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "hrvSummaries": [{"calendarDate": "2026-03-08", "lastNightAvg": 52}]
+        })))
+        .mount(&server)
+        .await;
+
+    let report = run_health(&pool, &server, "2026-03-10").await;
+    assert_eq!(report.health_failed, 0);
+    assert_eq!(report.health_fetched, report.health_to_fetch);
+    // Eleven days, of which none is in the future.
+    assert_eq!(
+        health_requests(&server, "/sleep-service/sleep/dailySleep").await,
+        11
+    );
+
+    let user_id = common::user(&pool).await;
+    let metrics = db::daily_metrics(&pool, user_id, None, None).await.unwrap();
+    assert!(metrics.contains(&("sleep_h".to_owned(), day("2026-03-09"), 8.0)));
+    assert!(metrics.contains(&("sleep_score".to_owned(), day("2026-03-09"), 88.0)));
+    assert!(metrics.contains(&("hrv".to_owned(), day("2026-03-08"), 52.0)));
+
+    let saved: Option<Value> = garmin_documents::table
+        .filter(garmin_documents::kind.eq("sleep"))
+        .filter(garmin_documents::period.eq("2026-03-09"))
+        .select(garmin_documents::data)
+        .first(&mut pool.get().await.unwrap())
+        .await
+        .unwrap();
+    assert_eq!(saved.unwrap()["dailySleepDTO"]["sleepTimeSeconds"], 28800);
+}
+
+#[tokio::test]
+async fn next_health_sync_fetches_only_recent_days_again() {
+    let (pool, server) = setup().await;
+    run_health(&pool, &server, "2026-03-10").await;
+    server.reset().await;
+    mount_token(&server).await;
+
+    run_health(&pool, &server, "2026-03-11").await;
+    // The new day and the days that Garmin may still change.
+    assert_eq!(
+        health_requests(&server, "/sleep-service/sleep/dailySleep").await,
+        4
+    );
+}
+
+#[tokio::test]
+async fn data_that_garmin_refuses_is_skipped_for_the_rest_of_the_sync() {
+    let (pool, server) = setup().await;
+    Mock::given(method("GET"))
+        .and(wiremock::matchers::path_regex("^/periodichealth-service/"))
+        .respond_with(ResponseTemplate::new(403))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let report = run_health(&pool, &server, "2026-03-10").await;
+    assert_eq!(report.health_failed, 0);
+    assert_eq!(report.health_fetched, report.health_to_fetch);
+}
+
+#[tokio::test]
+async fn rate_limit_stops_the_health_sync() {
+    let (pool, server) = setup().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(429))
+        .mount(&server)
+        .await;
+    let user_id = common::user(&pool).await;
+    let result = sync_health(
+        &pool,
+        &mut common::client(&server),
+        user_id,
+        HealthRange {
+            today: day("2026-03-10"),
+            history_days: 10,
+        },
+        Duration::ZERO,
+        &mut Report::default(),
+        |_| {},
+    )
+    .await;
+    assert!(matches!(result, Err(GarminError::RateLimited)));
 }

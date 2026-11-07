@@ -178,6 +178,47 @@ impl GarminClient {
         Ok(response.bytes().await?.to_vec())
     }
 
+    /// Details of one activity, like laps, heart rate and training effect.
+    pub async fn activity_details(
+        &mut self,
+        activity_id: i64,
+    ) -> Result<Option<Value>, GarminError> {
+        self.get_json(&format!("/activity-service/activity/{activity_id}"), &[])
+            .await
+    }
+
+    /// Any JSON resource of the API. `None` if Garmin has nothing there.
+    pub async fn get_json(
+        &mut self,
+        path: &str,
+        query: &[(&str, String)],
+    ) -> Result<Option<Value>, GarminError> {
+        let url = format!("{}{path}", self.base_url);
+        let response = self
+            .send(|http| {
+                http.get(&url)
+                    .query(query)
+                    .header(ACCEPT, "application/json")
+            })
+            .await;
+        let body = match response {
+            Ok(response) => response.text().await?,
+            Err(GarminError::NotFound) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        if body.trim().is_empty() {
+            return Ok(None);
+        }
+        let value: Value = serde_json::from_str(&body)
+            .map_err(|error| GarminError::Unexpected(format!("{path}: {error}")))?;
+        Ok((!value.is_null()).then_some(value))
+    }
+
+    /// Checks that Garmin accepts the API key.
+    pub async fn verify_key(&mut self) -> Result<(), GarminError> {
+        self.fetch_token().await.map(|_| ())
+    }
+
     async fn send(
         &mut self,
         build: impl Fn(&Client) -> RequestBuilder,

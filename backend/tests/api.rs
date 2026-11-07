@@ -17,8 +17,17 @@ const LIST: &str = "/activitylist-service/activities/search/activities";
 const TOKEN: &str = "/personalapitoken-service/personal-api/personal-api-key/token";
 
 async fn get(pool: &Pool, uri: &str) -> (StatusCode, Value) {
-    let response = router(common::state(pool.clone(), "http://unused", None))
-        .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+    let cookie = common::cookie(pool).await;
+    get_with(pool, uri, Some(&cookie)).await
+}
+
+async fn get_with(pool: &Pool, uri: &str, cookie: Option<&str>) -> (StatusCode, Value) {
+    let mut request = Request::get(uri);
+    if let Some(cookie) = cookie {
+        request = request.header("cookie", cookie);
+    }
+    let response = router(common::state(pool.clone(), "http://unused", None).await)
+        .oneshot(request.body(Body::empty()).unwrap())
         .await
         .unwrap();
     let status = response.status();
@@ -46,7 +55,9 @@ async fn add_run(pool: &Pool, id: i64, points: &[Point]) {
         has_track: true,
         summary,
     };
-    db::upsert_activities(pool, &[activity]).await.unwrap();
+    db::upsert_activities(pool, common::user(pool).await, &[activity])
+        .await
+        .unwrap();
     db::save_track(pool, id, Some(b"zip".as_slice()), points)
         .await
         .unwrap();
@@ -282,7 +293,9 @@ async fn add_activity(pool: &Pool, id: i64, summary: Value, points: &[Point]) {
         has_track: true,
         summary: full,
     };
-    db::upsert_activities(pool, &[activity]).await.unwrap();
+    db::upsert_activities(pool, common::user(pool).await, &[activity])
+        .await
+        .unwrap();
     db::save_track(pool, id, Some(b"zip".as_slice()), points)
         .await
         .unwrap();
@@ -452,7 +465,8 @@ async fn publishes_openapi_without_secrets() {
 }
 
 async fn request_sync(state: &AppState, with_header: bool) -> (StatusCode, Value) {
-    let mut request = Request::post("/api/sync");
+    let mut request =
+        Request::post("/api/sync").header("cookie", common::cookie(state.pool()).await);
     if with_header {
         request = request.header("x-requested-with", "runmap");
     }
@@ -469,8 +483,9 @@ async fn request_sync(state: &AppState, with_header: bool) -> (StatusCode, Value
 }
 
 async fn sync_status(state: &AppState) -> Value {
+    let request = Request::get("/api/sync").header("cookie", common::cookie(state.pool()).await);
     let response = router(state.clone())
-        .oneshot(Request::get("/api/sync").body(Body::empty()).unwrap())
+        .oneshot(request.body(Body::empty()).unwrap())
         .await
         .unwrap();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
@@ -539,7 +554,7 @@ async fn sync_starts_in_the_background_and_saves_runs() {
     let server = MockServer::start().await;
     mount_garmin(&server, Duration::ZERO).await;
     let pool = common::test_pool().await;
-    let state = common::state(pool.clone(), &server.uri(), Some(common::API_KEY));
+    let state = common::state(pool.clone(), &server.uri(), Some(common::API_KEY)).await;
     assert_eq!(sync_status(&state).await["state"], "idle");
 
     let (status, body) = request_sync(&state, true).await;
@@ -552,10 +567,16 @@ async fn sync_starts_in_the_background_and_saves_runs() {
     assert_eq!(finished["to_download"], 1);
     assert_eq!(finished["downloaded"], 1);
     assert_eq!(
-        db::totals(&pool, &Default::default())
-            .await
-            .unwrap()
-            .activities,
+        db::totals(
+            &pool,
+            &db::Filter {
+                user_id: common::user(&pool).await,
+                ..Default::default()
+            }
+        )
+        .await
+        .unwrap()
+        .activities,
         1
     );
 
@@ -570,7 +591,7 @@ async fn sync_starts_in_the_background_and_saves_runs() {
 async fn sync_requires_the_header_that_other_websites_cannot_send() {
     let server = MockServer::start().await;
     let pool = common::test_pool().await;
-    let state = common::state(pool, &server.uri(), Some(common::API_KEY));
+    let state = common::state(pool, &server.uri(), Some(common::API_KEY)).await;
 
     let (status, _) = request_sync(&state, false).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -583,7 +604,7 @@ async fn only_one_sync_runs_at_a_time() {
     let server = MockServer::start().await;
     mount_garmin(&server, Duration::from_millis(300)).await;
     let pool = common::test_pool().await;
-    let state = common::state(pool, &server.uri(), Some(common::API_KEY));
+    let state = common::state(pool, &server.uri(), Some(common::API_KEY)).await;
 
     assert_eq!(request_sync(&state, true).await.0, StatusCode::ACCEPTED);
     assert_eq!(request_sync(&state, true).await.0, StatusCode::CONFLICT);
@@ -593,16 +614,11 @@ async fn only_one_sync_runs_at_a_time() {
 #[tokio::test]
 async fn sync_without_a_key_explains_what_to_do() {
     let pool = common::test_pool().await;
-    let state = common::state(pool, "http://unused", None);
+    let state = common::state(pool, "http://unused", None).await;
 
     let (status, body) = request_sync(&state, true).await;
     assert_eq!(status, StatusCode::CONFLICT);
-    assert!(
-        body["error"]
-            .as_str()
-            .unwrap()
-            .contains("GARMIN_PERSONAL_API_KEY")
-    );
+    assert!(body["error"].as_str().unwrap().contains("settings"));
     assert_eq!(sync_status(&state).await["state"], "idle");
 }
 
@@ -615,7 +631,7 @@ async fn failed_sync_reports_the_error_without_the_key() {
         .mount(&server)
         .await;
     let pool = common::test_pool().await;
-    let state = common::state(pool, &server.uri(), Some(common::API_KEY));
+    let state = common::state(pool, &server.uri(), Some(common::API_KEY)).await;
 
     request_sync(&state, true).await;
     let finished = finished_sync(&state).await;
@@ -630,11 +646,12 @@ async fn map_shows_new_runs_after_a_sync() {
     let server = MockServer::start().await;
     mount_garmin(&server, Duration::ZERO).await;
     let pool = common::test_pool().await;
-    let state = common::state(pool, &server.uri(), Some(common::API_KEY));
+    let state = common::state(pool, &server.uri(), Some(common::API_KEY)).await;
     let lines = async |state: &AppState| {
         let uri = format!("/api/heatmap?zoom=10&{WORLD}");
+        let request = Request::get(uri).header("cookie", common::cookie(state.pool()).await);
         let response = router(state.clone())
-            .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+            .oneshot(request.body(Body::empty()).unwrap())
             .await
             .unwrap();
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
@@ -647,4 +664,116 @@ async fn map_shows_new_runs_after_a_sync() {
     request_sync(&state, true).await;
     finished_sync(&state).await;
     assert_eq!(lines(&state).await, 1);
+}
+
+#[tokio::test]
+async fn accounts_see_only_their_own_activities() {
+    let pool = common::test_pool().await;
+    add_run(&pool, 1, &[BERLIN, NEAR_BERLIN]).await;
+    let other = common::user_named(&pool, "other").await;
+    let other_cookie = common::cookie_for(&pool, other).await;
+
+    let (_, mine) = get(&pool, "/api/stats").await;
+    assert_eq!(mine["activities"], 1);
+    for uri in ["/api/stats", "/api/activities", "/api/activity-types"] {
+        let (status, body) = get_with(&pool, uri, Some(&other_cookie)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(!body.to_string().contains("Run 1"), "{uri}");
+    }
+    let (_, theirs) = get_with(&pool, "/api/stats", Some(&other_cookie)).await;
+    assert_eq!(theirs["activities"], 0);
+    let (_, lines) = get_with(
+        &pool,
+        &format!("/api/heatmap?zoom=14&{WORLD}"),
+        Some(&other_cookie),
+    )
+    .await;
+    assert!(lines["lines"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn activity_statistics_include_activities_without_gps() {
+    let pool = common::test_pool().await;
+    add_activity(
+        &pool,
+        1,
+        json!({"averageHR": 151.0, "elevationGain": 40.0, "vO2MaxValue": 52.0}),
+        &[BERLIN, NEAR_BERLIN],
+    )
+    .await;
+    add_activity(
+        &pool,
+        2,
+        json!({
+            "activityName": "Gym",
+            "activityType": {"typeKey": "strength_training"},
+            "startTimeLocal": "2026-04-02 18:00:00",
+        }),
+        &[],
+    )
+    .await;
+
+    let (status, body) = get(&pool, "/api/statistics/activities").await;
+    assert_eq!(status, StatusCode::OK);
+    let activities = body["activities"].as_array().unwrap();
+    assert_eq!(activities.len(), 2);
+    let run = activities
+        .iter()
+        .find(|activity| activity["id"] == 1)
+        .unwrap();
+    assert_eq!(run["average_heart_rate"], 151.0);
+    assert_eq!(run["vo2_max"], 52.0);
+    let gym = activities
+        .iter()
+        .find(|activity| activity["id"] == 2)
+        .unwrap();
+    assert_eq!(gym["day"], "2026-04-02");
+
+    let (_, april) = get(
+        &pool,
+        "/api/statistics/activities?from=2026-04-01&to=2026-04-30",
+    )
+    .await;
+    assert_eq!(april["activities"].as_array().unwrap().len(), 1);
+    let (status, _) = get(
+        &pool,
+        "/api/statistics/activities?from=2026-05-01&to=2026-04-30",
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn health_statistics_group_values_by_metric() {
+    let pool = common::test_pool().await;
+    let user_id = common::user(&pool).await;
+    let day = |text: &str| text.parse::<chrono::NaiveDate>().unwrap();
+    db::save_document(
+        &pool,
+        user_id,
+        "hrv_summaries",
+        "2026-01-01/2026-01-28",
+        Some(&json!({})),
+        &[
+            (day("2026-01-02"), "hrv", 50.0),
+            (day("2026-01-01"), "hrv", 48.0),
+            (day("2026-01-01"), "resting_heart_rate", 47.0),
+        ],
+    )
+    .await
+    .unwrap();
+
+    let (status, body) = get(&pool, "/api/statistics/health?from=2026-01-01").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["metrics"]["hrv"],
+        json!([["2026-01-01", 48.0], ["2026-01-02", 50.0]])
+    );
+    assert_eq!(
+        body["metrics"]["resting_heart_rate"],
+        json!([["2026-01-01", 47.0]])
+    );
+
+    let (_, later) = get(&pool, "/api/statistics/health?from=2026-01-02").await;
+    assert_eq!(later["metrics"]["hrv"], json!([["2026-01-02", 50.0]]));
 }
