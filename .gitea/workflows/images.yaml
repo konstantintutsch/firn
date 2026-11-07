@@ -1,0 +1,91 @@
+# Builds the api and web images, and pushes them to the container registry of
+# this Gitea instance. Pull requests only build, to check that the images work.
+#
+# Set up:
+# - Secret REGISTRY_TOKEN: an access token with the write:package scope.
+# - Variable REGISTRY_USER (optional): who owns the token. Defaults to whoever
+#   started the run.
+# - Variable REGISTRY (optional): another registry, like ghcr.io. Defaults to
+#   this Gitea instance.
+# - Variable PLATFORMS (optional): like linux/amd64,linux/arm64. Defaults to
+#   linux/amd64. Other platforms build under emulation, which is slow for Rust.
+#
+# Tags: the branch, the short commit, latest for main, and 1.2.3, 1.2 and 1
+# for a tag v1.2.3.
+#
+# Gitea also offers the github context used below, which keeps actionlint working.
+
+name: Images
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: runmap-api
+            context: backend
+            target: runtime
+          - image: runmap-web
+            context: frontend
+            target: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Name the image
+        id: name
+        env:
+          REGISTRY: ${{ vars.REGISTRY }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          registry="${REGISTRY:-${SERVER_URL#*://}}"
+          owner="${REPOSITORY%%/*}"
+          # Registries only accept lowercase names.
+          echo "registry=${registry%/}" >> "$GITHUB_OUTPUT"
+          echo "image=${registry%/}/${owner,,}/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ steps.name.outputs.image }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/setup-qemu-action@v3
+        if: vars.PLATFORMS != '' && vars.PLATFORMS != 'linux/amd64'
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ${{ steps.name.outputs.registry }}
+          username: ${{ vars.REGISTRY_USER || github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
+          platforms: ${{ vars.PLATFORMS || 'linux/amd64' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Pull requests read the cache, but only pushes write it.
+          cache-from: type=registry,ref=${{ steps.name.outputs.image }}:buildcache
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}:buildcache,mode=max', steps.name.outputs.image) || '' }}
