@@ -20,6 +20,7 @@ use crate::db::{self, ActivityTrack, Filter, Pool};
 use crate::files::FileStore;
 use crate::garmin::{GarminClient, GarminError};
 use crate::heatmap::{self, Position, Viewport};
+use crate::routes;
 use crate::statistics;
 use crate::sync::{self, HealthRange, Report, sync_all};
 use crate::track::{self, Sample};
@@ -59,6 +60,13 @@ struct CachedTracks {
         export,
         import,
         activity_types,
+        routes::list_routes,
+        routes::create_route,
+        routes::import_route,
+        routes::route,
+        routes::update_route,
+        routes::delete_route,
+        routes::route_file,
         stats,
         sync_status,
         start_sync,
@@ -204,6 +212,22 @@ pub fn router_with(state: AppState, docs: bool) -> Router {
             get(activity_image),
         )
         .route("/api/activity-types", get(activity_types))
+        .route(
+            "/api/routes",
+            get(routes::list_routes).post(routes::create_route),
+        )
+        .route(
+            "/api/routes/import",
+            post(routes::import_route)
+                .layer(axum::extract::DefaultBodyLimit::max(routes::MAX_GPX_BYTES)),
+        )
+        .route(
+            "/api/routes/{id}",
+            get(routes::route)
+                .put(routes::update_route)
+                .delete(routes::delete_route),
+        )
+        .route("/api/routes/{id}/file", get(routes::route_file))
         .route("/api/export", get(export))
         .route(
             "/api/import",

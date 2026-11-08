@@ -17,7 +17,7 @@ use crate::files::FileStore;
 use crate::garmin::Activity;
 use crate::heatmap::{self, Track, Viewport};
 use crate::schema::{
-    activities, activity_images, daily_metrics, garmin_documents, race_results, sessions,
+    activities, activity_images, daily_metrics, garmin_documents, race_results, routes, sessions,
     track_points, users,
 };
 use crate::track::Point;
@@ -1327,4 +1327,90 @@ mod tests {
     fn patterns_take_wildcards_literally() {
         assert_eq!(contains(r"50%_a\b"), r"%50\%\_a\\b%");
     }
+}
+
+/// A saved route without its points.
+#[derive(Debug, Queryable, Selectable, serde::Serialize, utoipa::ToSchema)]
+#[diesel(table_name = routes)]
+pub struct RouteSummary {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub distance_m: f64,
+    pub elevation_gain_m: Option<f64>,
+    /// The activity that the route was made from, if it still exists.
+    pub activity_id: Option<i64>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = routes)]
+pub struct NewRoute<'a> {
+    pub user_id: i64,
+    pub name: &'a str,
+    pub description: Option<&'a str>,
+    pub distance_m: f64,
+    pub elevation_gain_m: Option<f64>,
+    pub points: &'a Value,
+    pub activity_id: Option<i64>,
+}
+
+pub async fn insert_route(pool: &Pool, route: &NewRoute<'_>) -> Result<RouteSummary> {
+    Ok(diesel::insert_into(routes::table)
+        .values(route)
+        .returning(RouteSummary::as_select())
+        .get_result(&mut pool.get().await?)
+        .await?)
+}
+
+/// The account's routes, newest first.
+pub async fn list_routes(pool: &Pool, user_id: i64) -> Result<Vec<RouteSummary>> {
+    Ok(routes::table
+        .filter(routes::user_id.eq(user_id))
+        .order((routes::created_at.desc(), routes::id.desc()))
+        .select(RouteSummary::as_select())
+        .load(&mut pool.get().await?)
+        .await?)
+}
+
+/// One route of the account, with its points.
+pub async fn route(pool: &Pool, user_id: i64, id: i64) -> Result<Option<(RouteSummary, Value)>> {
+    Ok(routes::table
+        .filter(routes::user_id.eq(user_id))
+        .filter(routes::id.eq(id))
+        .select((RouteSummary::as_select(), routes::points))
+        .first(&mut pool.get().await?)
+        .await
+        .optional()?)
+}
+
+/// Renames a route of the account. False if it has no such route.
+pub async fn update_route(
+    pool: &Pool,
+    user_id: i64,
+    id: i64,
+    name: &str,
+    description: Option<&str>,
+) -> Result<bool> {
+    let changed = diesel::update(
+        routes::table
+            .filter(routes::user_id.eq(user_id))
+            .filter(routes::id.eq(id)),
+    )
+    .set((routes::name.eq(name), routes::description.eq(description)))
+    .execute(&mut pool.get().await?)
+    .await?;
+    Ok(changed > 0)
+}
+
+/// Removes a route of the account.
+pub async fn delete_route(pool: &Pool, user_id: i64, id: i64) -> Result<()> {
+    diesel::delete(
+        routes::table
+            .filter(routes::user_id.eq(user_id))
+            .filter(routes::id.eq(id)),
+    )
+    .execute(&mut pool.get().await?)
+    .await?;
+    Ok(())
 }

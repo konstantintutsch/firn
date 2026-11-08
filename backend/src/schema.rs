@@ -54,6 +54,20 @@ diesel::table! {
 }
 
 diesel::table! {
+    routes (id) {
+        id -> Int8,
+        user_id -> Int8,
+        name -> Text,
+        description -> Nullable<Text>,
+        distance_m -> Float8,
+        elevation_gain_m -> Nullable<Float8>,
+        points -> Jsonb,
+        activity_id -> Nullable<Int8>,
+        created_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     sessions (token_hash) {
         token_hash -> Bytea,
         user_id -> Int8,
@@ -101,6 +115,7 @@ diesel::joinable!(activity_images -> activities (activity_id));
 diesel::joinable!(daily_metrics -> users (user_id));
 diesel::joinable!(garmin_documents -> users (user_id));
 diesel::joinable!(race_results -> activities (activity_id));
+diesel::joinable!(routes -> users (user_id));
 diesel::joinable!(sessions -> users (user_id));
 diesel::joinable!(track_points -> activities (activity_id));
 
@@ -110,6 +125,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     daily_metrics,
     garmin_documents,
     race_results,
+    routes,
     sessions,
     track_points,
     users,

@@ -412,6 +412,15 @@ fn parse_gpx(content: &[u8]) -> Result<Vec<Sample>> {
     parse_xml(content, b"trkpt", true).context("malformed GPX")
 }
 
+/// The points of a GPX file for a route: its track, or its route points if it has no track.
+pub fn parse_gpx_route(content: &[u8]) -> Result<Vec<Sample>> {
+    let mut samples = parse_gpx(content)?;
+    if !samples.iter().any(|sample| sample.position.is_some()) {
+        samples = parse_xml(content, b"rtept", true).context("malformed GPX")?;
+    }
+    Ok(samples)
+}
+
 fn parse_tcx(content: &[u8]) -> Result<Vec<Sample>> {
     parse_xml(content, b"Trackpoint", false).context("malformed TCX")
 }
