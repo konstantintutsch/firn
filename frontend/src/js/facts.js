@@ -83,7 +83,8 @@ export function weatherInfo(weather) {
 }
 
 function deviceName({ manufacturer, product }) {
-  return [manufacturer, product].filter(Boolean).map(spaced).join(" ").toUpperCase();
+  const brand = manufacturer && spaced(manufacturer).replace(/^./, (first) => first.toUpperCase());
+  return [brand, product && spaced(product).toUpperCase()].filter(Boolean).join(" ");
 }
 
 /** The watch and its sensors, like "Garmin fenix7" and "Heart rate sensor (Garmin hrm_pro)". */
