@@ -16,6 +16,7 @@ import zipfile
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 SEED = 7
@@ -24,107 +25,29 @@ PORT = 8000
 # The address the backend reaches this server at, for the photo links.
 PUBLIC_BASE = "http://fake-garmin:8000"
 
-def out_and_back(points):
-    """There and back the same way, as one closed route."""
-    return points + points[-2::-1]
+# Routes follow real streets and paths, see build_routes.py. Each is a list of
+# (latitude, longitude) points and ends where it starts.
+ROUTES = json.loads((Path(__file__).with_name("routes.json")).read_text())
 
-
-# Routes as waypoints, as (latitude, longitude). Loops end where they start.
 PLACES = {
     "Berlin": {
         "timezone": 1,
         "elevation": 40,
-        "routes": {
-            "Tiergarten": [
-                (52.5145, 13.3501), (52.5163, 13.3640), (52.5162, 13.3770), (52.5122, 13.3770),
-                (52.5095, 13.3650), (52.5098, 13.3480), (52.5120, 13.3390), (52.5145, 13.3501),
-            ],
-            "Tempelhofer Feld": [
-                (52.4805, 13.3905), (52.4810, 13.4040), (52.4770, 13.4170), (52.4690, 13.4150),
-                (52.4675, 13.4010), (52.4720, 13.3920), (52.4805, 13.3905),
-            ],
-            "Spree": [
-                (52.5190, 13.3700), (52.5205, 13.3900), (52.5170, 13.4080), (52.5110, 13.4200),
-                (52.5030, 13.4380), (52.4990, 13.4470), (52.5040, 13.4400), (52.5120, 13.4230),
-                (52.5180, 13.4090), (52.5212, 13.3880), (52.5190, 13.3700),
-            ],
-            "Grunewald": [
-                (52.4890, 13.2610), (52.4800, 13.2480), (52.4660, 13.2420), (52.4560, 13.2310),
-                (52.4480, 13.2450), (52.4600, 13.2620), (52.4760, 13.2700), (52.4890, 13.2610),
-            ],
-            "Landwehrkanal": out_and_back([
-                (52.5045, 13.3650), (52.5010, 13.3800), (52.4985, 13.3950), (52.4960, 13.4100),
-                (52.4930, 13.4250), (52.4950, 13.4350),
-            ]),
-            "Volkspark Friedrichshain": [
-                (52.5280, 13.4280), (52.5300, 13.4370), (52.5260, 13.4450), (52.5220, 13.4380),
-                (52.5235, 13.4300), (52.5280, 13.4280),
-            ],
-            "Treptower Park": [
-                (52.4930, 13.4600), (52.4900, 13.4720), (52.4840, 13.4800), (52.4820, 13.4700),
-                (52.4870, 13.4610), (52.4930, 13.4600),
-            ],
-            "Mauerweg": out_and_back([
-                (52.5440, 13.4020), (52.5400, 13.3960), (52.5350, 13.3890), (52.5300, 13.3820),
-                (52.5250, 13.3760),
-            ]),
-        },
-        # Long rides out of town and back. Runs never take them.
-        "rides": {
-            "Potsdam": out_and_back([
-                (52.5145, 13.3501), (52.4880, 13.2700), (52.4500, 13.2000), (52.4200, 13.1300),
-                (52.4000, 13.0600), (52.3950, 13.0450),
-            ]),
-            "Müggelsee": out_and_back([
-                (52.4900, 13.4700), (52.4600, 13.5500), (52.4450, 13.6300), (52.4350, 13.6600),
-                (52.4300, 13.6200),
-            ]),
-        },
         # How often each route is taken, so that the heat varies from street to street.
         "weights": {
-            "Tiergarten": 6, "Spree": 5, "Landwehrkanal": 4, "Tempelhofer Feld": 3,
-            "Volkspark Friedrichshain": 2, "Treptower Park": 2, "Mauerweg": 1, "Grunewald": 1,
+            "Tiergarten": 8, "Spree": 6, "Landwehrkanal": 5, "Tempelhofer Feld": 4,
+            "Volkspark Friedrichshain": 4, "Treptower Park": 3, "Mauerweg": 3, "Hasenheide": 3,
+            "Gleisdreieck": 3, "Prenzlauer Berg": 2, "Humboldthain": 2, "Schlachtensee": 1,
+            "Grunewald": 1,
         },
     },
-    "Hamburg": {
-        "timezone": 1,
-        "elevation": 25,
-        "routes": {
-            "Alster": [
-                (53.5560, 10.0010), (53.5620, 9.9970), (53.5700, 9.9990), (53.5770, 10.0040),
-                (53.5760, 10.0130), (53.5680, 10.0150), (53.5600, 10.0100), (53.5560, 10.0010),
-            ],
-            "Stadtpark": [
-                (53.5960, 10.0190), (53.5990, 10.0300), (53.5960, 10.0420), (53.5900, 10.0360),
-                (53.5910, 10.0230), (53.5960, 10.0190),
-            ],
-        },
-    },
-    "Munich": {
-        "timezone": 1,
-        "elevation": 520,
-        "routes": {
-            "Englischer Garten": [
-                (48.1450, 11.5880), (48.1530, 11.5930), (48.1620, 11.5960), (48.1720, 11.6020),
-                (48.1680, 11.6090), (48.1570, 11.6020), (48.1480, 11.5960), (48.1450, 11.5880),
-            ],
-            "Isar": [
-                (48.1300, 11.5780), (48.1220, 11.5700), (48.1100, 11.5600), (48.0980, 11.5480),
-                (48.1060, 11.5560), (48.1180, 11.5680), (48.1300, 11.5780),
-            ],
-        },
-    },
-    "Mallorca": {
-        "timezone": 1,
-        "elevation": 120,
-        "routes": {
-            "Tramuntana": [
-                (39.6950, 2.7900), (39.7300, 2.7200), (39.7700, 2.7100), (39.7900, 2.6900),
-                (39.7600, 2.6500), (39.7100, 2.6700), (39.6950, 2.7900),
-            ],
-        },
-    },
+    "Hamburg": {"timezone": 1, "elevation": 25},
+    "Munich": {"timezone": 1, "elevation": 520},
+    "Mallorca": {"timezone": 1, "elevation": 120},
 }
+for _city, _place in PLACES.items():
+    _place["routes"] = ROUTES[_city]["routes"]
+    _place["rides"] = ROUTES[_city]["rides"]
 
 # Activity types with GPS: (type, share, speed in m/s, distance range in km).
 GPS_TYPES = [
@@ -155,23 +78,6 @@ FIT_EPOCH = datetime(1989, 12, 31, tzinfo=timezone.utc)
 # --- Geometry -----------------------------------------------------------------
 
 
-def catmull_rom(points, steps=24):
-    """A smooth closed curve through the waypoints."""
-    smooth = []
-    count = len(points) - 1
-    for index in range(count):
-        p0, p1, p2, p3 = (points[(index + offset) % count] for offset in (-1, 0, 1, 2))
-        for step in range(steps):
-            t = step / steps
-            smooth.append(tuple(
-                0.5 * (2 * p1[axis] + (-p0[axis] + p2[axis]) * t
-                       + (2 * p0[axis] - 5 * p1[axis] + 4 * p2[axis] - p3[axis]) * t * t
-                       + (-p0[axis] + 3 * p1[axis] - 3 * p2[axis] + p3[axis]) * t ** 3)
-                for axis in (0, 1)
-            ))
-    return smooth
-
-
 def meters(a, b):
     lat = math.radians((a[0] + b[0]) / 2)
     dy = (b[0] - a[0]) * 111_320
@@ -180,9 +86,13 @@ def meters(a, b):
 
 
 def walk(loop, distance, rng):
-    """Positions every meter along `loop`, round and round, for `distance` meters."""
-    offset_lat = rng.uniform(-0.00008, 0.00008)
-    offset_lon = rng.uniform(-0.00012, 0.00012)
+    """Positions every meter along `loop`, round and round, for `distance` meters.
+
+    The positions are slightly off the street, like a watch records them: a
+    constant offset per run plus a slow wobble.
+    """
+    offset = (rng.gauss(0, 1.0), rng.gauss(0, 1.0))
+    wobble = [0.0, 0.0]
     reverse = rng.random() < 0.5
     loop = list(reversed(loop)) if reverse else loop
     start = rng.randrange(len(loop))
@@ -196,7 +106,12 @@ def walk(loop, distance, rng):
         if step < 1e-6:
             index += 1
             continue
-        yield (current[0] + offset_lat, current[1] + offset_lon), position
+        # North and east in meters, correlated from one meter to the next.
+        wobble = [0.9 * value + rng.gauss(0, 0.55) for value in wobble]
+        north = offset[0] + wobble[0]
+        east = offset[1] + wobble[1]
+        yield (current[0] + north / 111_320,
+               current[1] + east / (111_320 * math.cos(math.radians(current[0])))), position
         fraction = min(1.0, 1.0 / step)
         current = (current[0] + (target[0] - current[0]) * fraction,
                    current[1] + (target[1] - current[1]) * fraction)
@@ -311,13 +226,8 @@ def make_activities(today):
     route_points = {
         (city, name): points
         for city, place in PLACES.items()
-        for name, points in {**place["routes"], **place.get("rides", {})}.items()
+        for name, points in {**place["routes"], **place["rides"]}.items()
     }
-
-    def varied(key):
-        """The route with each waypoint moved a little, like a slightly different way each time."""
-        points = [(lat + rng.gauss(0, 0.0006), lon + rng.gauss(0, 0.0009)) for lat, lon in route_points[key][:-1]]
-        return catmull_rom(points + points[:1])
 
     activities = []
     files = {}
@@ -328,7 +238,7 @@ def make_activities(today):
     for offset in range(DAYS + 1):
         day = start_day + timedelta(days=offset)
         progress = offset / DAYS
-        if rng.random() > 0.42:
+        if rng.random() > 0.9:
             continue
         next_id += rng.randrange(1000, 90000)
         # Mostly Berlin, with trips to the other places.
@@ -371,7 +281,7 @@ def make_activities(today):
         speed *= 0.92 + 0.12 * progress + rng.uniform(-0.05, 0.05)
         distance = rng.uniform(*km) * 1000
         name = f"{city} {typename(activity_type)}"
-        samples = track(varied((city, route)), distance, speed, started, place["elevation"], activity_type, progress, rng)
+        samples = track(route_points[(city, route)], distance, speed, started, place["elevation"], activity_type, progress, rng)
         summary = base_summary(next_id, activity_type, name, local, started, samples[-1]["elapsed"])
         summary.update(track_summary(samples, activity_type, progress, rng))
         summary["locationName"] = city

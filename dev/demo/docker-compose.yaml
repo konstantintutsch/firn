@@ -23,6 +23,7 @@ services:
     command: [python, -u, /app/fake_garmin.py]
     volumes:
       - ./fake_garmin.py:/app/fake_garmin.py:ro
+      - ./routes.json:/app/routes.json:ro
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/fitnessage-service/fitnessage/v2/x')"]
       interval: 2s
