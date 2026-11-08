@@ -1,6 +1,7 @@
 import { activityDetails, activityTitle, plural, requireAccount, setUpSync, t, typeName } from "/js/account.js";
 import { language } from "/js/i18n.js";
 import { setUpFilters } from "/js/filters.js";
+import { trackPreview } from "/js/preview.js";
 import { distanceUnit, toDistance } from "/js/units.js";
 
 const PAGE_SIZE = 50;
@@ -136,7 +137,15 @@ function listItem(activity) {
   type.textContent = activity.bounds ? typeName(activity.activity_type) : `${typeName(activity.activity_type)} · ${t("No GPS track")}`;
   const details = document.createElement("small");
   details.textContent = activityDetails(activity);
-  entry.append(title, type, details);
+  if (activity.preview) {
+    // The picture beside the text.
+    const text = document.createElement("span");
+    text.append(title, type, details);
+    entry.classList.add("has-preview");
+    entry.append(trackPreview(activity.preview), text);
+  } else {
+    entry.append(title, type, details);
+  }
   item.append(entry);
   return item;
 }

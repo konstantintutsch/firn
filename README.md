@@ -178,7 +178,7 @@ Garmin keeps updating them. Server errors and short rate limits are retried.
 ## Import and export
 
 **Settings → Export** downloads one ZIP with every activity, its file, details
-and photos, all routes and all health data. **Import ZIP** restores such an export, here or
+and photos, all routes and all health data. **Import** restores such an export, here or
 in another Runmap.
 
 Import also takes a ZIP of FIT, GPX or TCX files, also inside ZIPs of their own

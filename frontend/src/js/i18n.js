@@ -133,7 +133,7 @@ const GERMAN = {
   "Import also takes a ZIP of FIT, GPX or TCX files from other apps and devices.":
     "Der Import nimmt auch ein ZIP mit FIT-, GPX- oder TCX-Dateien von anderen Apps und Geräten.",
   Export: "Exportieren",
-  "Import ZIP": "ZIP importieren",
+  Import: "Importieren",
   "Uploading…": "Wird hochgeladen…",
   "Importing…": "Wird importiert…",
   "Could not import the file.": "Die Datei konnte nicht importiert werden.",

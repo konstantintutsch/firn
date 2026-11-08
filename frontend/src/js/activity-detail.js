@@ -303,7 +303,7 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
       });
       if (response.ok) {
         const route = await response.json();
-        location.href = `/routes/?${new URLSearchParams({ route: route.id })}`;
+        location.href = `/?${new URLSearchParams({ route: route.id })}`;
         return;
       }
       statusElement.textContent = await errorMessage(response, t("Could not save the route."));
@@ -562,9 +562,9 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     const gpx = samples.position != null && originalFormat !== "gpx";
     document.querySelector("#detail-gpx").hidden = !gpx;
     document.querySelector("#detail-download-more").hidden = !gpx;
-    // Imported files have negative IDs, since Garmin does not know them.
-    const fromGarmin = activity.id > 0;
-    document.querySelector("#detail-garmin").href = `https://connect.garmin.com/modern/activity/${activity.id}`;
+    // Imported files have negative Garmin IDs, since Garmin does not know them.
+    const fromGarmin = activity.garmin_id > 0;
+    document.querySelector("#detail-garmin").href = `https://connect.garmin.com/modern/activity/${activity.garmin_id}`;
     document.querySelector("#detail-garmin").hidden = !fromGarmin;
     document.querySelector("#detail-resync").hidden = !fromGarmin;
     // A route needs positions.

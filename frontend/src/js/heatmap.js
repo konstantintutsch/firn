@@ -56,6 +56,7 @@ const PLACE_ZOOM = 14;
 const FIT_PADDING = 60;
 /** Phones show the panel across the top of the map instead of beside it. */
 const phone = matchMedia("(max-width: 640px)");
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NOT_LOADED = "Could not load activities. Is the API running?";
 /** The controls' texts that MapLibre lets us replace. */
 const MAP_TEXTS = {
@@ -253,7 +254,7 @@ async function showLinkedActivity() {
   }
   const id = params.get("activity");
   if (!id) return;
-  if (/^-?\d+$/.test(id)) select({ id: Number(id) }, { fit: true });
+  if (UUID.test(id)) select({ id }, { fit: true });
   else showStatus(t("Could not find this activity."));
 }
 
