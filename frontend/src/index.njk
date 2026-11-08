@@ -108,11 +108,11 @@
             </div>
           </div>
           <p id="route-description" class="detail-description"></p>
-          <div class="panel-actions">
+          <div class="detail-actions">
             <a id="route-download" class="panel-button" download>{% icon "download" %}<span>GPX</span></a>
-            <a id="route-activity" class="panel-button" hidden data-i18n>Activity</a>
-            <button id="route-edit" class="panel-button" type="button" data-i18n>Edit</button>
-            <button id="route-delete" class="panel-button danger-button" type="button" data-i18n>Delete</button>
+            <a id="route-activity" class="panel-button" hidden aria-label="Activity" title="Activity" data-i18n-attrs="aria-label title">{% icon "list" %}</a>
+            <button id="route-edit" class="panel-button" type="button" aria-label="Edit" title="Edit" data-i18n-attrs="aria-label title">{% icon "edit" %}</button>
+            <button id="route-delete" class="panel-button danger-button" type="button" aria-label="Delete" title="Delete" data-i18n-attrs="aria-label title">{% icon "trash" %}</button>
           </div>
           <form id="route-form" class="route-form" hidden>
             <label><span data-i18n>Name</span>
