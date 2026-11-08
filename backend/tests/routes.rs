@@ -144,9 +144,12 @@ async fn imports_a_gpx_file_as_a_route() {
     // Up 6 m is above the noise. Down again does not count.
     assert_eq!(route["elevation_gain_m"], 6.0);
 
-    let detail = get(&pool, &format!("/api/routes/{}", route["id"]))
-        .await
-        .json();
+    let detail = get(
+        &pool,
+        &format!("/api/routes/{}", route["id"].as_str().unwrap()),
+    )
+    .await
+    .json();
     assert_eq!(detail["points"].as_array().unwrap().len(), 3);
     assert_eq!(detail["points"][1], json!([52.53, 13.4, 40.0]));
 }
@@ -218,7 +221,7 @@ async fn an_activity_without_a_file_or_an_owner_makes_no_route() {
 async fn renames_and_deletes_a_route() {
     let pool = common::test_pool().await;
     let id = import(&pool, "/api/routes/import", GPX).await.json()["id"].clone();
-    let uri = format!("/api/routes/{id}");
+    let uri = format!("/api/routes/{}", id.as_str().unwrap());
 
     let reply = send(
         &pool,
@@ -256,7 +259,9 @@ async fn deleting_the_activity_keeps_the_route() {
         .execute(&mut pool.get().await.unwrap())
         .await
         .unwrap();
-    let route = get(&pool, &format!("/api/routes/{id}")).await.json();
+    let route = get(&pool, &format!("/api/routes/{}", id.as_str().unwrap()))
+        .await
+        .json();
     assert_eq!(route["activity_id"], Value::Null);
 }
 
@@ -267,7 +272,7 @@ async fn downloads_a_route_as_gpx() {
         .await
         .json()["id"]
         .clone();
-    let reply = get(&pool, &format!("/api/routes/{id}/file")).await;
+    let reply = get(&pool, &format!("/api/routes/{}/file", id.as_str().unwrap())).await;
     assert_eq!(reply.status, StatusCode::OK);
     let gpx = String::from_utf8(reply.body).unwrap();
     assert!(gpx.contains("<name>Canal</name>"));
@@ -281,7 +286,7 @@ async fn accounts_see_only_their_own_routes() {
     let id = import(&pool, "/api/routes/import", GPX).await.json()["id"].clone();
     let other = common::user_named(&pool, "other").await;
     let cookie = common::cookie_for(&pool, other).await;
-    let uri = format!("/api/routes/{id}");
+    let uri = format!("/api/routes/{}", id.as_str().unwrap());
 
     let list = call(
         &pool,
@@ -327,4 +332,20 @@ async fn changes_need_the_header_and_a_session() {
     assert_eq!(reply.status, StatusCode::FORBIDDEN);
     let reply = call(&pool, None, "GET", "/api/routes", false, Body::empty()).await;
     assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn routes_have_random_ids_and_a_small_preview() {
+    let pool = common::test_pool().await;
+    let first = import(&pool, "/api/routes/import", GPX).await.json();
+    let second = import(&pool, "/api/routes/import", GPX).await.json();
+    let id = |route: &Value| route["id"].as_str().unwrap().parse::<uuid::Uuid>().unwrap();
+    assert_ne!(id(&first), id(&second));
+    assert_eq!(
+        first["preview"],
+        json!([[52.52, 13.4], [52.53, 13.4], [52.54, 13.4]])
+    );
+
+    let reply = get(&pool, "/api/routes/1").await;
+    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
 }

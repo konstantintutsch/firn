@@ -7,6 +7,7 @@
 //!   the list of images,
 //! - `activities/<id>/original.zip`, the file as Garmin sent it,
 //! - `activities/<id>/images/<n>`, the photos in the order of the list,
+//! - `routes/<id>.json`, one saved route with its points,
 //! - `health.jsonl`, one Garmin health document per line.
 //!
 //! Both run on a blocking thread, since ZIP files are read and written
@@ -28,6 +29,7 @@ use zip::{ZipArchive, ZipWriter};
 use crate::db::{self, Pool};
 use crate::files::FileStore;
 use crate::garmin::Activity;
+use crate::routes;
 use crate::secret;
 use crate::track::{self, Point, Sample};
 use crate::wellness::KINDS;
@@ -130,6 +132,11 @@ pub fn export(
         }
     }
 
+    for route in handle.block_on(db::route_records(pool, user_id))? {
+        zip.start_file(format!("routes/{}.json", route.id), deflated)?;
+        serde_json::to_writer(&mut zip, &route)?;
+    }
+
     zip.start_file("health.jsonl", deflated)?;
     let mut after = None;
     loop {
@@ -151,12 +158,14 @@ pub fn export(
 pub struct ImportReport {
     /// Activities that were saved or updated.
     pub activities: usize,
-    /// Activities that another account saved already, which stay with it.
+    /// Activities and routes that another account saved already, which stay with it.
     pub skipped: usize,
     /// Files that could not be read, like broken ones or ones without a time.
     pub failed: usize,
     /// Health documents, like a day of sleep.
     pub health_documents: usize,
+    /// Routes that were saved or updated.
+    pub routes: usize,
 }
 
 /// Imports a Runmap export, or a ZIP with FIT, GPX or TCX files, which may also
@@ -216,6 +225,22 @@ impl Import<'_> {
                 }
             }
         }
+        let route_files: Vec<String> = archive
+            .file_names()
+            .filter_map(Result::ok)
+            .filter(|name| name.starts_with("routes/") && name.ends_with(".json"))
+            .map(|name| name.into_owned())
+            .collect();
+        for name in route_files {
+            match self.import_exported_route(archive, &name) {
+                Ok(true) => report.routes += 1,
+                Ok(false) => report.skipped += 1,
+                Err(error) => {
+                    tracing::warn!(name, "could not import: {error:#}");
+                    report.failed += 1;
+                }
+            }
+        }
         if archive.index_for_name("health.jsonl").is_some() {
             let lines = read_entry(archive, "health.jsonl")?;
             for line in lines.split(|byte| *byte == b'\n') {
@@ -229,6 +254,19 @@ impl Import<'_> {
             }
         }
         Ok(report)
+    }
+
+    /// False if another account has this route.
+    fn import_exported_route(&self, archive: &mut ZipArchive<File>, name: &str) -> Result<bool> {
+        let mut route: db::RouteRecord = serde_json::from_slice(&read_entry(archive, name)?)?;
+        let points: Vec<(f64, f64, Option<f64>)> = serde_json::from_value(route.points)?;
+        let prepared = routes::prepare(points).map_err(|error| anyhow::anyhow!("{error:?}"))?;
+        route.points = serde_json::to_value(&prepared.points)?;
+        route.distance_m = prepared.distance_m;
+        route.elevation_gain_m = prepared.elevation_gain_m;
+        let preview = serde_json::to_value(&prepared.preview)?;
+        self.handle
+            .block_on(db::import_route(self.pool, self.user_id, &route, &preview))
     }
 
     /// False if another account has this activity.

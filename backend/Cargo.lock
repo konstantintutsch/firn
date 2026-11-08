@@ -588,6 +588,7 @@ dependencies = [
  "downcast-rs",
  "itoa",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -1968,6 +1969,7 @@ dependencies = [
  "tracing-subscriber",
  "utoipa",
  "utoipa-swagger-ui",
+ "uuid",
  "wiremock",
  "zip",
 ]
@@ -2788,6 +2790,7 @@ dependencies = [
  "quote",
  "regex",
  "syn 3.0.9",
+ "uuid",
 ]
 
 [[package]]
@@ -2813,6 +2816,17 @@ name = "utoipa-swagger-ui-vendored"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "552a64d6a0d251ae28bc021838800943cce60c9ec2e60ff331f54e79f696268f"
+
+[[package]]
+name = "uuid"
+version = "1.29.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a06f08a856b009bc7bbaf7d3e79808595d032dd19074c0c2ef26e49e03e6bdc"
+dependencies = [
+ "js-sys",
+ "serde_core",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "valuable"

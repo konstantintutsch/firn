@@ -130,6 +130,11 @@ async fn an_export_restores_everything_in_another_runmap() {
         Request::put("/api/activities/7/result").header("content-type", "application/json");
     let (status, _) = send(&source, request, Body::from(result.to_string())).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
+    let route = json!({"activity_id": 7});
+    let request = Request::post("/api/routes").header("content-type", "application/json");
+    let (status, body) = send(&source, request, Body::from(route.to_string())).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let route: Value = serde_json::from_slice(&body).unwrap();
     let (status, zip) = send(&source, Request::get("/api/export"), Body::empty()).await;
     assert_eq!(status, StatusCode::OK);
 
@@ -139,6 +144,7 @@ async fn an_export_restores_everything_in_another_runmap() {
     assert_eq!(status, StatusCode::OK, "{report}");
     assert_eq!(report["activities"], 1);
     assert_eq!(report["failed"], 0);
+    assert_eq!(report["routes"], 1);
     assert!(report["health_documents"].as_u64().unwrap() > 0);
 
     assert_eq!(activity_ids(&pool).await, [7]);
@@ -160,9 +166,23 @@ async fn an_export_restores_everything_in_another_runmap() {
     let health: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(health["metrics"]["sleep_h"][0][1], 7.5);
 
-    // Importing again changes nothing, and another account cannot take the activity.
+    // The route keeps its ID, its activity and its points.
+    let uri = format!("/api/routes/{}", route["id"].as_str().unwrap());
+    let (status, body) = send(&target, Request::get(&uri), Body::empty()).await;
+    assert_eq!(status, StatusCode::OK);
+    let imported: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(imported["id"], route["id"]);
+    assert_eq!(imported["activity_id"], 7);
+    assert_eq!(imported["created_at"], route["created_at"]);
+    assert_eq!(imported["points"].as_array().unwrap().len(), 2);
+    assert_eq!(imported["preview"].as_array().unwrap().len(), 2);
+
+    // Importing again changes nothing, and another account cannot take the activity or the route.
     assert_eq!(import(&target, zip.clone()).await.1["activities"], 1);
     assert_eq!(activity_ids(&pool).await, [7]);
+    let (_, body) = send(&target, Request::get("/api/routes"), Body::empty()).await;
+    let list: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(list["routes"].as_array().unwrap().len(), 1);
     let other = common::user_named(&pool, "other").await;
     let request = Request::post("/api/import")
         .header("cookie", common::cookie_for(&pool, other).await)
@@ -175,7 +195,7 @@ async fn an_export_restores_everything_in_another_runmap() {
     let report: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(
         (report["activities"].clone(), report["skipped"].clone()),
-        (json!(0), json!(1))
+        (json!(0), json!(2))
     );
 }
 
@@ -194,7 +214,7 @@ async fn imports_loose_files_once() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         report,
-        json!({"activities": 1, "skipped": 0, "failed": 1, "health_documents": 0})
+        json!({"activities": 1, "skipped": 0, "failed": 1, "health_documents": 0, "routes": 0})
     );
     let ids = activity_ids(&pool).await;
     assert_eq!(ids.len(), 1);

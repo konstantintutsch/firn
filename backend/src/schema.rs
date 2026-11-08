@@ -55,7 +55,7 @@ diesel::table! {
 
 diesel::table! {
     routes (id) {
-        id -> Int8,
+        id -> Uuid,
         user_id -> Int8,
         name -> Text,
         description -> Nullable<Text>,
@@ -64,6 +64,7 @@ diesel::table! {
         points -> Jsonb,
         activity_id -> Nullable<Int8>,
         created_at -> Timestamptz,
+        preview -> Jsonb,
     }
 }
 

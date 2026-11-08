@@ -7,6 +7,7 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
 
 use crate::api::{ApiError, AppState, ErrorBody, require_header};
 use crate::auth::CurrentUser;
@@ -17,6 +18,8 @@ use crate::track::{self, Point, Sample};
 pub const MAX_GPX_BYTES: usize = 32 * 1024 * 1024;
 /// Enough to follow a route on a map, and few enough to keep the answer small.
 const MAX_POINTS: usize = 5000;
+/// Points of the small picture of a route.
+const PREVIEW_POINTS: usize = 64;
 const MAX_NAME_CHARS: usize = 200;
 const MAX_DESCRIPTION_CHARS: usize = 5000;
 /// Smaller changes of elevation count as noise, which would otherwise add up to a climb.
@@ -122,15 +125,47 @@ fn elevation_gain(points: &[RoutePoint]) -> Option<f64> {
     Some(gain)
 }
 
-/// At most `MAX_POINTS` points, evenly spread, always with the first and the last.
-fn thin(points: Vec<RoutePoint>) -> Vec<RoutePoint> {
-    if points.len() <= MAX_POINTS {
-        return points;
+/// At most `max` points, evenly spread, always with the first and the last.
+fn spread(points: &[RoutePoint], max: usize) -> Vec<RoutePoint> {
+    if points.len() <= max {
+        return points.to_vec();
     }
     let last = points.len() - 1;
-    (0..MAX_POINTS)
-        .map(|index| points[index * last / (MAX_POINTS - 1)])
+    (0..max)
+        .map(|index| points[index * last / (max - 1)])
         .collect()
+}
+
+/// What a route is saved with, worked out from its points.
+pub struct Prepared {
+    pub points: Vec<RoutePoint>,
+    pub distance_m: f64,
+    pub elevation_gain_m: Option<f64>,
+    /// `[latitude, longitude]` of a few points.
+    pub preview: Vec<[f64; 2]>,
+}
+
+/// Checks the points of a route that came from outside, and thins them.
+pub fn prepare(points: Vec<RoutePoint>) -> Result<Prepared, ApiError> {
+    if points.len() < 2 {
+        return Err(ApiError::BadRequest("the track has fewer than two points"));
+    }
+    if points
+        .iter()
+        .any(|(lat, lon, _)| !(-90.0..=90.0).contains(lat) || !(-180.0..=180.0).contains(lon))
+    {
+        return Err(ApiError::BadRequest("a point is out of range"));
+    }
+    let points = spread(&points, MAX_POINTS);
+    Ok(Prepared {
+        distance_m: distance(&points),
+        elevation_gain_m: elevation_gain(&points),
+        preview: spread(&points, PREVIEW_POINTS)
+            .into_iter()
+            .map(|(lat, lon, _)| [lat, lon])
+            .collect(),
+        points,
+    })
 }
 
 /// The samples with a position, as route points.
@@ -146,10 +181,7 @@ fn route_points(samples: &[Sample]) -> Result<Vec<RoutePoint>, ApiError> {
             ))
         })
         .collect();
-    if points.len() < 2 {
-        return Err(ApiError::BadRequest("the track has fewer than two points"));
-    }
-    Ok(thin(points))
+    Ok(points)
 }
 
 async fn save(
@@ -160,13 +192,15 @@ async fn save(
     points: Vec<RoutePoint>,
     activity_id: Option<i64>,
 ) -> Result<RouteSummary, ApiError> {
+    let prepared = prepare(points)?;
     let route = NewRoute {
         user_id,
         name,
         description,
-        distance_m: distance(&points),
-        elevation_gain_m: elevation_gain(&points),
-        points: &serde_json::to_value(&points).map_err(anyhow::Error::from)?,
+        distance_m: prepared.distance_m,
+        elevation_gain_m: prepared.elevation_gain_m,
+        points: &serde_json::to_value(&prepared.points).map_err(anyhow::Error::from)?,
+        preview: &serde_json::to_value(&prepared.preview).map_err(anyhow::Error::from)?,
         activity_id,
     };
     Ok(db::insert_route(&state.pool, &route).await?)
@@ -282,7 +316,7 @@ pub async fn import_route(
 #[utoipa::path(
     get,
     path = "/api/routes/{id}",
-    params(("id" = i64, Path, description = "The route's ID")),
+    params(("id" = Uuid, Path, description = "The route's ID")),
     responses(
         (status = 200, body = RouteDetail),
         (status = 401, description = "Not signed in", body = ErrorBody),
@@ -292,7 +326,7 @@ pub async fn import_route(
 pub async fn route(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Path(id): Path<i64>,
+    Path(id): Path<Uuid>,
 ) -> Result<Json<RouteDetail>, ApiError> {
     let (route, points) = db::route(&state.pool, user.id, id)
         .await?
@@ -307,7 +341,7 @@ pub async fn route(
 #[utoipa::path(
     put,
     path = "/api/routes/{id}",
-    params(("id" = i64, Path, description = "The route's ID")),
+    params(("id" = Uuid, Path, description = "The route's ID")),
     request_body = RouteChange,
     responses(
         (status = 204, description = "Saved"),
@@ -320,7 +354,7 @@ pub async fn route(
 pub async fn update_route(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Path(id): Path<i64>,
+    Path(id): Path<Uuid>,
     headers: HeaderMap,
     Json(change): Json<RouteChange>,
 ) -> Result<StatusCode, ApiError> {
@@ -340,7 +374,7 @@ pub async fn update_route(
 #[utoipa::path(
     delete,
     path = "/api/routes/{id}",
-    params(("id" = i64, Path, description = "The route's ID")),
+    params(("id" = Uuid, Path, description = "The route's ID")),
     responses(
         (status = 204, description = "Deleted, or there was none"),
         (status = 401, description = "Not signed in", body = ErrorBody),
@@ -350,7 +384,7 @@ pub async fn update_route(
 pub async fn delete_route(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Path(id): Path<i64>,
+    Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<StatusCode, ApiError> {
     require_header(&headers)?;
@@ -362,7 +396,7 @@ pub async fn delete_route(
 #[utoipa::path(
     get,
     path = "/api/routes/{id}/file",
-    params(("id" = i64, Path, description = "The route's ID")),
+    params(("id" = Uuid, Path, description = "The route's ID")),
     responses(
         (status = 200, description = "The GPX file, as an attachment", content_type = "application/gpx+xml"),
         (status = 401, description = "Not signed in", body = ErrorBody),
@@ -372,7 +406,7 @@ pub async fn delete_route(
 pub async fn route_file(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Path(id): Path<i64>,
+    Path(id): Path<Uuid>,
 ) -> Result<Response, ApiError> {
     let (route, points) = db::route(&state.pool, user.id, id)
         .await?
@@ -426,7 +460,7 @@ mod tests {
         let points: Vec<RoutePoint> = (0..20_000)
             .map(|index| (f64::from(index), 0.0, None))
             .collect();
-        let thinned = thin(points);
+        let thinned = spread(&points, MAX_POINTS);
         assert_eq!(thinned.len(), MAX_POINTS);
         assert_eq!(thinned[0].0, 0.0);
         assert_eq!(thinned[MAX_POINTS - 1].0, 19_999.0);

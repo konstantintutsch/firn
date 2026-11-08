@@ -12,6 +12,7 @@ use diesel_async::pooled_connection::deadpool;
 use diesel_async::{AsyncConnection, AsyncMigrationHarness, AsyncPgConnection, RunQueryDsl};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::files::FileStore;
 use crate::garmin::Activity;
@@ -1333,7 +1334,7 @@ mod tests {
 #[derive(Debug, Queryable, Selectable, serde::Serialize, utoipa::ToSchema)]
 #[diesel(table_name = routes)]
 pub struct RouteSummary {
-    pub id: i64,
+    pub id: Uuid,
     pub name: String,
     pub description: Option<String>,
     pub distance_m: f64,
@@ -1341,6 +1342,9 @@ pub struct RouteSummary {
     /// The activity that the route was made from, if it still exists.
     pub activity_id: Option<i64>,
     pub created_at: DateTime<Utc>,
+    /// About 64 points along the route, as `[latitude, longitude]`, to draw a small picture of it.
+    #[schema(value_type = Vec<Vec<f64>>)]
+    pub preview: Value,
 }
 
 #[derive(Insertable)]
@@ -1352,6 +1356,7 @@ pub struct NewRoute<'a> {
     pub distance_m: f64,
     pub elevation_gain_m: Option<f64>,
     pub points: &'a Value,
+    pub preview: &'a Value,
     pub activity_id: Option<i64>,
 }
 
@@ -1374,7 +1379,7 @@ pub async fn list_routes(pool: &Pool, user_id: i64) -> Result<Vec<RouteSummary>>
 }
 
 /// One route of the account, with its points.
-pub async fn route(pool: &Pool, user_id: i64, id: i64) -> Result<Option<(RouteSummary, Value)>> {
+pub async fn route(pool: &Pool, user_id: i64, id: Uuid) -> Result<Option<(RouteSummary, Value)>> {
     Ok(routes::table
         .filter(routes::user_id.eq(user_id))
         .filter(routes::id.eq(id))
@@ -1388,7 +1393,7 @@ pub async fn route(pool: &Pool, user_id: i64, id: i64) -> Result<Option<(RouteSu
 pub async fn update_route(
     pool: &Pool,
     user_id: i64,
-    id: i64,
+    id: Uuid,
     name: &str,
     description: Option<&str>,
 ) -> Result<bool> {
@@ -1404,7 +1409,7 @@ pub async fn update_route(
 }
 
 /// Removes a route of the account.
-pub async fn delete_route(pool: &Pool, user_id: i64, id: i64) -> Result<()> {
+pub async fn delete_route(pool: &Pool, user_id: i64, id: Uuid) -> Result<()> {
     diesel::delete(
         routes::table
             .filter(routes::user_id.eq(user_id))
@@ -1413,4 +1418,80 @@ pub async fn delete_route(pool: &Pool, user_id: i64, id: i64) -> Result<()> {
     .execute(&mut pool.get().await?)
     .await?;
     Ok(())
+}
+
+/// A route as an export holds it.
+#[derive(Debug, Queryable, Selectable, serde::Serialize, serde::Deserialize)]
+#[diesel(table_name = routes)]
+pub struct RouteRecord {
+    pub id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub distance_m: f64,
+    pub elevation_gain_m: Option<f64>,
+    pub points: Value,
+    pub activity_id: Option<i64>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// All of the account's routes, oldest first.
+pub async fn route_records(pool: &Pool, user_id: i64) -> Result<Vec<RouteRecord>> {
+    Ok(routes::table
+        .filter(routes::user_id.eq(user_id))
+        .order((routes::created_at.asc(), routes::id.asc()))
+        .select(RouteRecord::as_select())
+        .load(&mut pool.get().await?)
+        .await?)
+}
+
+/// Saves a route from an export under its own ID, replacing an earlier import of
+/// it. False if another account has a route with this ID. The route keeps its
+/// activity only if the account has that activity.
+pub async fn import_route(
+    pool: &Pool,
+    user_id: i64,
+    route: &RouteRecord,
+    preview: &Value,
+) -> Result<bool> {
+    let mut connection = pool.get().await?;
+    let owner: Option<i64> = routes::table
+        .find(route.id)
+        .select(routes::user_id)
+        .first(&mut connection)
+        .await
+        .optional()?;
+    if owner.is_some_and(|owner| owner != user_id) {
+        return Ok(false);
+    }
+    let activity_id = match route.activity_id {
+        Some(id) => diesel::select(exists(
+            activities::table
+                .find(id)
+                .filter(activities::user_id.eq(user_id)),
+        ))
+        .get_result::<bool>(&mut connection)
+        .await?
+        .then_some(id),
+        None => None,
+    };
+    let row = (
+        routes::id.eq(route.id),
+        routes::user_id.eq(user_id),
+        routes::name.eq(&route.name),
+        routes::description.eq(&route.description),
+        routes::distance_m.eq(route.distance_m),
+        routes::elevation_gain_m.eq(route.elevation_gain_m),
+        routes::points.eq(&route.points),
+        routes::preview.eq(preview),
+        routes::activity_id.eq(activity_id),
+        routes::created_at.eq(route.created_at),
+    );
+    diesel::insert_into(routes::table)
+        .values(row)
+        .on_conflict(routes::id)
+        .do_update()
+        .set(row)
+        .execute(&mut connection)
+        .await?;
+    Ok(true)
 }
