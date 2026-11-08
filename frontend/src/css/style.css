@@ -1268,6 +1268,11 @@ a {
   font-size: 13px;
 }
 
+/* The text of a button that is a file field stays the color of its fill. */
+.settings-page .primary-button.file-button {
+  color: var(--accent-ink);
+}
+
 #import-message {
   margin: 10px 0 0;
   font-size: 13px;
