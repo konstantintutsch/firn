@@ -1,13 +1,12 @@
 /** The panel and the line on the map for one saved route, shown like an activity. */
 
 import * as maplibregl from "/vendor/maplibre-gl.mjs";
-import { currentTheme, errorMessage, send, t } from "/js/account.js";
+import { accentColor, errorMessage, send, t } from "/js/account.js";
 import { language } from "/js/i18n.js";
 import { distanceUnit, elevationUnit, toDistance, toElevation } from "/js/units.js";
 
 const SOURCE_ID = "route";
 const LAYER_ID = "route-line";
-const COLORS = { light: "#d6246e", dark: "#fbd25d" };
 
 const decimals = (value) => value.toLocaleString(language, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
@@ -52,7 +51,7 @@ export function setUpRouteDetail(map, { heatLayers, beforeLayer, fitPadding, onC
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
           "line-width": ["interpolate", ["linear"], ["zoom"], 8, 2.5, 16, 5],
-          "line-color": COLORS[currentTheme()],
+          "line-color": accentColor(),
         },
       },
       beforeLayer(),

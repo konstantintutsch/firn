@@ -1,10 +1,10 @@
 /**
  * The selected activity: its metrics, a profile to scrub along, and its track
- * on the map, colored by a metric instead of the heatmap if one is chosen.
+ * on the map, in the accent color or colored by a metric if one is chosen.
  */
 
 import { bars } from "/js/charts.js";
-import { activityDetails, errorMessage, send, t, typeName } from "/js/account.js";
+import { accentColor, activityDetails, errorMessage, send, t, typeName } from "/js/account.js";
 import { RACE_DISTANCES, duration, html, number, pace, raceDistanceName, unit } from "/js/format.js";
 import { profile } from "/js/profile.js";
 import { DISTANCE_M, distanceUnit, elevationUnit, speedUnit, toDistance, toElevation, toPace, toSpeed } from "/js/units.js";
@@ -342,7 +342,7 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
       type: "line",
       source: TRACK_SOURCE_ID,
       layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
-      paint: { "line-width": ["interpolate", ["linear"], ["zoom"], 8, 2.5, 16, 5] },
+      paint: { "line-width": ["interpolate", ["linear"], ["zoom"], 8, 2.5, 16, 5], "line-color": accentColor() },
     }, before);
     // Wide and invisible, so that the track is easy to point at.
     map.addLayer({
@@ -392,13 +392,17 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
   function applyColor() {
     if (!map.getLayer(TRACK_LAYER_ID)) return;
     const metric = detail ? metrics.find(({ key }) => key === colorKey) : null;
-    const colored = metric != null && detail.samples.position != null;
+    // The track hides the heat, which means nothing for one activity.
+    const hasTrack = detail?.samples.position != null;
+    const colored = metric != null && hasTrack;
     for (const id of heatLayers) {
-      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", colored ? "none" : "visible");
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", hasTrack ? "none" : "visible");
     }
-    map.setLayoutProperty(TRACK_LAYER_ID, "visibility", colored ? "visible" : "none");
+    map.setLayoutProperty(TRACK_LAYER_ID, "visibility", hasTrack ? "visible" : "none");
     if (!colored) {
-      legend.reset();
+      map.setPaintProperty(TRACK_LAYER_ID, "line-color", accentColor());
+      if (hasTrack) legend.hide();
+      else legend.reset();
       return;
     }
     // The middle 90% spreads over the colors, so that a few outliers do not flatten them.
@@ -614,7 +618,7 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
 
     colorField.hidden = metrics.length === 0 || samples.position == null;
     colorSelect.replaceChildren(
-      new Option(t("Heatmap"), "heat"),
+      new Option(t("Plain"), "heat"),
       ...metrics.map(({ key, label }) => new Option(t(label), key)),
     );
     if (!metrics.some(({ key }) => key === colorKey)) colorKey = "heat";

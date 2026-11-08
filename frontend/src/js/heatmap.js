@@ -125,6 +125,11 @@ const legend = {
     document.querySelector("#legend-high").textContent = high;
     legendElement.hidden = false;
   },
+  /** Shows no legend, for one activity in a single color. */
+  hide() {
+    this.isColored = true;
+    legendElement.hidden = true;
+  },
   reset() {
     this.isColored = false;
     document.querySelector("#legend-ramp").style.background = "";

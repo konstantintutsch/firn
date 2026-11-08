@@ -9,6 +9,9 @@ const THEME_STORAGE_KEY = "theme";
 const systemDark = matchMedia("(prefers-color-scheme: dark)");
 const themeListeners = [];
 
+/** The theme's accent color, as the page shows it now. */
+export const accentColor = () => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+
 export function currentTheme() {
   return document.documentElement.dataset.theme ?? (systemDark.matches ? "dark" : "light");
 }

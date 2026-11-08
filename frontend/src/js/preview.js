@@ -6,7 +6,7 @@
  */
 
 import * as maplibregl from "/vendor/maplibre-gl.mjs";
-import { currentTheme, onThemeChange } from "/js/account.js";
+import { accentColor, currentTheme, onThemeChange } from "/js/account.js";
 import { svgElement } from "/js/format.js";
 
 const WIDTH = 96;
@@ -115,9 +115,6 @@ async function drain() {
   }
   rendering = false;
 }
-
-/** The theme's accent color, as the page shows it now. */
-const accentColor = () => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
 
 function ready() {
   if (map != null) return current;

@@ -231,7 +231,7 @@ const GERMAN = {
   "Show all activities": "Alle Aktivitäten zeigen",
   Profile: "Profil",
   "Track color": "Farbe des Tracks",
-  Heatmap: "Heatmap",
+  Plain: "Einfarbig",
   "Fastest splits": "Schnellste Abschnitte",
   "Heart rate zones": "Herzfrequenzbereiche",
   "Zone {zone}": "Bereich {zone}",
