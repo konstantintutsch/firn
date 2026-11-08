@@ -11,8 +11,8 @@
 # - Variable PLATFORMS (optional): like linux/amd64,linux/arm64. Defaults to
 #   linux/amd64. Other platforms build under emulation, which is slow for Rust.
 #
-# Tags: the branch, the short commit, latest for main, and 1.2.3, 1.2 and 1
-# for a tag v1.2.3.
+# Tags: the branch, the short commit, and 1.2.3, 1.2, 1 and latest for a tag
+# v1.2.3. A prerelease tag like v1.2.3-rc.1 only gets 1.2.3-rc.1 and never latest.
 #
 # Gitea also offers the github context used below, which keeps actionlint working.
 
@@ -101,6 +101,8 @@ jobs:
         id: meta
         with:
           images: ${{ steps.name.outputs.image }}
+          # latest=auto: latest goes to stable version tags only.
+          flavor: latest=auto
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -108,7 +110,6 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=raw,value=latest,enable={{is_default_branch}}
 
       - uses: docker/setup-qemu-action@v3
         if: vars.PLATFORMS != '' && vars.PLATFORMS != 'linux/amd64'
