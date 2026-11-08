@@ -87,10 +87,9 @@ function deviceName({ manufacturer, product }) {
   return [brand, product && spaced(product)].filter(Boolean).join(" ");
 }
 
-/** The watch and the heart rate sensor, like "Garmin fenix7" and "Heart rate sensor (Garmin hrm_pro)". */
+/** The watch and its sensors, like "Garmin fenix7" and "Heart rate sensor (Garmin hrm_pro)". */
 export function devicesList(devices) {
   return (devices ?? [])
-    .filter((device) => device.creator || device.kind === "heart_rate")
     .map((device) => {
       const name = deviceName(device);
       if (device.creator || !device.kind) return name;

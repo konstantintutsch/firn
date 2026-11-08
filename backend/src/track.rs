@@ -153,8 +153,21 @@ pub struct Device {
     pub product: Option<String>,
     /// What it measures, like `heart_rate` or `bike_power`. Not set for the watch.
     pub kind: Option<String>,
-    pub serial_number: Option<u32>,
 }
+
+/// The types of device that a sensor can have, which the watch's own parts, like
+/// its barometer, GPS or sensor hub, do not.
+const SENSOR_KINDS: &[&str] = &[
+    "heart_rate",
+    "bike_power",
+    "bike_speed_cadence",
+    "bike_speed",
+    "bike_cadence",
+    "stride_speed_distance",
+    "footpod",
+    "muscle_oxygen",
+    "temperature",
+];
 
 /// The text of a FIT field that is not empty.
 fn text(value: &Value) -> Option<String> {
@@ -164,7 +177,9 @@ fn text(value: &Value) -> Option<String> {
     }
 }
 
-/// The watch and the sensors that a FIT file lists, each once, the watch first.
+/// The watch and the sensors that a FIT file lists, the watch first. A sensor has
+/// a product and one of the `SENSOR_KINDS`. Each product of a maker counts once,
+/// however many times or with whatever serial number the file lists it.
 /// Other formats list none.
 pub fn devices(zip: &[u8]) -> Result<Vec<Device>> {
     let (name, content) = original_file(zip)?;
@@ -202,19 +217,23 @@ pub fn devices(zip: &[u8]) -> Result<Vec<Device>> {
             "device_type",
         ])
         .filter(|_| !creator);
-        // Parts of the watch, like its battery, are listed too, without any of these.
-        if manufacturer.is_none() && product.is_none() && kind.is_none() {
+        // The watch lists its own parts too, like the barometer, and these have no product or type.
+        let is_sensor = kind
+            .as_deref()
+            .is_some_and(|kind| SENSOR_KINDS.contains(&kind));
+        if product.is_none() || !(creator || is_sensor) {
             continue;
         }
-        let device = Device {
-            creator,
-            manufacturer,
-            product,
-            kind,
-            serial_number: field(&["serial_number"]).and_then(|serial| serial.parse().ok()),
-        };
-        if !devices.contains(&device) {
-            devices.push(device);
+        let known = devices
+            .iter()
+            .any(|device| device.manufacturer == manufacturer && device.product == product);
+        if !known {
+            devices.push(Device {
+                creator,
+                manufacturer,
+                product,
+                kind,
+            });
         }
     }
     // The watch first, then the sensors in the order the file lists them.

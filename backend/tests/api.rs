@@ -854,7 +854,6 @@ async fn activities_list_their_weather_devices_and_training_effect() {
         manufacturer: Some("garmin".to_owned()),
         product: Some("fenix7".to_owned()),
         kind: None,
-        serial_number: None,
     };
     db::save_devices(&pool, common::uuid(1), &[watch])
         .await
