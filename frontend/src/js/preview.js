@@ -23,7 +23,7 @@ const STYLES = {
   light: "https://tiles.openfreemap.org/styles/positron",
   dark: "https://tiles.openfreemap.org/styles/dark",
 };
-const LINE_COLORS = { light: "#d6246e", dark: "#fbd25d" };
+const LINE_WIDTH = 2;
 const SOURCE_ID = "preview";
 
 /** Finished pictures by theme and track. */
@@ -116,6 +116,9 @@ async function drain() {
   rendering = false;
 }
 
+/** The theme's accent color, as the page shows it now. */
+const accentColor = () => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+
 function ready() {
   if (map != null) return current;
   const container = document.createElement("div");
@@ -138,7 +141,7 @@ function ready() {
       type: "line",
       source: SOURCE_ID,
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-width": 3, "line-color": LINE_COLORS[theme] },
+      paint: { "line-width": LINE_WIDTH, "line-color": accentColor() },
     });
   });
   current = new Promise((resolve) => map.once("load", resolve));
