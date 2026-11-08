@@ -72,7 +72,7 @@ const GERMAN = {
   Devices: "Geräte",
   Target: "Ziel",
   "Training block": "Trainingsblock",
-  "All races": "Alle Wettkämpfe",
+  "All activities": "Alle Aktivitäten",
   race: "Wettkampf",
   races: "Wettkämpfe",
   Wind: "Wind",

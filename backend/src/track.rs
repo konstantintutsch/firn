@@ -194,19 +194,23 @@ pub fn devices(zip: &[u8]) -> Result<Vec<Device>> {
             "favero_product",
             "product",
         ]);
-        // Parts of the watch, like its battery, are listed too, without a product.
-        if manufacturer.is_none() && product.is_none() {
+        // The name of the type depends on how the sensor is connected.
+        let kind = field(&[
+            "antplus_device_type",
+            "ble_device_type",
+            "ant_device_type",
+            "device_type",
+        ])
+        .filter(|_| !creator);
+        // Parts of the watch, like its battery, are listed too, without any of these.
+        if manufacturer.is_none() && product.is_none() && kind.is_none() {
             continue;
         }
         let device = Device {
             creator,
             manufacturer,
             product,
-            kind: if creator {
-                None
-            } else {
-                field(&["antplus_device_type", "device_type"])
-            },
+            kind,
             serial_number: field(&["serial_number"]).and_then(|serial| serial.parse().ok()),
         };
         if !devices.contains(&device) {

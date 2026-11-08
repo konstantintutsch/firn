@@ -1,4 +1,4 @@
-import { t, typeName } from "/js/account.js";
+import { plural, t, typeName } from "/js/account.js";
 import { language } from "/js/i18n.js";
 import { DISTANCE_M, distanceUnit } from "/js/units.js";
 
@@ -35,6 +35,9 @@ export function setUpFilters({ withoutGps = false, onChange }) {
   saved = fromUrl(form) ?? saved;
   let days = saved.days;
   let checkedTypes = saved.values.type ?? [];
+  /** The block's ID, which is known before its choice is, since the blocks load later. */
+  let chosenBlock = saved.values.block ?? "";
+  const blockField = document.querySelector("#block-field");
   let timer = null;
 
   for (const element of form.elements) {
@@ -55,8 +58,9 @@ export function setUpFilters({ withoutGps = false, onChange }) {
     const values = { type: checkedTypes.filter((type) => !listed.includes(type)) };
     for (const [name, value] of new FormData(form)) {
       if (name === "type") values.type.push(value);
-      else if (value.trim() !== "") values[name] = value;
+      else if (name !== "block" && value.trim() !== "") values[name] = value;
     }
+    if (chosenBlock) values.block = chosenBlock;
     checkedTypes = values.type;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ values, days }));
@@ -68,9 +72,9 @@ export function setUpFilters({ withoutGps = false, onChange }) {
 
   function updateCount() {
     const fields = [...form.elements].filter(
-      (element) => element.name && element.type !== "checkbox" && element.value.trim() !== "",
+      (element) => element.name && element.name !== "block" && element.type !== "checkbox" && element.value.trim() !== "",
     );
-    const count = fields.length + checkedTypes.length;
+    const count = fields.length + checkedTypes.length + (chosenBlock ? 1 : 0);
     filterCount.textContent = count > 0 ? String(count) : "";
   }
 
@@ -82,6 +86,7 @@ export function setUpFilters({ withoutGps = false, onChange }) {
 
   form.addEventListener("input", (event) => {
     if (event.target.name === "from" || event.target.name === "to") days = null;
+    if (event.target.name === "block") chosenBlock = event.target.value;
     clearTimeout(timer);
     timer = setTimeout(changed, FILTER_DELAY_MS);
   });
@@ -91,10 +96,34 @@ export function setUpFilters({ withoutGps = false, onChange }) {
     clearTimeout(timer);
     days = null;
     checkedTypes = [];
+    chosenBlock = "";
     setTimeout(changed);
   });
 
   form.addEventListener("submit", (event) => event.preventDefault());
+
+  /** Offers the training blocks of the races, if there are any. */
+  async function loadBlocks() {
+    let blocks;
+    try {
+      const response = await fetch("/api/training-blocks");
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      ({ blocks } = await response.json());
+    } catch {
+      return;
+    }
+    const select = form.elements.block;
+    select.replaceChildren(
+      new Option(t("All activities"), ""),
+      ...blocks.map(({ id, name, to, races }) => {
+        const date = new Date(`${to}T00:00`).toLocaleDateString(language);
+        return new Option(`${name} · ${date} · ${plural(races, "race", "races")}`, id);
+      }),
+    );
+    select.value = chosenBlock;
+    blockField.hidden = blocks.length === 0;
+  }
+  loadBlocks();
 
   return {
     get days() {
@@ -117,6 +146,7 @@ export function setUpFilters({ withoutGps = false, onChange }) {
         const value = values.get(name).trim();
         if (value) query.set(name, value);
       }
+      if (chosenBlock) query.set("block", chosenBlock);
       const setScaled = (from, to, scale) => {
         const value = values.get(from);
         if (value !== "") query.set(to, Number(value) * scale);

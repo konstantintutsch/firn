@@ -1415,3 +1415,74 @@ async fn activities_have_their_own_id_a_garmin_id_and_a_preview() {
     let (status, _) = get(&pool, "/api/activities/1").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn training_blocks_filter_activities_to_the_weeks_before_a_race() {
+    let pool = common::test_pool().await;
+    let start = |day: &str| json!({"startTimeLocal": format!("{day} 08:00:00"), "startTimeGMT": format!("{day} 07:00:00")});
+    for (id, day) in [
+        (1, "2026-01-10"),
+        (2, "2026-02-01"),
+        (3, "2026-03-01"),
+        (4, "2026-04-05"),
+        (5, "2026-05-01"),
+    ] {
+        add_activity(&pool, id, start(day), &[BERLIN]).await;
+    }
+    let cookie = common::cookie(&pool).await;
+    let state = common::state(pool.clone(), "http://unused", None).await;
+    for (id, meters) in [(2, 42_195.0), (4, 10_000.0)] {
+        let request = Request::put(format!("/api/activities/{}/result", common::uuid(id)))
+            .header("content-type", "application/json")
+            .header("x-requested-with", "runmap")
+            .header("cookie", &cookie)
+            .body(Body::from(
+                json!({"distance_m": meters, "time_s": 3000.0}).to_string(),
+            ))
+            .unwrap();
+        let response = router(state.clone()).oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    let (_, body) = get(&pool, "/api/training-blocks").await;
+    let blocks = body["blocks"].as_array().unwrap();
+    assert_eq!(blocks.len(), 2);
+    // Newest first: the 10 km starts after the marathon, the marathon at the beginning.
+    assert_eq!(blocks[0]["from"], "2026-02-02");
+    assert_eq!(blocks[0]["to"], "2026-04-05");
+    assert_eq!(blocks[1]["from"], Value::Null);
+    assert_eq!(blocks[1]["races"], 1);
+
+    let ids = |body: &Value| -> Vec<String> {
+        body["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|activity| activity["id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let (_, first) = get(
+        &pool,
+        &format!(
+            "/api/activities?block={}&sort=oldest",
+            blocks[1]["id"].as_str().unwrap()
+        ),
+    )
+    .await;
+    assert_eq!(
+        ids(&first),
+        [common::uuid(1), common::uuid(2)].map(|id| id.to_string())
+    );
+    let (_, second) = get(
+        &pool,
+        &format!(
+            "/api/activities?block={}&sort=oldest",
+            blocks[0]["id"].as_str().unwrap()
+        ),
+    )
+    .await;
+    assert_eq!(
+        ids(&second),
+        [common::uuid(3), common::uuid(4)].map(|id| id.to_string())
+    );
+}

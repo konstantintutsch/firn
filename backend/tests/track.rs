@@ -213,14 +213,21 @@ fn fit_and_gpx_without_vo2_max_have_none() {
 
 #[test]
 fn reads_the_watch_and_the_sensors_of_fit() {
-    // The watch, a heart rate strap (ANT+ type 120) and the watch again, as a battery update.
-    let fit = fit_of_devices(&[(0, 0, 1, 4024), (1, 120, 1, 2), (0, 0, 1, 4024)]);
+    // The watch, a heart rate strap over ANT+ (type 120) and one over Bluetooth (type 1),
+    // and the watch again, as a battery update.
+    let fit = fit_of_devices(&[
+        (0, 0, 5, 1, 4024),
+        (1, 120, 1, 1, 2),
+        (2, 1, 3, 1, 3),
+        (0, 0, 5, 1, 4024),
+    ]);
     let found = devices(&zip_of(&[("a.fit", &fit)])).unwrap();
-    assert_eq!(found.len(), 2, "{found:?}");
+    assert_eq!(found.len(), 3, "{found:?}");
     assert!(found[0].creator);
     assert_eq!(found[0].manufacturer.as_deref(), Some("garmin"));
     assert!(!found[1].creator);
     assert_eq!(found[1].kind.as_deref(), Some("heart_rate"));
+    assert_eq!(found[2].kind.as_deref(), Some("heart_rate"));
 }
 
 #[test]

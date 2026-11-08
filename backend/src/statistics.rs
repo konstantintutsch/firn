@@ -85,7 +85,7 @@ pub async fn activity_statistics(
 ) -> Result<Json<ActivityStatistics>, ApiError> {
     let filter = db::Filter {
         without_gps: true,
-        ..filter.into_filter(user.id)
+        ..filter.into_filter(&state.pool, user.id).await?
     };
     check_range(filter.from, filter.to)?;
     let records = db::activity_records(&state.pool, &filter).await?;

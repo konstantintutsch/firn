@@ -886,6 +886,15 @@ p:empty {
   font-size: 12px;
 }
 
+#filters label[hidden] {
+  display: none;
+}
+
+#filters select {
+  min-width: 0;
+  width: 100%;
+}
+
 #filters button {
   justify-self: start;
 }
@@ -1621,19 +1630,6 @@ a.chart-tooltip-row:focus-visible {
   margin: 0;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-}
-
-.block-filter {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  color: var(--ink-muted);
-}
-
-.block-filter select {
-  min-width: 0;
-  flex: 1;
 }
 
 .records-results {

@@ -1,7 +1,7 @@
 import { bars, chart, forgetCharts } from "/js/charts.js";
 import { duration, number, pace, raceDistanceName, svgElement, unit } from "/js/format.js";
 import { language } from "/js/i18n.js";
-import { plural, requireAccount, setUpSync, t, typeName } from "/js/account.js";
+import { requireAccount, setUpSync, t, typeName } from "/js/account.js";
 import { localDay, setUpFilters } from "/js/filters.js";
 import { distanceUnit, elevationUnit, toDistance, toElevation } from "/js/units.js";
 
@@ -720,62 +720,10 @@ function records(container, dated) {
 
   const all = document.createElement("dl");
   all.className = "records";
-  const blocks = trainingBlocks([...races].reverse());
-  const body = card(container, "Races", "Every race with an official result, newest first");
-  const choice = blockSelect(blocks, () => showRaces());
-  if (choice) body.append(choice);
-  body.append(all);
-  function showRaces() {
-    const block = blocks.find(({ end }) => end.id === choice?.value);
-    const shown = block ? block.races : races;
-    all.replaceChildren(
-      ...shown.map((race) =>
-        raceRow(race, `${race.result.event || activityName(race)} · ${raceDistanceName(race.result.distance_m)}`),
-      ),
-    );
+  for (const race of races) {
+    all.append(raceRow(race, `${race.result.event || activityName(race)} · ${raceDistanceName(race.result.distance_m)}`));
   }
-  showRaces();
-}
-
-/**
- * The training blocks of races, oldest first: a block runs from the race before
- * its last race to that race. Races that are shorter than the last race do not
- * end a block, while a longer one or one as long does. The block of the first
- * race of a distance starts at the beginning.
- * Each has its last race as `end` and its races, newest first, as `races`.
- */
-function trainingBlocks(oldestFirst) {
-  const meters = (race) => race.result.distance_m;
-  return oldestFirst
-    .map((end, index) => {
-      let start = index - 1;
-      // Within a meter counts as the same distance.
-      while (start >= 0 && meters(oldestFirst[start]) < meters(end) - 1) start--;
-      return { end, races: oldestFirst.slice(start + 1, index + 1).reverse() };
-    })
-    .reverse();
-}
-
-/** A selection of the training blocks, or nothing without races. */
-function blockSelect(blocks, onChange) {
-  if (blocks.length === 0) return null;
-  const label = document.createElement("label");
-  label.className = "block-filter";
-  const text = document.createElement("span");
-  text.textContent = t("Training block");
-  const select = document.createElement("select");
-  const all = new Option(t("All races"), "");
-  select.append(all);
-  for (const { end, races } of blocks) {
-    const name = end.result.event || activityName(end);
-    const count = plural(races.length, "race", "races");
-    select.append(new Option(`${name} · ${new Date(end.time).toLocaleDateString(language)} · ${count}`, end.id));
-  }
-  select.addEventListener("change", onChange);
-  label.append(text, select);
-  // The value of the label is that of its selection, which the caller reads.
-  Object.defineProperty(label, "value", { get: () => select.value });
-  return label;
+  card(container, "Races", "Every race with an official result, newest first").append(all);
 }
 
 function activityName({ name, activity_type: type }) {

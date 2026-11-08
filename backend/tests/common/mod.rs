@@ -236,26 +236,26 @@ pub fn fit_of_vo2_max(raw: &[u32]) -> Vec<u8> {
 }
 
 /// Encodes a FIT file with a device info message (23) per `(device index, device type,
-/// manufacturer, product)`, where a source type of ANT+ makes the type an ANT+ one.
-pub fn fit_of_devices(devices: &[(u8, u8, u16, u16)]) -> Vec<u8> {
+/// source type, manufacturer, product)`. The source type, like 1 for ANT+ and 3 for
+/// Bluetooth, decides which kind of device type the type is.
+pub fn fit_of_devices(devices: &[(u8, u8, u8, u16, u16)]) -> Vec<u8> {
     const ENUM: u8 = 0x00;
     const UINT8: u8 = 0x02;
     const UINT16: u8 = 0x84;
     const DEVICE_INFO_MESSAGE: u16 = 23;
-    const ANTPLUS: u8 = 1;
 
     let mut data = vec![0x40, 0, 0];
     data.extend(DEVICE_INFO_MESSAGE.to_le_bytes());
     data.extend([
         5, 0, 1, UINT8, 1, 1, UINT8, 2, 2, UINT16, 4, 2, UINT16, 25, 1, ENUM,
     ]);
-    for (index, kind, manufacturer, product) in devices {
+    for (index, kind, source, manufacturer, product) in devices {
         data.push(0);
         data.push(*index);
         data.push(*kind);
         data.extend(manufacturer.to_le_bytes());
         data.extend(product.to_le_bytes());
-        data.push(ANTPLUS);
+        data.push(*source);
     }
     fit_file(data)
 }

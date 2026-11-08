@@ -1,0 +1,1 @@
+-- Nothing to undo: the devices are read from the files again.

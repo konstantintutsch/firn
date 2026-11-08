@@ -61,6 +61,7 @@ struct CachedTracks {
         export,
         import,
         activity_types,
+        training_blocks,
         routes::list_routes,
         routes::create_route,
         routes::import_route,
@@ -213,6 +214,7 @@ pub fn router_with(state: AppState, docs: bool) -> Router {
             get(activity_image),
         )
         .route("/api/activity-types", get(activity_types))
+        .route("/api/training-blocks", get(training_blocks))
         .route(
             "/api/routes",
             get(routes::list_routes).post(routes::create_route),
@@ -357,12 +359,31 @@ pub struct FilterQuery {
     from: Option<NaiveDate>,
     /// Last day to include, in local time.
     to: Option<NaiveDate>,
+    /// A training block, by the ID of the race that ends it. Leaves out the
+    /// activities from before and after it. Unknown blocks are ignored.
+    block: Option<Uuid>,
 }
 
 impl FilterQuery {
-    pub fn into_filter(self, user_id: i64) -> Filter {
+    pub async fn into_filter(self, pool: &Pool, user_id: i64) -> anyhow::Result<Filter> {
         let query = self;
-        Filter {
+        let block = match query.block {
+            Some(id) => db::training_blocks_of(pool, user_id)
+                .await?
+                .into_iter()
+                .find(|block| block.id == id),
+            None => None,
+        };
+        // The block narrows the days that were asked for.
+        let from = match (query.from, block.as_ref().and_then(|block| block.from)) {
+            (Some(from), Some(start)) => Some(from.max(start)),
+            (from, start) => from.or(start),
+        };
+        let to = match (query.to, block.as_ref().map(|block| block.to)) {
+            (Some(to), Some(end)) => Some(to.min(end)),
+            (to, end) => to.or(end),
+        };
+        Ok(Filter {
             user_id,
             id: query.id,
             query: text(query.q),
@@ -381,10 +402,10 @@ impl FilterQuery {
             max_distance_m: query.max_distance_m,
             min_duration_s: query.min_duration_s,
             max_duration_s: query.max_duration_s,
-            from: query.from,
-            to: query.to,
+            from,
+            to,
             without_gps: false,
-        }
+        })
     }
 }
 
@@ -436,7 +457,11 @@ async fn heatmap(
     }
 
     let viewport = Viewport::from_degrees(query.west, query.south, query.east, query.north);
-    let matching = db::matching_ids(&state.pool, &filter.into_filter(user.id)).await?;
+    let matching = db::matching_ids(
+        &state.pool,
+        &filter.into_filter(&state.pool, user.id).await?,
+    )
+    .await?;
     let tracks = state.tracks(user.id).await?;
     let lines = tokio::task::spawn_blocking(move || {
         let tracks: Vec<&[Position]> = tracks
@@ -601,7 +626,7 @@ async fn activities(
     };
     let filter = Filter {
         without_gps: search.without_gps,
-        ..filter.into_filter(user.id)
+        ..filter.into_filter(&state.pool, user.id).await?
     };
     let found = db::search_activities(&state.pool, &filter, order, limit, offset).await?;
     let tracks = state.tracks(user.id).await?;
@@ -1234,6 +1259,32 @@ struct Stats {
     bounds: Option<[f64; 4]>,
 }
 
+#[derive(Serialize, ToSchema)]
+struct TrainingBlocks {
+    /// Newest first.
+    blocks: Vec<db::TrainingBlock>,
+}
+
+/// The training blocks of the races that have an official result. A block runs
+/// from the last race that was at least as long to the race itself, so shorter
+/// races in between do not end it. Pass its `id` as `block` to filter by it.
+#[utoipa::path(
+    get,
+    path = "/api/training-blocks",
+    responses(
+        (status = 200, body = TrainingBlocks),
+        (status = 401, description = "Not signed in", body = ErrorBody),
+    )
+)]
+async fn training_blocks(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+) -> Result<Json<TrainingBlocks>, ApiError> {
+    Ok(Json(TrainingBlocks {
+        blocks: db::training_blocks_of(&state.pool, user.id).await?,
+    }))
+}
+
 /// Totals across the matching activities with GPS.
 #[utoipa::path(
     get,
@@ -1249,7 +1300,7 @@ async fn stats(
     CurrentUser(user): CurrentUser,
     Query(filter): Query<FilterQuery>,
 ) -> Result<Json<Stats>, ApiError> {
-    let filter = filter.into_filter(user.id);
+    let filter = filter.into_filter(&state.pool, user.id).await?;
     let totals = db::totals(&state.pool, &filter).await?;
     let matching = db::matching_ids(&state.pool, &filter).await?;
     let tracks = state.tracks(user.id).await?;
