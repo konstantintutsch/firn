@@ -826,13 +826,7 @@ async fn activity_statistics_include_activities_without_gps() {
         &[BERLIN, NEAR_BERLIN],
     )
     .await;
-    db::save_vo2_max(
-        &pool,
-        1,
-        Some(52.4),
-    )
-    .await
-    .unwrap();
+    db::save_vo2_max(&pool, 1, Some(52.4)).await.unwrap();
     add_activity(
         &pool,
         2,
