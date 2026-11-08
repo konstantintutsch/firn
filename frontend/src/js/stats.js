@@ -568,6 +568,13 @@ function calendar(container, dated, buckets) {
     }
   }
 
+  // Made once, since a new one on every day would slow the pop-up down.
+  const dateFormat = new Intl.DateTimeFormat(language, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
   let active = null;
   function show(index) {
     active?.square.classList.remove("active");
@@ -576,14 +583,8 @@ function calendar(container, dated, buckets) {
     if (!active) return;
     active.square.classList.add("active");
     const { time, entry } = active;
-    const label = new Date(time).toLocaleDateString(language, {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
     const heading = document.createElement("strong");
-    heading.textContent = label;
+    heading.textContent = dateFormat.format(time);
     tooltip.replaceChildren(heading);
     for (const activity of entry?.activities ?? []) {
       const row = document.createElement("a");
@@ -628,18 +629,30 @@ function calendar(container, dated, buckets) {
       if (!wrapper.contains(document.activeElement)) show(null);
     }, 300);
   };
+  // Whether the pointer comes closer to the pop-up's links, on its way to them.
+  let pointer = null;
+  function towardPopUp(event) {
+    const from = pointer;
+    pointer = { x: event.clientX, y: event.clientY };
+    if (!from || tooltip.hidden || !tooltip.querySelector("a")) return false;
+    const box = tooltip.getBoundingClientRect();
+    const distance = ({ x, y }) =>
+      Math.hypot(Math.max(box.left - x, 0, x - box.right), Math.max(box.top - y, 0, y - box.bottom));
+    return distance(pointer) < distance(from);
+  }
   svg.addEventListener("pointermove", (event) => {
     clearTimeout(hideTimer);
+    const toward = towardPopUp(event);
     const index = event.target.dataset?.index;
     if (index == null || days[index] === active) {
       clearTimeout(switchTimer);
       return;
     }
-    // Waits a moment before another day takes over, so that the way to the pop-up
-    // can cross other days. The first day shows at once.
+    // Another day takes over at once, unless the pointer heads for the pop-up:
+    // then it waits a moment, so that the way there can cross other days.
     clearTimeout(switchTimer);
-    if (active == null || tooltip.hidden) show(Number(index));
-    else switchTimer = setTimeout(() => show(Number(index)), 150);
+    if (toward) switchTimer = setTimeout(() => show(Number(index)), 150);
+    else show(Number(index));
   });
   svg.addEventListener("pointerleave", hideSoon);
   tooltip.addEventListener("pointerenter", () => {
