@@ -11,6 +11,7 @@ import {
   t,
 } from "/js/account.js";
 import { setUpActivityDetail } from "/js/activity-detail.js";
+import { setUpRouteDetail } from "/js/route-detail.js";
 import { setUpFilters } from "/js/filters.js";
 import { language } from "/js/i18n.js";
 
@@ -80,7 +81,8 @@ const filters = setUpFilters({ onChange: applyFilters });
 let theme = currentTheme();
 
 // Without a view in the link, the map starts around the activities, not the whole world.
-let fitToActivities = !location.hash && !new URLSearchParams(location.search).has("activity");
+const linkedParams = new URLSearchParams(location.search);
+let fitToActivities = !location.hash && !linkedParams.has("activity") && !linkedParams.has("route");
 
 const map = new maplibregl.Map({
   container: "map",
@@ -107,6 +109,7 @@ let searchTimer = null;
 /** The text that the shown results belong to. */
 let shownSearch = "";
 let selectedId = null;
+let selectedRouteId = null;
 let lines = [];
 let isFirstStyle = true;
 let pendingDetail = null;
@@ -137,6 +140,13 @@ const detail = setUpActivityDetail(map, {
   onClose: () => select(null),
   onReload: (id) => loadDetail(id, false),
   onNavigate: (id) => select({ id }, { fit: true }),
+});
+
+const routeDetail = setUpRouteDetail(map, {
+  heatLayers: [HEAT_LAYER_ID, DOT_LAYER_ID],
+  beforeLayer: layerAboveHeat,
+  fitPadding,
+  onClose: () => selectRoute(null),
 });
 
 // Fires again after each theme change, because a new style drops source and layer.
@@ -175,6 +185,7 @@ map.on("style.load", () => {
     beforeLayer,
   );
   detail.addLayers();
+  routeDetail.addLayers();
   if (isFirstStyle) {
     isFirstStyle = false;
     loadStats();
@@ -232,9 +243,15 @@ async function refresh() {
   }
 }
 
-/** Goes to the activity that the activity list linked to, as in `/?activity=1`. */
+/** Goes to the activity or route that a list linked to, as in `/?activity=1` or `/?route=<id>`. */
 async function showLinkedActivity() {
-  const id = new URLSearchParams(location.search).get("activity");
+  const params = new URLSearchParams(location.search);
+  const route = params.get("route");
+  if (route) {
+    selectRoute(route, { fit: true });
+    return;
+  }
+  const id = params.get("activity");
   if (!id) return;
   if (/^-?\d+$/.test(id)) select({ id: Number(id) }, { fit: true });
   else showStatus(t("Could not find this activity."));
@@ -354,6 +371,7 @@ function applyFilters() {
 
 /** Shows one activity with its details, or all of them again with `null`. */
 function select(activity, { fit = false } = {}) {
+  if (activity != null && selectedRouteId !== null) selectRoute(null);
   selectedId = activity?.id ?? null;
   // Keeps the activity in the link, so that a reload or a shared link shows it again.
   const params = new URLSearchParams(location.search);
@@ -415,15 +433,29 @@ panelToggle.addEventListener("click", () => {
   panelToggle.setAttribute("aria-label", label);
   panelToggle.title = label;
 });
+/** Shows one saved route on the map like an activity, or all activities again with `null`. */
+function selectRoute(id, { fit = false } = {}) {
+  if (id !== null && selectedId !== null) select(null);
+  selectedRouteId = id;
+  const params = new URLSearchParams(location.search);
+  if (id === null) params.delete("route");
+  else params.set("route", id);
+  const search = params.size > 0 ? `?${params}` : "";
+  history.replaceState(history.state, "", `${location.pathname}${search}${location.hash}`);
+  panelElement.classList.toggle("has-detail", id !== null);
+  browseElement.hidden = id !== null;
+  routeDetail.open(id, { fit });
+}
 
-// "/" jumps to the search, and Escape closes the selected activity, unless typing.
+// "/" jumps to the search, and Escape closes the selected activity or route, unless typing.
 document.addEventListener("keydown", (event) => {
   const typing = event.target.closest("input, textarea, select, [contenteditable]");
   if (event.key === "/" && !typing && !event.ctrlKey && !event.metaKey) {
     event.preventDefault();
     searchInput.focus();
-  } else if (event.key === "Escape" && !typing && selectedId !== null && !document.querySelector("dialog[open]")) {
-    select(null);
+  } else if (event.key === "Escape" && !typing && !document.querySelector("dialog[open]")) {
+    if (selectedId !== null) select(null);
+    else if (selectedRouteId !== null) selectRoute(null);
   }
 });
 

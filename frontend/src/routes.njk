@@ -1,7 +1,6 @@
 <!doctype html>
 <html lang="en">
   {%- set title = "Runmap routes" %}
-  {%- set map = true %}
   {% include "head.njk" %}
   <body class="page">
     <header class="page-header">
@@ -19,30 +18,6 @@
           </label>
         </div>
         <p id="route-message" role="status"></p>
-      </section>
-      <section id="route-detail" class="card" hidden>
-        <h2 id="route-title"></h2>
-        <p id="route-meta" class="muted"></p>
-        <p id="route-description" class="muted"></p>
-        <div id="route-map" class="route-map" role="img" aria-label="Map of the route" data-i18n-attrs="aria-label"></div>
-        <div class="panel-actions">
-          <a id="route-download" class="panel-button" download>{% icon "download" %}<span>GPX</span></a>
-          <a id="route-activity" class="panel-button" hidden data-i18n>Activity</a>
-          <button id="route-edit" class="panel-button" type="button" data-i18n>Edit</button>
-          <button id="route-delete" class="panel-button" type="button" data-i18n>Delete</button>
-        </div>
-        <form id="route-form" hidden>
-          <label><span data-i18n>Name</span>
-            <input name="name" maxlength="200" required>
-          </label>
-          <label><span data-i18n>Description</span>
-            <input name="description" maxlength="5000">
-          </label>
-          <div class="panel-actions">
-            <button class="primary-button" type="submit" data-i18n>Save</button>
-            <button id="route-cancel" class="panel-button" type="button" data-i18n>Cancel</button>
-          </div>
-        </form>
       </section>
       <p id="route-status" role="status"></p>
       <ul id="route-list" class="activity-list"></ul>

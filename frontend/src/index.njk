@@ -42,7 +42,7 @@
             </div>
             <a id="detail-garmin" class="panel-button" target="_blank" rel="noopener" title="Garmin Connect">Garmin{% icon "external" %}</a>
             <button id="detail-route" class="panel-button" type="button" aria-label="Save as route" title="Save as route" data-i18n-attrs="aria-label title">{% icon "route" %}</button>
-            <button id="detail-resync" class="panel-button" type="button">{% icon "sync" %}<span data-i18n>Update</span></button>
+            <button id="detail-resync" class="panel-button" type="button" aria-label="Update" title="Update" data-i18n-attrs="aria-label title">{% icon "sync" %}</button>
           </div>
           <div id="detail-images" class="detail-images" hidden></div>
           <p id="detail-status" class="muted" role="status"></p>
@@ -96,6 +96,37 @@
             <h3 data-i18n>Heart rate zones</h3>
             <div></div>
           </section>
+        </section>
+        <section id="route-detail" class="detail" hidden>
+          <div class="detail-header">
+            <div>
+              <h2 id="route-title"></h2>
+              <p id="route-meta" class="muted"></p>
+            </div>
+            <div class="detail-nav">
+              <button id="route-close" class="icon-button" type="button" aria-label="Show all activities" title="Show all activities" data-i18n-attrs="aria-label title">{% icon "close" %}</button>
+            </div>
+          </div>
+          <p id="route-description" class="detail-description"></p>
+          <div class="panel-actions">
+            <a id="route-download" class="panel-button" download>{% icon "download" %}<span>GPX</span></a>
+            <a id="route-activity" class="panel-button" hidden data-i18n>Activity</a>
+            <button id="route-edit" class="panel-button" type="button" data-i18n>Edit</button>
+            <button id="route-delete" class="panel-button danger-button" type="button" data-i18n>Delete</button>
+          </div>
+          <form id="route-form" class="route-form" hidden>
+            <label><span data-i18n>Name</span>
+              <input name="name" maxlength="200" required autocomplete="off">
+            </label>
+            <label><span data-i18n>Description</span>
+              <input name="description" maxlength="5000" autocomplete="off">
+            </label>
+            <div class="panel-actions">
+              <button class="primary-button" type="submit" data-i18n>Save</button>
+              <button id="route-cancel" class="panel-button" type="button" data-i18n>Cancel</button>
+            </div>
+          </form>
+          <p id="route-status" class="muted" role="status"></p>
         </section>
         <div id="browse">
         <p id="stats"></p>

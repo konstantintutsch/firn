@@ -328,11 +328,6 @@ body {
   height: 16px;
 }
 
-/* Only an icon, so that the row of buttons still fits in German. */
-.detail-actions #detail-route {
-  padding-inline: 6px;
-}
-
 /* A download button with a menu of other formats beside it. */
 .split-button {
   position: relative;
@@ -1301,25 +1296,56 @@ a {
   accent-color: var(--accent);
 }
 
-.routes-page .activity[aria-current] {
-  background: var(--accent-soft);
+.activity.route-entry {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
-.settings-page #route-form[hidden] {
-  display: none;
+.activity.route-entry > span {
+  display: grid;
+  gap: 2px;
 }
 
-.route-map {
-  height: 320px;
-  margin: 12px 0;
+.route-preview {
+  flex: none;
+  width: 72px;
+  height: 54px;
+  background: var(--fill);
   border-radius: var(--radius-md);
   corner-shape: var(--corner);
-  overflow: hidden;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 #route-status {
   margin: 14px 0 0;
   font-size: 13px;
+}
+
+.route-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* The legend explains the heat, which a route hides. */
+.panel:has(#route-detail:not([hidden])) #legend {
+  display: none;
+}
+
+.route-form[hidden] {
+  display: none;
+}
+
+.route-form label {
+  display: grid;
+  gap: 4px;
+  color: var(--ink-muted);
+  font-size: 12px;
 }
 
 .activity-list {

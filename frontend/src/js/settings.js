@@ -78,8 +78,9 @@ function setUpImport() {
   });
 }
 
-function importResult({ activities, skipped, failed, health_documents: health }) {
+function importResult({ activities, skipped, failed, health_documents: health, routes }) {
   const parts = [t("Imported {count}.", { count: plural(activities, "activity", "activities") })];
+  if (routes > 0) parts.push(t("Routes: {count}.", { count: routes }));
   if (health > 0) parts.push(t("Health data of {count}.", { count: plural(health, "document", "documents") }));
   if (skipped > 0) parts.push(t("{count} belong to another account and were skipped.", { count: skipped }));
   if (failed > 0) parts.push(t("{count} could not be read.", { count: plural(failed, "file", "files") }));

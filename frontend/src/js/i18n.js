@@ -128,8 +128,8 @@ const GERMAN = {
   Close: "Schließen",
   "Photo {number} of {count}": "Foto {number} von {count}",
   "Your data": "Deine Daten",
-  "An export holds all activities with their files and photos, and the health data. Importing it restores them, here or in another Runmap.":
-    "Ein Export enthält alle Aktivitäten mit ihren Dateien und Fotos sowie die Gesundheitsdaten. Ein Import stellt sie wieder her, hier oder in einer anderen Runmap.",
+  "An export holds all activities with their files and photos, your routes and the health data. Importing it restores them, here or in another Runmap.":
+    "Ein Export enthält alle Aktivitäten mit ihren Dateien und Fotos, deine Routen sowie die Gesundheitsdaten. Ein Import stellt sie wieder her, hier oder in einer anderen Runmap.",
   "Import also takes a ZIP of FIT, GPX or TCX files from other apps and devices.":
     "Der Import nimmt auch ein ZIP mit FIT-, GPX- oder TCX-Dateien von anderen Apps und Geräten.",
   Export: "Exportieren",
@@ -138,6 +138,7 @@ const GERMAN = {
   "Importing…": "Wird importiert…",
   "Could not import the file.": "Die Datei konnte nicht importiert werden.",
   "Imported {count}.": "{count} importiert.",
+  "Routes: {count}.": "Routen: {count}.",
   "Health data of {count}.": "Gesundheitsdaten aus {count}.",
   "{count} belong to another account and were skipped.": "{count} gehören zu einem anderen Konto und wurden übersprungen.",
   "{count} could not be read.": "{count} konnten nicht gelesen werden.",
@@ -297,7 +298,7 @@ const GERMAN = {
   "Save the track of an activity as a route, or import a GPX file, to run it again.":
     "Speichere den Track einer Aktivität als Route oder importiere eine GPX-Datei, um sie noch einmal zu laufen.",
   "Import GPX": "GPX importieren",
-  "Map of the route": "Karte der Route",
+  "Could not find this route.": "Diese Route wurde nicht gefunden.",
   Activity: "Aktivität",
   Edit: "Bearbeiten",
   Delete: "Löschen",
