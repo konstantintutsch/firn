@@ -233,7 +233,27 @@ function drawLines(state, svg, inner) {
     svgElement("circle", { r: 4, fill: `var(--series-${slot})`, class: "chart-dot", visibility: "hidden" }, svg),
   );
   const sortedTimes = [...new Set(times)].sort((a, b) => a - b);
-  const lookups = series.map(({ values: points }) => new Map(points));
+  // A total that goes on between its points has a value on every day from its first
+  // to its last point, which is that of the point before. Other lines only have their points.
+  const stepped = state.maxGap === Infinity;
+  const lookups = series.map(({ values: points }) => {
+    if (!stepped) {
+      const byTime = new Map(points);
+      return (time) => byTime.get(time);
+    }
+    return (time) => {
+      if (points.length === 0 || time < points[0][0] || time > points.at(-1)[0]) return null;
+      let low = 0;
+      let high = points.length - 1;
+      // The last point that is not after the time, which is the latest of those on the same day.
+      while (low < high) {
+        const middle = (low + high + 1) >> 1;
+        if (points[middle][0] <= time) low = middle;
+        else high = middle - 1;
+      }
+      return points[low][1];
+    };
+  });
 
   hover(state, svg, (px) => {
     const target = minTime + ((px - inner.left) / (inner.right - inner.left)) * span;
@@ -244,7 +264,7 @@ function drawLines(state, svg, inner) {
     crosshair.setAttribute("visibility", "visible");
     const rows = [];
     series.forEach(({ name, slot }, index) => {
-      const value = lookups[index].get(time);
+      const value = lookups[index](time);
       dots[index].setAttribute("visibility", value == null ? "hidden" : "visible");
       if (value == null) return;
       dots[index].setAttribute("cx", cx);
