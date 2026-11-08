@@ -30,6 +30,11 @@ def loop(*points):
     return ("loop", [*points, points[0]])
 
 
+def path(*points):
+    """Through the waypoints, once."""
+    return ("path", list(points))
+
+
 def out_and_back(*points):
     """Through the waypoints, then back the same way."""
     return ("out_and_back", list(points))
@@ -139,7 +144,7 @@ PLACES = {
 # Most runs start at the front door, like they do for most people. Loops of
 # random shape that all begin and end there make the heat fall off with the
 # distance from home, and the street grid around it show.
-HOME_LOOPS = 30
+HOME_LOOPS = 12
 
 
 def home_loop(rng):
@@ -158,10 +163,42 @@ def home_loop(rng):
     return loop(*points)
 
 
-# The one or two runs that happen all the time.
-HOME_STAPLES = {
-    "Home Staple 1": loop(HOME, (52.4960, 13.4470), (52.4890, 13.4720)),
-    "Home Staple 2": loop(HOME, (52.4960, 13.4350), (52.4930, 13.4150)),
+# Where easy runs go, and what the long runs and speed work do with it. The
+# main route is run almost every time. Speed work runs only the first part of it
+# and back, which fake_garmin.py cuts from the main route. The long runs share
+# its first waypoints, so they match it for a while, and then branch off
+# further out. The long run east out and back is cut at different distances.
+MAIN_OUT = [(52.4960, 13.4470), (52.4890, 13.4720)]
+HOME_ROUTES = {
+    "Home Main": loop(HOME, *MAIN_OUT),
+    "Home Long East": out_and_back(
+        HOME, *MAIN_OUT, (52.4570, 13.5190), (52.4480, 13.5800), (52.4350, 13.6400),
+    ),
+    "Home Long 1": loop(
+        HOME, *MAIN_OUT, (52.4650, 13.4980), (52.4700, 13.4500), (52.4830, 13.4300),
+    ),
+    "Home Long 2": loop(
+        HOME, *MAIN_OUT, (52.4700, 13.5200), (52.4480, 13.5750), (52.4400, 13.5450),
+        (52.4560, 13.4950), (52.4760, 13.4450),
+    ),
+    "Home Long 3": loop(
+        HOME, (52.4985, 13.3950), (52.5030, 13.3700), (52.5145, 13.3501), (52.5200, 13.3900),
+        (52.5120, 13.4220),
+    ),
+}
+
+# The Berlin Marathon 2025 along the main streets of its course, start to finish.
+RACES = {
+    "Berlin": {
+        "Berlin Marathon": path(
+            (52.5143, 13.3650), (52.5145, 13.3501), (52.5170, 13.3490), (52.5260, 13.3400),
+            (52.5250, 13.3690), (52.5310, 13.3840), (52.5280, 13.3950), (52.5215, 13.4130),
+            (52.5120, 13.4160), (52.4990, 13.4180), (52.4860, 13.4250), (52.4930, 13.3880),
+            (52.4750, 13.3880), (52.4600, 13.3850), (52.4560, 13.3220), (52.4750, 13.3400),
+            (52.4900, 13.3200), (52.5030, 13.3320), (52.5060, 13.3200),
+            (52.5075, 13.3050), (52.5040, 13.3400), (52.5096, 13.3760), (52.5163, 13.3777),
+        ),
+    },
 }
 
 
@@ -215,16 +252,26 @@ def route(profile, waypoints):
 def main():
     rng = random.Random(3)
     generated = set()
-    PLACES["Berlin"]["routes"].update(HOME_STAPLES)
+    PLACES["Berlin"]["routes"].update(HOME_ROUTES)
     for number in range(1, HOME_LOOPS + 1):
         name = f"Home {number}"
         PLACES["Berlin"]["routes"][name] = home_loop(rng)
         generated.add(name)
+    for city, races in RACES.items():
+        PLACES[city]["races"] = races
+    # Names given on the command line are the only ones asked for again.
+    only = set(sys.argv[1:])
+    target = Path(__file__).with_name("routes.json")
+    old = json.loads(target.read_text()) if only and target.exists() else {}
     result = {}
     for city, place in PLACES.items():
-        result[city] = {"routes": {}, "rides": {}}
-        for group, profile in (("routes", "foot"), ("rides", "bike")):
+        result[city] = {"routes": {}, "rides": {}, "races": {}}
+        for group, profile in (("routes", "foot"), ("rides", "bike"), ("races", "foot")):
             for name, (kind, waypoints) in place.get(group, {}).items():
+                if only and name not in only:
+                    if name in old.get(city, {}).get(group, {}):
+                        result[city][group][name] = old[city][group][name]
+                    continue
                 path, distance = route(profile, waypoints)
                 if name in generated and not 4000 <= distance <= 20000:
                     print(f"{city} / {name}: skipped, {distance / 1000:.1f} km", file=sys.stderr)
@@ -235,7 +282,7 @@ def main():
                 result[city][group][name] = path
                 print(f"{city} / {name}: {distance / 1000:.1f} km, {len(path)} points", file=sys.stderr)
                 time.sleep(1)
-    Path(__file__).with_name("routes.json").write_text(json.dumps(result, separators=(",", ":")) + "\n")
+    target.write_text(json.dumps(result, separators=(",", ":")) + "\n")
 
 
 main()
