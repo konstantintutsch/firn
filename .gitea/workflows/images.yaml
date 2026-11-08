@@ -32,15 +32,8 @@ jobs:
     # A Node image, since the runner starts actions like checkout with the job
     # container's node. Rust comes from rustup, in the version of the Dockerfile.
     container: node:24-bookworm
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_PASSWORD: test
-        options: >-
-          --health-cmd pg_isready --health-interval 2s --health-timeout 3s --health-retries 30
     env:
-      TEST_DATABASE_URL: postgres://postgres:test@postgres/postgres
+      TEST_DATABASE_URL: postgres://postgres:test@localhost/postgres
     defaults:
       run:
         working-directory: backend
@@ -51,9 +44,20 @@ jobs:
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
             | sh -s -- -y --profile minimal --default-toolchain 1.99 --component rustfmt,clippy
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      # In the job container, since the runner does not connect the job to a
+      # service container. The version of docker-compose.yaml, from PostgreSQL's
+      # own repository.
+      - name: Start PostgreSQL
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends postgresql-common
+          /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          apt-get install --yes --no-install-recommends postgresql-18
+          pg_ctlcluster 18 main start
+          su postgres --command "psql --command \"ALTER USER postgres PASSWORD 'test'\""
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- --deny warnings
-      # - run: cargo test --locked
+      - run: cargo test --locked
 
   frontend:
     runs-on: ubuntu-latest
