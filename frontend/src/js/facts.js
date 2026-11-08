@@ -28,10 +28,9 @@ export function raceText(result) {
 
 /** The primary training effect and what it trained, like "Training effect 3.4 · Tempo". */
 export function trainingEffectText({ aerobic_training_effect: effect, training_effect_label: label }) {
-  const parts = [];
-  if (effect != null) parts.push(`${t("Training effect")} ${number(1)(effect)}`);
-  if (label) parts.push(spaced(label.toLowerCase()).replace(/^./, (first) => first.toUpperCase()));
-  return parts.length > 0 ? parts.join(" · ") : null;
+  if (effect == null) return null;
+  const text = `${t("Training effect")} ${number(1)(effect)}`;
+  return label ? `${text} (${spaced(label.toLowerCase()).replace(/^./, (first) => first.toUpperCase())})` : text;
 }
 
 /** Temperature, conditions, wind and humidity, for the parts that Garmin listed. */
@@ -53,10 +52,11 @@ function deviceName({ manufacturer, product }) {
   return [brand, product && spaced(product)].filter(Boolean).join(" ");
 }
 
-/** The watch and the sensors, like "Garmin fenix7, Heart rate sensor". */
+/** The watch and the heart rate sensor, like "Garmin fenix7, Heart rate sensor (Garmin hrm_pro)". */
 export function devicesText(devices) {
-  if (!devices || devices.length === 0) return null;
-  return devices
+  const main = (devices ?? []).filter((device) => device.creator || device.kind === "heart_rate");
+  if (main.length === 0) return null;
+  return main
     .map((device) => {
       const name = deviceName(device);
       if (device.creator || !device.kind) return name;

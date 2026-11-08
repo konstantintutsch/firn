@@ -740,20 +740,19 @@ function records(container, dated) {
 /**
  * The training blocks of races, oldest first: a block runs from the race before
  * its last race to that race. Races that are shorter than the last race do not
- * end a block, while a longer one or one as long does. Blocks inside the block
- * of a longer race are left out, since that block shows them too.
+ * end a block, while a longer one or one as long does. The block of the first
+ * race of a distance starts at the beginning.
  * Each has its last race as `end` and its races, newest first, as `races`.
  */
 function trainingBlocks(oldestFirst) {
   const meters = (race) => race.result.distance_m;
-  const blocks = oldestFirst.map((end, index) => {
-    let start = index - 1;
-    // Within a meter counts as the same distance.
-    while (start >= 0 && meters(oldestFirst[start]) < meters(end) - 1) start--;
-    return { end, first: start + 1, last: index, races: oldestFirst.slice(start + 1, index + 1).reverse() };
-  });
-  return blocks
-    .filter((block) => !blocks.some((other) => other.last > block.last && other.first <= block.first))
+  return oldestFirst
+    .map((end, index) => {
+      let start = index - 1;
+      // Within a meter counts as the same distance.
+      while (start >= 0 && meters(oldestFirst[start]) < meters(end) - 1) start--;
+      return { end, races: oldestFirst.slice(start + 1, index + 1).reverse() };
+    })
     .reverse();
 }
 

@@ -1576,9 +1576,6 @@ a.chart-tooltip-row:focus-visible {
 /* A crown on the days of races. It sits on the squares, so the pointer ignores it. */
 .calendar-crown {
   fill: var(--zone-4);
-  stroke: var(--surface);
-  stroke-width: 0.6;
-  stroke-linejoin: round;
   pointer-events: none;
 }
 
