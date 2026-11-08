@@ -160,6 +160,17 @@ const GERMAN = {
   "Health data of {count}.": "Gesundheitsdaten aus {count}.",
   "{count} belong to another account and were skipped.": "{count} gehören zu einem anderen Konto und wurden übersprungen.",
   "{count} could not be read.": "{count} konnten nicht gelesen werden.",
+  "Keep only the data from the import. Everything else in this account is removed.":
+    "Nur die Daten aus dem Import behalten. Alles andere in diesem Konto wird entfernt.",
+  "Remove everything in this account that is not in the import? This cannot be undone. A later sync from Garmin saves it again.":
+    "Alles in diesem Konto entfernen, was nicht im Import ist? Das lässt sich nicht rückgängig machen. Eine spätere Synchronisierung mit Garmin speichert es wieder.",
+  "Nothing was removed, since some files could not be read.":
+    "Es wurde nichts entfernt, da einige Dateien nicht gelesen werden konnten.",
+  "Removed: {counts}.": "Entfernt: {counts}.",
+  route: "Route",
+  routes: "Routen",
+  "health document": "Gesundheitsdokument",
+  "health documents": "Gesundheitsdokumente",
   document: "Dokument",
   documents: "Dokumenten",
   file: "Datei",

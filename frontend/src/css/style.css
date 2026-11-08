@@ -2073,3 +2073,17 @@ a.chart-tooltip-row:focus-visible {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+.check-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+.check-field input {
+  flex: none;
+  margin-top: 2px;
+}

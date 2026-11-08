@@ -1094,6 +1094,15 @@ async fn export(
         .into_response())
 }
 
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+struct ImportQuery {
+    /// Leaves the account with what the import holds and nothing else: its
+    /// other activities, routes and health data are removed. Does nothing if
+    /// some files of the import could not be read. Defaults to `false`.
+    replace: Option<bool>,
+}
+
 /// Imports a ZIP: a Runmap export, or FIT, GPX and TCX files from other apps and
 /// devices, also in ZIPs of their own. Importing the same file again updates it.
 /// Files from elsewhere get a negative ID, since they have none from Garmin.
@@ -1102,6 +1111,7 @@ async fn export(
 #[utoipa::path(
     post,
     path = "/api/import",
+    params(ImportQuery),
     request_body(content = Vec<u8>, content_type = "application/zip"),
     responses(
         (status = 200, body = transfer::ImportReport),
@@ -1114,6 +1124,7 @@ async fn export(
 async fn import(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
+    Query(query): Query<ImportQuery>,
     headers: HeaderMap,
     body: axum::body::Body,
 ) -> Result<Json<transfer::ImportReport>, ApiError> {
@@ -1145,7 +1156,14 @@ async fn import(
         let (pool, files, path) = (state.pool.clone(), state.files.clone(), path.clone());
         let handle = tokio::runtime::Handle::current();
         tokio::task::spawn_blocking(move || {
-            transfer::import(&handle, &pool, &files, user.id, &path)
+            transfer::import(
+                &handle,
+                &pool,
+                &files,
+                user.id,
+                &path,
+                query.replace.unwrap_or(false),
+            )
         })
         .await
         .map_err(anyhow::Error::from)?

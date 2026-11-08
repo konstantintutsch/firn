@@ -39,6 +39,10 @@
             <input id="import-file" type="file" accept=".zip,application/zip">
           </label>
         </div>
+        <label class="check-field">
+          <input id="import-replace" type="checkbox">
+          <span data-i18n>Keep only the data from the import. Everything else in this account is removed.</span>
+        </label>
         <progress id="import-progress" max="1" value="0" hidden></progress>
         <p id="import-message" role="status"></p>
       </section>

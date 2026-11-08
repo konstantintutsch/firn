@@ -1134,6 +1134,93 @@ pub async fn activity_ids(pool: &Pool, user_id: i64) -> Result<Vec<Uuid>> {
         .await?)
 }
 
+/// Deletes some of the account's activities, with their tracks, photos and results.
+pub async fn delete_activities(pool: &Pool, user_id: i64, ids: &[Uuid]) -> Result<()> {
+    diesel::delete(
+        activities::table
+            .filter(activities::user_id.eq(user_id))
+            .filter(activities::id.eq_any(ids)),
+    )
+    .execute(&mut pool.get().await?)
+    .await?;
+    Ok(())
+}
+
+/// The IDs of all of the account's routes.
+pub async fn route_ids(pool: &Pool, user_id: i64) -> Result<Vec<Uuid>> {
+    Ok(routes::table
+        .filter(routes::user_id.eq(user_id))
+        .select(routes::id)
+        .load(&mut pool.get().await?)
+        .await?)
+}
+
+/// Deletes some of the account's routes.
+pub async fn delete_routes(pool: &Pool, user_id: i64, ids: &[Uuid]) -> Result<()> {
+    diesel::delete(
+        routes::table
+            .filter(routes::user_id.eq(user_id))
+            .filter(routes::id.eq_any(ids)),
+    )
+    .execute(&mut pool.get().await?)
+    .await?;
+    Ok(())
+}
+
+/// The kind and period of each of the account's health documents.
+pub async fn document_keys(pool: &Pool, user_id: i64) -> Result<Vec<(String, String)>> {
+    Ok(garmin_documents::table
+        .filter(garmin_documents::user_id.eq(user_id))
+        .select((garmin_documents::kind, garmin_documents::period))
+        .load(&mut pool.get().await?)
+        .await?)
+}
+
+/// Deletes the account's health documents of one kind, for some periods.
+pub async fn delete_documents(
+    pool: &Pool,
+    user_id: i64,
+    kind: &str,
+    periods: &[String],
+) -> Result<()> {
+    diesel::delete(
+        garmin_documents::table
+            .filter(garmin_documents::user_id.eq(user_id))
+            .filter(garmin_documents::kind.eq(kind))
+            .filter(garmin_documents::period.eq_any(periods)),
+    )
+    .execute(&mut pool.get().await?)
+    .await?;
+    Ok(())
+}
+
+/// The metric and day of each of the account's daily health values.
+pub async fn metric_keys(pool: &Pool, user_id: i64) -> Result<Vec<(String, NaiveDate)>> {
+    Ok(daily_metrics::table
+        .filter(daily_metrics::user_id.eq(user_id))
+        .select((daily_metrics::metric, daily_metrics::day))
+        .load(&mut pool.get().await?)
+        .await?)
+}
+
+/// Deletes the account's values of one metric, for some days.
+pub async fn delete_metrics(
+    pool: &Pool,
+    user_id: i64,
+    metric: &str,
+    days: &[NaiveDate],
+) -> Result<()> {
+    diesel::delete(
+        daily_metrics::table
+            .filter(daily_metrics::user_id.eq(user_id))
+            .filter(daily_metrics::metric.eq(metric))
+            .filter(daily_metrics::day.eq_any(days)),
+    )
+    .execute(&mut pool.get().await?)
+    .await?;
+    Ok(())
+}
+
 /// Everything about activities that an export holds, apart from files.
 pub struct ActivityExport {
     pub id: Uuid,

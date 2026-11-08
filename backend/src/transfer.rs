@@ -13,6 +13,8 @@
 //! Both run on a blocking thread, since ZIP files are read and written
 //! synchronously. They reach the database through the runtime's handle.
 
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashSet};
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, Write};
 use std::path::Path;
@@ -171,16 +173,40 @@ pub struct ImportReport {
     pub health_documents: usize,
     /// Routes that were saved or updated.
     pub routes: usize,
+    /// Activities that were removed because they were not in the import, when
+    /// the import replaces what the account had.
+    pub removed_activities: usize,
+    /// Routes that were removed because they were not in the import.
+    pub removed_routes: usize,
+    /// Health documents that were removed because they were not in the import.
+    pub removed_health_documents: usize,
+    /// True if the import should have replaced the account's data but did not,
+    /// since some files could not be read and would have been lost.
+    pub replace_skipped: bool,
+}
+
+/// What an import saved, which a replacing import keeps.
+#[derive(Default)]
+struct Kept {
+    activities: HashSet<Uuid>,
+    routes: HashSet<Uuid>,
+    documents: HashSet<(String, String)>,
+    metrics: HashSet<(String, NaiveDate)>,
 }
 
 /// Imports a Runmap export, or a ZIP with FIT, GPX or TCX files, which may also
 /// be inside ZIPs of their own, like in Garmin's download of an activity.
+///
+/// With `replace`, the account ends up with what the import holds and nothing
+/// else: activities, routes and health data that were not in it are removed,
+/// unless some of its files could not be read.
 pub fn import(
     handle: &Handle,
     pool: &Pool,
     files: &FileStore,
     user_id: i64,
     path: &Path,
+    replace: bool,
 ) -> Result<ImportReport> {
     let mut archive = ZipArchive::new(File::open(path)?).context("this is not a ZIP file")?;
     let context = Import {
@@ -188,12 +214,21 @@ pub fn import(
         pool,
         files,
         user_id,
+        kept: RefCell::default(),
     };
-    if archive.index_for_name(MARKER).is_some() {
-        context.import_export(&mut archive)
+    let mut report = if archive.index_for_name(MARKER).is_some() {
+        context.import_export(&mut archive)?
     } else {
-        context.import_files(&mut archive)
+        context.import_files(&mut archive)?
+    };
+    if replace {
+        if report.failed > 0 {
+            report.replace_skipped = true;
+        } else {
+            context.remove_the_rest(&mut report)?;
+        }
     }
+    Ok(report)
 }
 
 /// What an import needs everywhere.
@@ -202,9 +237,74 @@ struct Import<'a> {
     pool: &'a Pool,
     files: &'a FileStore,
     user_id: i64,
+    kept: RefCell<Kept>,
 }
 
 impl Import<'_> {
+    /// Removes the account's activities, routes and health data that the import did not hold.
+    fn remove_the_rest(&self, report: &mut ImportReport) -> Result<()> {
+        let kept = self.kept.borrow();
+        let activities: Vec<Uuid> = self
+            .handle
+            .block_on(db::activity_ids(self.pool, self.user_id))?
+            .into_iter()
+            .filter(|id| !kept.activities.contains(id))
+            .collect();
+        for chunk in activities.chunks(ACTIVITIES_PER_QUERY) {
+            // The files first: once the rows are gone, nothing says which files were these.
+            for &id in chunk {
+                self.handle.block_on(self.files.remove_activity(id))?;
+            }
+            self.handle
+                .block_on(db::delete_activities(self.pool, self.user_id, chunk))?;
+        }
+        report.removed_activities = activities.len();
+
+        let routes: Vec<Uuid> = self
+            .handle
+            .block_on(db::route_ids(self.pool, self.user_id))?
+            .into_iter()
+            .filter(|id| !kept.routes.contains(id))
+            .collect();
+        self.handle
+            .block_on(db::delete_routes(self.pool, self.user_id, &routes))?;
+        report.removed_routes = routes.len();
+
+        let mut documents: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (kind, period) in self
+            .handle
+            .block_on(db::document_keys(self.pool, self.user_id))?
+        {
+            if !kept.documents.contains(&(kind.clone(), period.clone())) {
+                documents.entry(kind).or_default().push(period);
+            }
+        }
+        for (kind, periods) in &documents {
+            for chunk in periods.chunks(DOCUMENTS_PER_QUERY as usize) {
+                self.handle
+                    .block_on(db::delete_documents(self.pool, self.user_id, kind, chunk))?;
+            }
+            report.removed_health_documents += periods.len();
+        }
+
+        let mut metrics: BTreeMap<String, Vec<NaiveDate>> = BTreeMap::new();
+        for (metric, day) in self
+            .handle
+            .block_on(db::metric_keys(self.pool, self.user_id))?
+        {
+            if !kept.metrics.contains(&(metric.clone(), day)) {
+                metrics.entry(metric).or_default().push(day);
+            }
+        }
+        for (metric, days) in &metrics {
+            for chunk in days.chunks(DOCUMENTS_PER_QUERY as usize) {
+                self.handle
+                    .block_on(db::delete_metrics(self.pool, self.user_id, metric, chunk))?;
+            }
+        }
+        Ok(())
+    }
+
     fn import_export(&self, archive: &mut ZipArchive<File>) -> Result<ImportReport> {
         let marker: Marker = serde_json::from_slice(&read_entry(archive, MARKER)?)
             .context("unreadable runmap-export.json")?;
@@ -270,8 +370,14 @@ impl Import<'_> {
         route.distance_m = prepared.distance_m;
         route.elevation_gain_m = prepared.elevation_gain_m;
         let preview = serde_json::to_value(&prepared.preview)?;
-        self.handle
-            .block_on(db::import_route(self.pool, self.user_id, &route, &preview))
+        let id = route.id;
+        let saved =
+            self.handle
+                .block_on(db::import_route(self.pool, self.user_id, &route, &preview))?;
+        if saved {
+            self.kept.borrow_mut().routes.insert(id);
+        }
+        Ok(saved)
     }
 
     /// False if another account has this activity.
@@ -395,7 +501,11 @@ impl Import<'_> {
             self.user_id,
             &[activity.id],
         ))?;
-        Ok(ids.remove(&activity.id))
+        let id = ids.remove(&activity.id);
+        if let Some(id) = id {
+            self.kept.borrow_mut().activities.insert(id);
+        }
+        Ok(id)
     }
 
     fn save_track(&self, activity: &Activity, id: Uuid, original: Option<&[u8]>) -> Result<()> {
@@ -421,6 +531,15 @@ impl Import<'_> {
             }
             _ => Vec::new(),
         };
+        let mut kept = self.kept.borrow_mut();
+        kept.documents
+            .insert((document.kind.clone(), document.period.clone()));
+        kept.metrics.extend(
+            metrics
+                .iter()
+                .map(|(day, metric, _)| ((*metric).to_owned(), *day)),
+        );
+        drop(kept);
         self.handle.block_on(db::save_document(
             self.pool,
             self.user_id,

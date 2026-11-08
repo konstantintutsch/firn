@@ -191,6 +191,12 @@ not know them, and importing the same file again updates it instead of adding
 it twice. Files from elsewhere do not say their time zone, so their times are in
 UTC.
 
+Check **Keep only the data from the import** before choosing a file to set the
+account to the state of the import: activities, routes and health data that are
+not in it are removed. This cannot be undone, and nothing is removed if some
+files of the import could not be read. A later sync from Garmin saves the removed
+activities again. Over the API, pass `replace=true` to `POST /api/import`.
+
 ## Garmin access
 
 Runmap uses the [Garmin Connect Personal API](https://developer.garmin.com/gc-developer-program/personal/personal-api),

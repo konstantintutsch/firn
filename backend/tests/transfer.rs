@@ -242,7 +242,11 @@ async fn imports_loose_files_once() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         report,
-        json!({"activities": 1, "skipped": 0, "failed": 1, "health_documents": 0, "routes": 0})
+        json!({
+            "activities": 1, "skipped": 0, "failed": 1, "health_documents": 0, "routes": 0,
+            "removed_activities": 0, "removed_routes": 0, "removed_health_documents": 0,
+            "replace_skipped": false,
+        })
     );
     let ids = activity_ids(&pool).await;
     assert_eq!(ids.len(), 1);
@@ -272,4 +276,81 @@ async fn import_refuses_what_is_not_a_zip() {
     let state = common::state(pool, "http://unused", None).await;
     let (status, _) = import(&state, b"not a zip".to_vec()).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+async fn replace(state: &AppState, zip: Vec<u8>) -> Value {
+    let request = Request::post("/api/import?replace=true");
+    let (status, body) = send(state, request, Body::from(zip)).await;
+    assert_eq!(status, StatusCode::OK);
+    serde_json::from_slice(&body).unwrap()
+}
+
+#[tokio::test]
+async fn a_replacing_import_leaves_only_what_it_holds() {
+    let source = synced_state().await;
+    let id = common::activity_id(source.pool(), 7).await;
+    let (_, export) = send(&source, Request::get("/api/export"), Body::empty()).await;
+
+    // The account has a loose activity, a route and a day of health data of its own.
+    let pool = common::test_pool().await;
+    let state = common::state(pool.clone(), "http://unused", None).await;
+    import(&state, common::zip_of(&[("Morning.gpx", GPX)])).await;
+    let loose = activity_ids(&pool).await[0];
+    let loose_id = common::activity_id(&pool, loose).await;
+    let request = Request::post("/api/routes").header("content-type", "application/json");
+    let route = json!({"activity_id": loose_id}).to_string();
+    let (status, _) = send(&state, request, Body::from(route)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let user = common::user(&pool).await;
+    db::save_document(
+        &pool,
+        user,
+        "sleep",
+        "2020-01-01",
+        Some(&json!({})),
+        &[("2020-01-01".parse().unwrap(), "sleep_h", 6.0)],
+    )
+    .await
+    .unwrap();
+
+    // Without replacing, the import adds to them.
+    import(&state, export.clone()).await;
+    assert_eq!(activity_ids(&pool).await.len(), 2);
+
+    let report = replace(&state, export).await;
+    assert_eq!(report["removed_activities"], 1);
+    assert_eq!(report["removed_routes"], 1);
+    assert!(report["removed_health_documents"].as_u64().unwrap() >= 1);
+    assert_eq!(report["replace_skipped"], false);
+    assert_eq!(activity_ids(&pool).await, [7]);
+    let files = common::files(&pool).await;
+    assert!(files.original(loose_id).await.unwrap().is_none());
+    assert!(files.original(id).await.unwrap().is_some());
+    let (_, body) = send(&state, Request::get("/api/routes"), Body::empty()).await;
+    let list: Value = serde_json::from_slice(&body).unwrap();
+    assert!(list["routes"].as_array().unwrap().is_empty());
+    let (_, body) = send(
+        &state,
+        Request::get("/api/statistics/health"),
+        Body::empty(),
+    )
+    .await;
+    let health: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(health["metrics"]["sleep_h"].as_array().unwrap().len(), 1);
+    assert_eq!(health["metrics"]["sleep_h"][0][0], "2026-05-01");
+}
+
+#[tokio::test]
+async fn a_replacing_import_with_unreadable_files_removes_nothing() {
+    let pool = common::test_pool().await;
+    let state = common::state(pool.clone(), "http://unused", None).await;
+    import(&state, common::zip_of(&[("Morning.gpx", GPX)])).await;
+    let before = activity_ids(&pool).await;
+    let no_time = br#"<gpx><trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx>"#;
+
+    let report = replace(&state, common::zip_of(&[("broken.gpx", no_time)])).await;
+    assert_eq!(report["failed"], 1);
+    assert_eq!(report["replace_skipped"], true);
+    assert_eq!(report["removed_activities"], 0);
+    assert_eq!(activity_ids(&pool).await, before);
 }
