@@ -87,6 +87,7 @@ async fn main() -> Result<()> {
     db::rename_activity_folders(&pool, &files).await?;
     db::move_files_to_store(&pool, &files).await?;
     db::backfill_vo2_max(&pool, &files).await?;
+    db::backfill_devices(&pool, &files).await?;
 
     let secret_box = SecretBox::new(&secret_env("APP_SECRET").unwrap_or_default())?;
     let extra_roots = match &cli.oidc_ca_cert {

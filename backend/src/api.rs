@@ -514,12 +514,35 @@ struct ActivityItem {
     /// small picture of the activity. `null` without a track.
     #[schema(value_type = Option<Vec<Vec<f64>>>)]
     preview: Option<Value>,
+    /// Garmin's weather at the start, like `temp` in °F and `windSpeed`, if it listed one.
+    #[schema(value_type = Option<Object>)]
+    weather: Option<Value>,
+    /// The watch and the sensors that recorded the activity, the watch first.
+    /// `null` until the activity's file was searched for them.
+    devices: Option<Vec<track::Device>>,
+    /// What the activity trained most, like `TEMPO`, as Garmin names it.
+    training_effect_label: Option<String>,
+    /// The primary training effect, from 0 to 5.
+    aerobic_training_effect: Option<f64>,
+    /// The official result, if it was a race and one was entered.
+    result: Option<db::RaceResult>,
 }
 
 impl ActivityItem {
-    fn new(activity: db::ActivitySummary, bounds: Option<[f64; 4]>) -> Self {
+    fn new(
+        activity: db::ActivitySummary,
+        bounds: Option<[f64; 4]>,
+        result: Option<db::RaceResult>,
+    ) -> Self {
         ActivityItem {
             bounds,
+            result,
+            weather: activity.weather.filter(Value::is_object),
+            devices: activity
+                .devices
+                .and_then(|devices| serde_json::from_value(devices).ok()),
+            training_effect_label: activity.training_effect_label,
+            aerobic_training_effect: activity.aerobic_training_effect,
             id: activity.id,
             garmin_id: activity.garmin_id,
             preview: activity.preview,
@@ -583,6 +606,8 @@ async fn activities(
     let found = db::search_activities(&state.pool, &filter, order, limit, offset).await?;
     let tracks = state.tracks(user.id).await?;
     let wanted: HashSet<Uuid> = found.iter().map(|activity| activity.id).collect();
+    let ids: Vec<Uuid> = wanted.iter().copied().collect();
+    let mut results = db::race_results(&state.pool, &ids).await?;
     let bounds: HashMap<Uuid, Viewport> = tracks
         .iter()
         .filter(|saved| wanted.contains(&saved.id))
@@ -594,7 +619,8 @@ async fn activities(
             .into_iter()
             .map(|activity| {
                 let bounds = bounds.get(&activity.id).copied().map(to_degree_bounds);
-                ActivityItem::new(activity, bounds)
+                let result = results.remove(&activity.id);
+                ActivityItem::new(activity, bounds, result)
             })
             .collect(),
     }))
@@ -782,7 +808,7 @@ async fn activity(
         db::neighbors(&state.pool, user.id, id, activity.started_at).await?;
     let result = db::race_results(&state.pool, &[id]).await?.remove(&id);
     Ok(Json(ActivityDetail {
-        activity: ActivityItem::new(activity, bounds),
+        activity: ActivityItem::new(activity, bounds, result.clone()),
         summary,
         samples: Samples::from_samples(&samples),
         images,
@@ -852,7 +878,7 @@ async fn resync_activity(
     request_body = db::RaceResult,
     responses(
         (status = 204, description = "Saved"),
-        (status = 400, description = "Invalid distance, time or link", body = ErrorBody),
+        (status = 400, description = "Invalid distance, time, target time or link", body = ErrorBody),
         (status = 401, description = "Not signed in", body = ErrorBody),
         (status = 403, description = "The header is missing", body = ErrorBody),
         (status = 404, description = "No such activity", body = ErrorBody),
@@ -869,6 +895,9 @@ async fn save_result(
     let positive = |value: f64| value.is_finite() && value > 0.0;
     if !positive(result.distance_m) || !positive(result.time_s) {
         return Err(ApiError::BadRequest("distance and time must be positive"));
+    }
+    if result.target_time_s.is_some_and(|target| !positive(target)) {
+        return Err(ApiError::BadRequest("the target time must be positive"));
     }
     result.event = text(result.event);
     result.results_url = text(result.results_url);

@@ -145,7 +145,7 @@ async fn synced_state() -> AppState {
 async fn an_export_restores_everything_in_another_runmap() {
     let source = synced_state().await;
     let id = common::activity_id(source.pool(), 7).await;
-    let result = json!({"distance_m": 1000.0, "time_s": 240.0, "event": null, "results_url": null});
+    let result = json!({"distance_m": 1000.0, "time_s": 240.0, "event": null, "results_url": null, "target_time_s": 230.0});
     let request = Request::put(format!("/api/activities/{}/result", id))
         .header("content-type", "application/json");
     let (status, _) = send(&source, request, Body::from(result.to_string())).await;

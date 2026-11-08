@@ -202,6 +202,11 @@ async fn save_original(
         None
     });
     db::save_vo2_max(pool, id, vo2_max).await?;
+    let devices = track::devices(&zip).unwrap_or_else(|error| {
+        tracing::warn!(id = activity.id, %error, "could not read the devices from the file");
+        Vec::new()
+    });
+    db::save_devices(pool, id, &devices).await?;
     Ok(())
 }
 

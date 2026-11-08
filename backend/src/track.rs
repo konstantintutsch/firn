@@ -142,6 +142,82 @@ pub fn vo2_max(zip: &[u8]) -> Result<Option<f64>> {
     Ok(found)
 }
 
+/// A watch or sensor that recorded an activity.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+pub struct Device {
+    /// Whether this is the device that made the file, usually the watch.
+    pub creator: bool,
+    /// Like `garmin`.
+    pub manufacturer: Option<String>,
+    /// The product's name, like `fenix7`, or its number.
+    pub product: Option<String>,
+    /// What it measures, like `heart_rate` or `bike_power`. Not set for the watch.
+    pub kind: Option<String>,
+    pub serial_number: Option<u32>,
+}
+
+/// The text of a FIT field that is not empty.
+fn text(value: &Value) -> Option<String> {
+    match value {
+        Value::Invalid => None,
+        other => Some(other.to_string().trim().to_owned()).filter(|text| !text.is_empty()),
+    }
+}
+
+/// The watch and the sensors that a FIT file lists, each once, the watch first.
+/// Other formats list none.
+pub fn devices(zip: &[u8]) -> Result<Vec<Device>> {
+    let (name, content) = original_file(zip)?;
+    if !name.ends_with(".fit") {
+        return Ok(Vec::new());
+    }
+    let mut devices: Vec<Device> = Vec::new();
+    for record in fitparser::from_bytes(&content).context("malformed FIT")? {
+        if record.kind() != MesgNum::DeviceInfo {
+            continue;
+        }
+        let field = |names: &[&str]| {
+            names.iter().find_map(|wanted| {
+                let field = record
+                    .fields()
+                    .iter()
+                    .find(|field| field.name() == *wanted)?;
+                text(field.value())
+            })
+        };
+        let creator =
+            field(&["device_index"]).is_some_and(|index| index == "creator" || index == "0");
+        let manufacturer = field(&["manufacturer"]);
+        let product = field(&[
+            "product_name",
+            "garmin_product",
+            "favero_product",
+            "product",
+        ]);
+        // Parts of the watch, like its battery, are listed too, without a product.
+        if manufacturer.is_none() && product.is_none() {
+            continue;
+        }
+        let device = Device {
+            creator,
+            manufacturer,
+            product,
+            kind: if creator {
+                None
+            } else {
+                field(&["antplus_device_type", "device_type"])
+            },
+            serial_number: field(&["serial_number"]).and_then(|serial| serial.parse().ok()),
+        };
+        if !devices.contains(&device) {
+            devices.push(device);
+        }
+    }
+    // The watch first, then the sensors in the order the file lists them.
+    devices.sort_by_key(|device| !device.creator);
+    Ok(devices)
+}
+
 /// How many points of a track the small picture of an activity has.
 const PREVIEW_POINTS: usize = 64;
 

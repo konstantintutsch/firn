@@ -23,6 +23,11 @@ diesel::table! {
         vo2_max -> Nullable<Float8>,
         garmin_id -> Int8,
         preview -> Nullable<Jsonb>,
+        devices -> Nullable<Jsonb>,
+        devices_checked_at -> Nullable<Timestamptz>,
+        weather -> Nullable<Jsonb>,
+        training_effect_label -> Nullable<Text>,
+        aerobic_training_effect -> Nullable<Float8>,
     }
 }
 
@@ -97,6 +102,7 @@ diesel::table! {
         time_s -> Float8,
         event -> Nullable<Text>,
         results_url -> Nullable<Text>,
+        target_time_s -> Nullable<Float8>,
     }
 }
 

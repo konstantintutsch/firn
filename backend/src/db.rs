@@ -574,6 +574,14 @@ pub struct ActivitySummary {
     pub location: Option<String>,
     /// About 64 points along the track as `[latitude, longitude]`.
     pub preview: Option<Value>,
+    /// Garmin's weather at the start, if it listed one.
+    pub weather: Option<Value>,
+    /// The watch and sensors that recorded the activity.
+    pub devices: Option<Value>,
+    /// What the activity trained most, like `TEMPO`, as Garmin names it.
+    pub training_effect_label: Option<String>,
+    /// How much the activity improved aerobic fitness, from 0 to 5.
+    pub aerobic_training_effect: Option<f64>,
 }
 
 /// The newest activities that match, after skipping the `offset` newest.
@@ -985,6 +993,9 @@ pub struct RaceResult {
     pub event: Option<String>,
     /// Where the official results are published.
     pub results_url: Option<String>,
+    /// The finish time that was aimed for.
+    #[serde(default)]
+    pub target_time_s: Option<f64>,
 }
 
 /// The race results of activities, by activity.
@@ -1021,6 +1032,7 @@ pub async fn save_race_result(
         race_results::time_s.eq(result.time_s),
         race_results::event.eq(&result.event),
         race_results::results_url.eq(&result.results_url),
+        race_results::target_time_s.eq(result.target_time_s),
     );
     diesel::insert_into(race_results::table)
         .values(row)
@@ -1338,6 +1350,44 @@ pub async fn backfill_vo2_max(pool: &Pool, files: &FileStore) -> Result<()> {
     }
     if !ids.is_empty() {
         tracing::info!(searched = ids.len(), found, "read VO2 max from saved files");
+    }
+    Ok(())
+}
+
+/// Saves the devices that an activity's file lists, and marks the file as searched.
+pub async fn save_devices(pool: &Pool, id: Uuid, devices: &[crate::track::Device]) -> Result<()> {
+    diesel::update(activities::table.find(id))
+        .set((
+            activities::devices.eq(serde_json::to_value(devices)?),
+            activities::devices_checked_at.eq(diesel::dsl::now),
+        ))
+        .execute(&mut pool.get().await?)
+        .await?;
+    Ok(())
+}
+
+/// Reads the devices from the saved files of activities that were not searched yet.
+pub async fn backfill_devices(pool: &Pool, files: &FileStore) -> Result<()> {
+    let ids: Vec<Uuid> = activities::table
+        .filter(activities::devices_checked_at.is_null())
+        .filter(activities::track_synced_at.is_not_null())
+        .select(activities::id)
+        .load(&mut pool.get().await?)
+        .await?;
+    let mut found = 0;
+    for &id in &ids {
+        let devices = match files.original(id).await? {
+            Some(zip) => crate::track::devices(&zip).unwrap_or_else(|error| {
+                tracing::warn!(%id, %error, "could not read the devices from the file");
+                Vec::new()
+            }),
+            None => Vec::new(),
+        };
+        found += usize::from(!devices.is_empty());
+        save_devices(pool, id, &devices).await?;
+    }
+    if !ids.is_empty() {
+        tracing::info!(searched = ids.len(), found, "read devices from saved files");
     }
     Ok(())
 }

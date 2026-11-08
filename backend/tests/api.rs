@@ -832,6 +832,55 @@ async fn accounts_see_only_their_own_activities() {
 }
 
 #[tokio::test]
+async fn activities_list_their_weather_devices_and_training_effect() {
+    let pool = common::test_pool().await;
+    add_activity(
+        &pool,
+        1,
+        json!({"aerobicTrainingEffect": 3.4, "trainingEffectLabel": "TEMPO"}),
+        &[BERLIN, NEAR_BERLIN],
+    )
+    .await;
+    add_activity(&pool, 2, json!({"aerobicTrainingEffect": "n/a"}), &[BERLIN]).await;
+    db::save_details(
+        &pool,
+        common::uuid(1),
+        &json!({"weather": {"temp": 59.0, "windSpeed": 7}}),
+    )
+    .await
+    .unwrap();
+    let watch = runmap::track::Device {
+        creator: true,
+        manufacturer: Some("garmin".to_owned()),
+        product: Some("fenix7".to_owned()),
+        kind: None,
+        serial_number: None,
+    };
+    db::save_devices(&pool, common::uuid(1), &[watch])
+        .await
+        .unwrap();
+
+    let (_, list) = get(&pool, "/api/activities").await;
+    let find = |id: i64| {
+        list["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|activity| activity["id"] == common::uuid(id).to_string())
+            .unwrap()
+    };
+    let run = find(1);
+    assert_eq!(run["aerobic_training_effect"], 3.4);
+    assert_eq!(run["training_effect_label"], "TEMPO");
+    assert_eq!(run["weather"]["temp"], 59.0);
+    assert_eq!(run["devices"][0]["product"], "fenix7");
+    let other = find(2);
+    assert_eq!(other["aerobic_training_effect"], Value::Null);
+    assert_eq!(other["weather"], Value::Null);
+    assert_eq!(other["devices"], Value::Null);
+}
+
+#[tokio::test]
 async fn activity_statistics_include_activities_without_gps() {
     let pool = common::test_pool().await;
     add_activity(
@@ -1276,6 +1325,7 @@ async fn race_results_are_entered_by_hand() {
         "time_s": 5400.0,
         "event": " Berlin Half ",
         "results_url": "https://results.example/123",
+        "target_time_s": 5100.0,
     });
 
     let cookie = common::cookie(&pool).await;
@@ -1286,6 +1336,15 @@ async fn race_results_are_entered_by_hand() {
     let (_, detail) = get(&pool, &format!("/api/activities/{}", common::uuid(1))).await;
     assert_eq!(detail["result"]["event"], "Berlin Half");
     assert_eq!(detail["result"]["time_s"], 5400.0);
+    assert_eq!(detail["activity"]["result"]["target_time_s"], 5100.0);
+    let (_, list) = get(&pool, "/api/activities").await;
+    let listed = &list["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == json!(common::uuid(1)))
+        .unwrap()["result"];
+    assert_eq!(listed["time_s"], 5400.0);
     let (_, statistics) = get(&pool, "/api/statistics/activities").await;
     let first = &statistics["activities"].as_array().unwrap()[0];
     assert_eq!(

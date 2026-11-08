@@ -1,7 +1,9 @@
 mod common;
 
-use common::{FitRecord, fit_of, fit_of_records, fit_of_vo2_max, semicircles, zip_of};
-use runmap::track::{Point, original_file, parse_archive, parse_samples, to_gpx, vo2_max};
+use common::{
+    FitRecord, fit_of, fit_of_devices, fit_of_records, fit_of_vo2_max, semicircles, zip_of,
+};
+use runmap::track::{Point, devices, original_file, parse_archive, parse_samples, to_gpx, vo2_max};
 
 const GPX: &[u8] = br#"<?xml version="1.0"?>
     <gpx xmlns="http://www.topografix.com/GPX/1/1"><trk>
@@ -207,4 +209,26 @@ fn fit_and_gpx_without_vo2_max_have_none() {
     assert_eq!(fit, None);
     let gpx = vo2_max(&zip_of(&[("a.gpx", GPX)])).unwrap();
     assert_eq!(gpx, None);
+}
+
+#[test]
+fn reads_the_watch_and_the_sensors_of_fit() {
+    // The watch, a heart rate strap (ANT+ type 120) and the watch again, as a battery update.
+    let fit = fit_of_devices(&[(0, 0, 1, 4024), (1, 120, 1, 2), (0, 0, 1, 4024)]);
+    let found = devices(&zip_of(&[("a.fit", &fit)])).unwrap();
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert!(found[0].creator);
+    assert_eq!(found[0].manufacturer.as_deref(), Some("garmin"));
+    assert!(!found[1].creator);
+    assert_eq!(found[1].kind.as_deref(), Some("heart_rate"));
+}
+
+#[test]
+fn fit_without_device_info_and_gpx_have_no_devices() {
+    assert!(
+        devices(&zip_of(&[("a.fit", &fit_of(&[]))]))
+            .unwrap()
+            .is_empty()
+    );
+    assert!(devices(&zip_of(&[("a.gpx", GPX)])).unwrap().is_empty());
 }
