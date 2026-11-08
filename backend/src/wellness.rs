@@ -52,32 +52,18 @@ pub struct Metric {
     pub paths: &'static [&'static str],
     /// Multiplies the value, for example to turn grams into kilograms.
     pub scale: f64,
-    /// Whether the key may be searched anywhere, for records where another
-    /// place holds a different value under the same key.
-    pub search: bool,
 }
 
 const fn metric(name: &'static str, paths: &'static [&'static str]) -> Metric {
-    scaled(name, paths, 1.0)
-}
-
-const fn scaled(name: &'static str, paths: &'static [&'static str], scale: f64) -> Metric {
-    Metric {
-        name,
-        paths,
-        scale,
-        search: true,
-    }
-}
-
-/// Read only from its paths, never searched for.
-const fn exact(name: &'static str, paths: &'static [&'static str]) -> Metric {
     Metric {
         name,
         paths,
         scale: 1.0,
-        search: false,
     }
+}
+
+const fn scaled(name: &'static str, paths: &'static [&'static str], scale: f64) -> Metric {
+    Metric { name, paths, scale }
 }
 
 pub const KINDS: &[Kind] = &[
@@ -304,24 +290,6 @@ pub const KINDS: &[Kind] = &[
             metric("chronological_age", &["chronologicalAge"]),
         ],
     },
-    // The activity summaries lack VO2 max. Each day where it changed holds a record
-    // with the running (generic) and the cycling value, which share their keys.
-    Kind {
-        name: "max_metrics",
-        period: Period::Range,
-        path: "/metrics-service/metrics/maxmet/daily/{start}/{end}",
-        dates: Dates::Path,
-        metrics: &[
-            exact(
-                "vo2_max",
-                &["generic.vo2MaxPreciseValue", "generic.vo2MaxValue"],
-            ),
-            exact(
-                "vo2_max_cycling",
-                &["cycling.vo2MaxPreciseValue", "cycling.vo2MaxValue"],
-            ),
-        ],
-    },
     Kind {
         name: "profile_settings",
         period: Period::Undated,
@@ -367,14 +335,8 @@ const HRV_METRICS: &[Metric] = &[
     metric("hrv_baseline_high", &["baseline.balancedUpper"]),
 ];
 
-/// Dotted paths that hold the day a record belongs to.
-const DATE_KEYS: &[&str] = &[
-    "calendarDate",
-    "summaryDate",
-    "date",
-    "generic.calendarDate",
-    "cycling.calendarDate",
-];
+/// Keys that hold the day a record belongs to.
+const DATE_KEYS: &[&str] = &["calendarDate", "summaryDate", "date"];
 
 impl Kind {
     pub fn request(&self, period: &str) -> (String, Vec<(&'static str, String)>) {
@@ -431,9 +393,6 @@ impl Metric {
             .iter()
             .find_map(|path| number(at_path(record, path)?))
             .or_else(|| {
-                if !self.search {
-                    return None;
-                }
                 let key = self.paths.first()?.rsplit('.').next()?;
                 find_key(record, key)
             })?;
@@ -468,7 +427,7 @@ fn find_key(value: &Value, key: &str) -> Option<f64> {
 
 fn record_day(value: &Value) -> Option<NaiveDate> {
     DATE_KEYS.iter().find_map(|key| {
-        let text = at_path(value, key)?.as_str()?;
+        let text = value.get(key)?.as_str()?;
         NaiveDate::parse_from_str(text.get(..10)?, "%Y-%m-%d").ok()
     })
 }
@@ -625,29 +584,6 @@ mod tests {
         ] {
             assert!(found.contains(&expected), "missing {expected:?}");
         }
-    }
-
-    #[test]
-    fn keeps_the_running_and_cycling_vo2_max_apart() {
-        let data = json!([
-            {
-                "generic": {"calendarDate": "2026-01-01", "vo2MaxPreciseValue": 52.4, "vo2MaxValue": 52.0},
-                "cycling": null,
-                "heatAltitudeAcclimation": {"calendarDate": "2026-01-01", "heatAcclimationPercentage": 10},
-            },
-            {
-                "generic": null,
-                "cycling": {"calendarDate": "2026-01-02", "vo2MaxPreciseValue": 48.1},
-            },
-        ]);
-        let found = kind("max_metrics").unwrap().extract(&data, None);
-        assert_eq!(
-            found,
-            [
-                (day("2026-01-01"), "vo2_max", 52.4),
-                (day("2026-01-02"), "vo2_max_cycling", 48.1),
-            ]
-        );
     }
 
     #[test]

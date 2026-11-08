@@ -922,6 +922,8 @@ pub struct ActivityRecord {
     pub distance_m: Option<f64>,
     pub duration_s: Option<f64>,
     pub summary: Value,
+    pub vo2_max: Option<f64>,
+    pub vo2_max_cycling: Option<f64>,
 }
 
 /// The matching activities, oldest first.
@@ -1250,60 +1252,24 @@ pub async fn move_files_to_store(pool: &Pool, files: &FileStore) -> Result<()> {
     Ok(())
 }
 
-/// Saves the VO2 max that an activity's file holds as the daily values of its
-/// day, and marks the file as searched.
+/// Saves the VO2 max that an activity's file holds, and marks the file as searched.
 pub async fn save_vo2_max(pool: &Pool, id: i64, vo2_max: Vo2Max) -> Result<()> {
-    let (user_id, started_local): (Option<i64>, Option<String>) = activities::table
-        .find(id)
-        .select((activities::user_id, activities::started_local))
-        .first(&mut pool.get().await?)
-        .await?;
-    let day = started_local
-        .and_then(|local| NaiveDate::parse_from_str(local.get(..10)?, "%Y-%m-%d").ok());
-    let mut connection = pool.get().await?;
-    connection
-        .transaction::<_, diesel::result::Error, _>(async |connection| {
-            if let (Some(user_id), Some(day)) = (user_id, day) {
-                for (metric, value) in [
-                    ("vo2_max", vo2_max.running),
-                    ("vo2_max_cycling", vo2_max.cycling),
-                ] {
-                    let Some(value) = value else { continue };
-                    diesel::insert_into(daily_metrics::table)
-                        .values((
-                            daily_metrics::user_id.eq(user_id),
-                            daily_metrics::day.eq(day),
-                            daily_metrics::metric.eq(metric),
-                            daily_metrics::value.eq(value),
-                        ))
-                        .on_conflict((
-                            daily_metrics::user_id,
-                            daily_metrics::metric,
-                            daily_metrics::day,
-                        ))
-                        .do_update()
-                        .set(daily_metrics::value.eq(excluded(daily_metrics::value)))
-                        .execute(&mut *connection)
-                        .await?;
-                }
-            }
-            diesel::update(activities::table.find(id))
-                .set(activities::vo2_max_checked_at.eq(diesel::dsl::now))
-                .execute(&mut *connection)
-                .await?;
-            Ok(())
-        })
+    diesel::update(activities::table.find(id))
+        .set((
+            activities::vo2_max.eq(vo2_max.running),
+            activities::vo2_max_cycling.eq(vo2_max.cycling),
+            activities::vo2_max_checked_at.eq(diesel::dsl::now),
+        ))
+        .execute(&mut pool.get().await?)
         .await?;
     Ok(())
 }
 
-/// Reads VO2 max from the saved files of activities that were not searched yet,
-/// oldest first, so that the latest activity of a day sets its value.
+/// Reads VO2 max from the saved files of activities that were not searched yet.
 pub async fn backfill_vo2_max(pool: &Pool, files: &FileStore) -> Result<()> {
     let ids: Vec<i64> = activities::table
         .filter(activities::vo2_max_checked_at.is_null())
         .filter(activities::track_synced_at.is_not_null())
-        .order(activities::started_at.asc())
         .select(activities::id)
         .load(&mut pool.get().await?)
         .await?;

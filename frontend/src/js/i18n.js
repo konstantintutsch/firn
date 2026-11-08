@@ -322,7 +322,7 @@ const GERMAN = {
   "Heart rate in activities": "Herzfrequenz bei Aktivitäten",
   "Average per activity": "Durchschnitt pro Aktivität",
   "VO2 max": "VO2max",
-  "As Garmin estimated it after activities": "Wie Garmin sie nach Aktivitäten geschätzt hat",
+  "As Garmin estimated it for each activity": "Wie Garmin sie für jede Aktivität geschätzt hat",
   Running: "Laufen",
   Cycling: "Radfahren",
   "Training load": "Trainingsbelastung",

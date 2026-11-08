@@ -822,10 +822,20 @@ async fn activity_statistics_include_activities_without_gps() {
     add_activity(
         &pool,
         1,
-        json!({"averageHR": 151.0, "elevationGain": 40.0, "vO2MaxValue": 52.0}),
+        json!({"averageHR": 151.0, "elevationGain": 40.0}),
         &[BERLIN, NEAR_BERLIN],
     )
     .await;
+    db::save_vo2_max(
+        &pool,
+        1,
+        runmap::track::Vo2Max {
+            running: Some(52.4),
+            cycling: None,
+        },
+    )
+    .await
+    .unwrap();
     add_activity(
         &pool,
         2,
@@ -847,7 +857,8 @@ async fn activity_statistics_include_activities_without_gps() {
         .find(|activity| activity["id"] == 1)
         .unwrap();
     assert_eq!(run["average_heart_rate"], 151.0);
-    assert_eq!(run["vo2_max"], 52.0);
+    assert_eq!(run["vo2_max"], 52.4);
+    assert_eq!(run["vo2_max_cycling"], Value::Null);
     assert_eq!(run["result"], Value::Null);
     let gym = activities
         .iter()

@@ -47,7 +47,10 @@ pub struct ActivityStatistic {
     max_heart_rate: Option<f64>,
     calories: Option<f64>,
     average_speed_mps: Option<f64>,
+    /// The running VO2 max that the activity's file recorded.
     vo2_max: Option<f64>,
+    /// The cycling VO2 max that the activity's file recorded.
+    vo2_max_cycling: Option<f64>,
     aerobic_training_effect: Option<f64>,
     anaerobic_training_effect: Option<f64>,
     training_load: Option<f64>,
@@ -104,7 +107,8 @@ pub async fn activity_statistics(
                     max_heart_rate: number(summary, "maxHR"),
                     calories: number(summary, "calories"),
                     average_speed_mps: number(summary, "averageSpeed"),
-                    vo2_max: number(summary, "vO2MaxValue"),
+                    vo2_max: record.vo2_max,
+                    vo2_max_cycling: record.vo2_max_cycling,
                     aerobic_training_effect: number(summary, "aerobicTrainingEffect"),
                     anaerobic_training_effect: number(summary, "anaerobicTrainingEffect"),
                     training_load: number(summary, "activityTrainingLoad"),
