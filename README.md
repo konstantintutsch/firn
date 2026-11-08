@@ -193,8 +193,10 @@ UTC.
 
 **Import** opens a dialog before the file dialog. Choose *An Apple Health export*
 to import the ZIP that the Health app makes: the daily values (steps, distance,
-calories, floors, heart rate, HRV, breathing, blood oxygen, sleep, water and
-weight) and, if you choose so, its workouts as activities with their routes.
+calories, floors, heart rate, HRV, breathing, blood oxygen, sleep and
+weight), every VO2 max (even several on a day, each linked to its workout if
+that was imported) and, if you choose so, its workouts as activities with their
+routes.
 Where Garmin saved a value for a day already, it stays.
 
 Check **Keep only the data from the import** before choosing a file to set the

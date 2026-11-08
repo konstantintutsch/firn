@@ -899,6 +899,7 @@ pub async fn save_document(
                         daily_metrics::user_id,
                         daily_metrics::metric,
                         daily_metrics::day,
+                        daily_metrics::seq,
                     ))
                     .do_update()
                     .set(daily_metrics::value.eq(excluded(daily_metrics::value)))
@@ -935,7 +936,11 @@ pub async fn daily_metrics(
             daily_metrics::day,
             daily_metrics::value,
         ))
-        .order((daily_metrics::metric, daily_metrics::day))
+        .order((
+            daily_metrics::metric,
+            daily_metrics::day,
+            daily_metrics::seq,
+        ))
         .into_boxed();
     if let Some(from) = from {
         query = query.filter(daily_metrics::day.ge(from));
@@ -1134,14 +1139,46 @@ pub async fn activity_ids(pool: &Pool, user_id: i64) -> Result<Vec<Uuid>> {
         .await?)
 }
 
+/// A VO2 max from Apple Health, which belongs to a workout if there is one for it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Vo2Reading {
+    pub value: f64,
+    pub activity_id: Option<Uuid>,
+}
+
 /// Saves a day of values from Apple Health as a document of its own, so that an
-/// export holds them. Values that Garmin or an earlier import saved stay.
+/// export holds them. Values that Garmin or an earlier import saved stay. Every
+/// VO2 max of the day is kept, numbered in the order given, each with its
+/// activity if that is one of the account's.
 pub async fn save_apple_health_day(
     pool: &Pool,
     user_id: i64,
     day: NaiveDate,
     metrics: &std::collections::BTreeMap<String, f64>,
+    vo2_max: &[Vo2Reading],
 ) -> Result<()> {
+    let mut connection = pool.get().await?;
+    // A link to an activity that is not the account's, or not here, is left out.
+    let wanted: Vec<Uuid> = vo2_max
+        .iter()
+        .filter_map(|reading| reading.activity_id)
+        .collect();
+    let known: HashSet<Uuid> = activities::table
+        .filter(activities::user_id.eq(user_id))
+        .filter(activities::id.eq_any(&wanted))
+        .select(activities::id)
+        .load(&mut connection)
+        .await?
+        .into_iter()
+        .collect();
+    let vo2_max: Vec<Vo2Reading> = vo2_max
+        .iter()
+        .map(|reading| Vo2Reading {
+            value: reading.value,
+            activity_id: reading.activity_id.filter(|id| known.contains(id)),
+        })
+        .collect();
+
     let rows: Vec<_> = metrics
         .iter()
         .map(|(metric, value)| {
@@ -1153,8 +1190,24 @@ pub async fn save_apple_health_day(
             )
         })
         .collect();
-    let data = json!({ "metrics": metrics });
-    let mut connection = pool.get().await?;
+    let vo2_rows: Vec<_> = vo2_max
+        .iter()
+        .enumerate()
+        .map(|(index, reading)| {
+            (
+                daily_metrics::user_id.eq(user_id),
+                daily_metrics::day.eq(day),
+                daily_metrics::metric.eq(VO2_MAX_METRIC),
+                daily_metrics::value.eq(reading.value),
+                daily_metrics::seq.eq(index as i32),
+                daily_metrics::activity_id.eq(reading.activity_id),
+            )
+        })
+        .collect();
+    let mut data = json!({ "metrics": metrics });
+    if !vo2_max.is_empty() {
+        data["vo2_max"] = serde_json::to_value(&vo2_max)?;
+    }
     connection
         .transaction::<_, diesel::result::Error, _>(async |connection| {
             diesel::insert_into(garmin_documents::table)
@@ -1183,11 +1236,32 @@ pub async fn save_apple_health_day(
                     .execute(&mut *connection)
                     .await?;
             }
+            // Only Apple Health has these, so an import may update its own.
+            if !vo2_rows.is_empty() {
+                diesel::insert_into(daily_metrics::table)
+                    .values(&vo2_rows)
+                    .on_conflict((
+                        daily_metrics::user_id,
+                        daily_metrics::metric,
+                        daily_metrics::day,
+                        daily_metrics::seq,
+                    ))
+                    .do_update()
+                    .set((
+                        daily_metrics::value.eq(excluded(daily_metrics::value)),
+                        daily_metrics::activity_id.eq(excluded(daily_metrics::activity_id)),
+                    ))
+                    .execute(&mut *connection)
+                    .await?;
+            }
             Ok(())
         })
         .await?;
     Ok(())
 }
+
+/// The name of the daily metric that holds the VO2 max that Apple Health measured.
+pub const VO2_MAX_METRIC: &str = "vo2_max";
 
 /// Deletes some of the account's activities, with their tracks, photos and results.
 pub async fn delete_activities(pool: &Pool, user_id: i64, ids: &[Uuid]) -> Result<()> {

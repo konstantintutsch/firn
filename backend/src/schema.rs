@@ -42,11 +42,13 @@ diesel::table! {
 }
 
 diesel::table! {
-    daily_metrics (user_id, metric, day) {
+    daily_metrics (user_id, metric, day, seq) {
         user_id -> Int8,
         day -> Date,
         metric -> Text,
         value -> Float8,
+        seq -> Int4,
+        activity_id -> Nullable<Uuid>,
     }
 }
 
@@ -121,6 +123,7 @@ diesel::table! {
 
 diesel::joinable!(activities -> users (user_id));
 diesel::joinable!(activity_images -> activities (activity_id));
+diesel::joinable!(daily_metrics -> activities (activity_id));
 diesel::joinable!(daily_metrics -> users (user_id));
 diesel::joinable!(garmin_documents -> users (user_id));
 diesel::joinable!(race_results -> activities (activity_id));

@@ -64,7 +64,6 @@ const MAPPINGS: &[Mapping] = &[
     map("ActiveEnergyBurned", "active_calories", Aggregate::Sum, 1.0),
     map("BasalEnergyBurned", BASAL_CALORIES, Aggregate::Sum, 1.0),
     map("FlightsClimbed", "floors", Aggregate::Sum, 1.0),
-    map("DietaryWater", "hydration_l", Aggregate::Sum, 0.001),
     map(
         "RestingHeartRate",
         "resting_heart_rate",
@@ -92,6 +91,7 @@ pub struct Workout {
     /// Apple's type without `HKWorkoutActivityType`, like `Running`.
     pub activity_type: String,
     pub start: DateTime<FixedOffset>,
+    pub end: DateTime<FixedOffset>,
     pub duration_s: f64,
     pub distance_m: Option<f64>,
     pub energy_kcal: Option<f64>,
@@ -101,8 +101,18 @@ pub struct Workout {
     pub route: Option<String>,
 }
 
+/// One VO2 max that the Health app measured, usually after a workout.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Vo2Max {
+    pub time: DateTime<FixedOffset>,
+    /// In mL per minute and kg.
+    pub value: f64,
+}
+
 #[derive(Debug, Default)]
 pub struct Export {
+    /// Every VO2 max, oldest first. None is dropped, even if a day has several.
+    pub vo2_max: Vec<Vo2Max>,
     /// The values of each day, by Garmin's names for them.
     pub days: BTreeMap<NaiveDate, BTreeMap<String, f64>>,
     pub workouts: Vec<Workout>,
@@ -149,6 +159,7 @@ pub fn parse(reader: impl BufRead, workouts: bool) -> Result<Export> {
     let mut totals: HashMap<(NaiveDate, usize, usize), Total> = HashMap::new();
     let mut nights: HashMap<(NaiveDate, usize), Night> = HashMap::new();
     let mut found: Vec<Workout> = Vec::new();
+    let mut vo2_max: Vec<Vo2Max> = Vec::new();
 
     let mut depth = 0usize;
     // Records inside a workout or a correlation are also listed on their own.
@@ -167,6 +178,9 @@ pub fn parse(reader: impl BufRead, workouts: bool) -> Result<Export> {
             match element.local_name().as_ref() {
                 b"Record" if !nested => {
                     if let Some(record) = Record::read(element) {
+                        if let Some(measured) = record.vo2_max() {
+                            vo2_max.push(measured);
+                        }
                         let id = *source_ids.entry(record.source.clone()).or_insert_with(|| {
                             sources.push(record.source.clone());
                             sources.len() - 1
@@ -279,7 +293,9 @@ pub fn parse(reader: impl BufRead, workouts: bool) -> Result<Export> {
         metrics.insert("awake_h".to_owned(), night[4]);
     }
     found.sort_by_key(|workout| workout.start);
+    vo2_max.sort_by_key(|measured| measured.time);
     Ok(Export {
+        vo2_max,
         days,
         workouts: found,
     })
@@ -326,6 +342,20 @@ impl Record {
             *slot = String::from_utf8_lossy(&attribute.value).into_owned();
         }
         (!record.kind.is_empty() && !record.start.is_empty()).then_some(record)
+    }
+
+    /// The VO2 max of this record, if it is one.
+    fn vo2_max(&self) -> Option<Vo2Max> {
+        if self.kind != "HKQuantityTypeIdentifierVO2Max" {
+            return None;
+        }
+        let value = self
+            .value
+            .parse::<f64>()
+            .ok()
+            .filter(|v| v.is_finite() && *v > 0.0)?;
+        let time = DateTime::parse_from_str(&self.start, "%Y-%m-%d %H:%M:%S %z").ok()?;
+        Some(Vo2Max { time, value })
     }
 
     fn add_to(
@@ -403,6 +433,7 @@ fn local_time(text: &str) -> Option<NaiveDateTime> {
 fn read_workout(element: &BytesStart) -> Option<Workout> {
     let mut activity_type = String::new();
     let mut start = None;
+    let mut end = None;
     let mut duration = None;
     let mut duration_unit = String::new();
     let mut distance = None;
@@ -418,6 +449,7 @@ fn read_workout(element: &BytesStart) -> Option<Workout> {
                     .to_owned();
             }
             b"startDate" => start = DateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S %z").ok(),
+            b"endDate" => end = DateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S %z").ok(),
             b"duration" => duration = value.parse::<f64>().ok(),
             b"durationUnit" => duration_unit = value,
             b"totalDistance" => distance = value.parse::<f64>().ok(),
@@ -434,6 +466,7 @@ fn read_workout(element: &BytesStart) -> Option<Workout> {
     Some(Workout {
         activity_type,
         start: start?,
+        end: end?,
         duration_s: duration? * seconds,
         distance_m: distance.map(|distance| distance_in_meters(distance, &distance_unit)),
         energy_kcal: energy,
@@ -529,6 +562,9 @@ mod tests {
  <Record type="HKCategoryTypeIdentifierSleepAnalysis" value="HKCategoryValueSleepAnalysisAsleepCore" sourceName="Watch" startDate="2026-04-09 23:00:00 +0200" endDate="2026-04-10 02:00:00 +0200"/>
  <Record type="HKCategoryTypeIdentifierSleepAnalysis" value="HKCategoryValueSleepAnalysisAsleepDeep" sourceName="Watch" startDate="2026-04-10 02:00:00 +0200" endDate="2026-04-10 03:00:00 +0200"/>
  <Record type="HKCategoryTypeIdentifierSleepAnalysis" value="HKCategoryValueSleepAnalysisInBed" sourceName="Phone" startDate="2026-04-09 22:00:00 +0200" endDate="2026-04-10 07:00:00 +0200"/>
+ <Record type="HKQuantityTypeIdentifierVO2Max" unit="mL/min·kg" value="49.5" sourceName="Watch" startDate="2026-04-10 08:31:00 +0200" endDate="2026-04-10 08:31:00 +0200"/>
+ <Record type="HKQuantityTypeIdentifierVO2Max" unit="mL/min·kg" value="49.7" sourceName="Watch" startDate="2026-04-10 19:00:00 +0200" endDate="2026-04-10 19:00:00 +0200"/>
+ <Record type="HKQuantityTypeIdentifierDietaryWater" unit="mL" value="500" sourceName="Phone" startDate="2026-04-10 12:00:00 +0200" endDate="2026-04-10 12:00:00 +0200"/>
  <Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="30" durationUnit="min" totalDistance="5" totalDistanceUnit="km" totalEnergyBurned="350" sourceName="Watch" startDate="2026-04-10 08:00:00 +0200" endDate="2026-04-10 08:30:00 +0200">
   <Record type="HKQuantityTypeIdentifierStepCount" unit="count" value="9999" sourceName="Watch" startDate="2026-04-10 08:00:00 +0200" endDate="2026-04-10 08:30:00 +0200"/>
   <WorkoutStatistics type="HKQuantityTypeIdentifierHeartRate" average="150" minimum="100" maximum="170" unit="count/min"/>
@@ -556,6 +592,23 @@ mod tests {
         assert_eq!(metrics["calories"], 2000.0);
         assert!(!metrics.contains_key(BASAL_CALORIES));
         assert!(export.workouts.is_empty());
+    }
+
+    #[test]
+    fn every_vo2_max_is_kept_and_water_is_not() {
+        let export = parse(EXPORT.as_bytes(), false).unwrap();
+        let values: Vec<f64> = export
+            .vo2_max
+            .iter()
+            .map(|measured| measured.value)
+            .collect();
+        assert_eq!(values, [49.5, 49.7]);
+        assert_eq!(
+            export.vo2_max[0].time.to_rfc3339(),
+            "2026-04-10T08:31:00+02:00"
+        );
+        let metrics = &export.days[&day()];
+        assert!(!metrics.contains_key("vo2_max") && !metrics.contains_key("hydration_l"));
     }
 
     #[test]
@@ -588,6 +641,7 @@ mod tests {
         assert_eq!(workout.max_heart_rate, Some(170.0));
         assert_eq!(workout.route.as_deref(), Some("/workout-routes/route.gpx"));
         assert_eq!(workout.start.to_rfc3339(), "2026-04-10T08:00:00+02:00");
+        assert_eq!(workout.end.to_rfc3339(), "2026-04-10T08:30:00+02:00");
         // Its records stay out of the days.
         assert_eq!(export.days[&day()]["steps"], 1500.0);
     }

@@ -359,6 +359,9 @@ const APPLE_EXPORT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <HealthData locale="en_DE">
  <Record type="HKQuantityTypeIdentifierStepCount" unit="count" value="4000" sourceName="Watch" startDate="2026-04-10 08:00:00 +0200" endDate="2026-04-10 09:00:00 +0200"/>
  <Record type="HKQuantityTypeIdentifierHeartRate" unit="count/min" value="61" sourceName="Watch" startDate="2026-04-10 08:00:00 +0200" endDate="2026-04-10 08:00:00 +0200"/>
+ <Record type="HKQuantityTypeIdentifierVO2Max" unit="mL/min·kg" value="49.5" sourceName="Watch" startDate="2026-04-10 08:31:00 +0200" endDate="2026-04-10 08:31:00 +0200"/>
+ <Record type="HKQuantityTypeIdentifierVO2Max" unit="mL/min·kg" value="49.7" sourceName="Watch" startDate="2026-04-10 19:00:00 +0200" endDate="2026-04-10 19:00:00 +0200"/>
+ <Record type="HKQuantityTypeIdentifierDietaryWater" unit="mL" value="500" sourceName="Phone" startDate="2026-04-10 12:00:00 +0200" endDate="2026-04-10 12:00:00 +0200"/>
  <Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="30" durationUnit="min" totalDistance="5" totalDistanceUnit="km" totalEnergyBurned="350" sourceName="Watch" startDate="2026-04-10 08:00:00 +0200" endDate="2026-04-10 08:30:00 +0200">
   <WorkoutRoute sourceName="Watch"><FileReference path="/workout-routes/route_1.gpx"/></WorkoutRoute>
  </Workout>
@@ -487,4 +490,93 @@ async fn an_export_carries_the_health_data_of_apple_health() {
     .await;
     let health: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(health["metrics"]["steps"][0], json!(["2026-04-10", 4000.0]));
+}
+
+/// The VO2 max values of the test account: their number, value and activity.
+async fn vo2_max_rows(pool: &Pool) -> Vec<(i32, f64, Option<uuid::Uuid>)> {
+    use diesel::prelude::*;
+    use diesel_async::RunQueryDsl;
+    use runmap::schema::daily_metrics;
+    let user = common::user(pool).await;
+    daily_metrics::table
+        .filter(daily_metrics::user_id.eq(user))
+        .filter(daily_metrics::metric.eq("vo2_max"))
+        .order((daily_metrics::day, daily_metrics::seq))
+        .select((
+            daily_metrics::seq,
+            daily_metrics::value,
+            daily_metrics::activity_id,
+        ))
+        .load(&mut pool.get().await.unwrap())
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn keeps_every_vo2_max_of_a_day_and_links_it_to_its_workout() {
+    let pool = common::test_pool().await;
+    let state = common::state(pool.clone(), "http://unused", None).await;
+
+    // Without the workouts, there is nothing to link to.
+    import_apple(&state, "health", false).await;
+    assert_eq!(
+        vo2_max_rows(&pool).await,
+        [(0, 49.5, None), (1, 49.7, None)]
+    );
+
+    // The workouts, and the VO2 max after the run is the run's. The evening's is not.
+    import_apple(&state, "workouts", false).await;
+    let ids = activity_ids(&pool).await;
+    let run = {
+        let (_, body) = send(
+            &state,
+            Request::get("/api/activities?without_gps=true&sort=oldest"),
+            Body::empty(),
+        )
+        .await;
+        let list: Value = serde_json::from_slice(&body).unwrap();
+        list["activities"][0]["id"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap()
+    };
+    assert_eq!(ids.len(), 2);
+    assert_eq!(
+        vo2_max_rows(&pool).await,
+        [(0, 49.5, Some(run)), (1, 49.7, None)]
+    );
+
+    // The health data alone links to workouts that were imported before.
+    import_apple(&state, "health", false).await;
+    assert_eq!(vo2_max_rows(&pool).await[0].2, Some(run));
+
+    // Both values are in the statistics, and an export carries them with their link.
+    let (_, body) = send(
+        &state,
+        Request::get("/api/statistics/health"),
+        Body::empty(),
+    )
+    .await;
+    let health: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(health["metrics"]["vo2_max"].as_array().unwrap().len(), 2);
+    assert!(health["metrics"].get("hydration_l").is_none());
+    let (_, zip) = send(&state, Request::get("/api/export"), Body::empty()).await;
+    let other_pool = common::test_pool().await;
+    let other = common::state(other_pool.clone(), "http://unused", None).await;
+    import(&other, zip).await;
+    assert_eq!(
+        vo2_max_rows(&other_pool).await,
+        [(0, 49.5, Some(run)), (1, 49.7, None)]
+    );
+
+    // Removing the workout leaves the value, without its link.
+    let user = common::user(&pool).await;
+    runmap::db::delete_activities(&pool, user, &[run])
+        .await
+        .unwrap();
+    assert_eq!(
+        vo2_max_rows(&pool).await,
+        [(0, 49.5, None), (1, 49.7, None)]
+    );
 }

@@ -14,7 +14,7 @@
 //! synchronously. They reach the database through the runtime's handle.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, Write};
 use std::path::Path;
@@ -39,6 +39,8 @@ use crate::track::{self, Point, Sample};
 use crate::wellness::KINDS;
 
 const MARKER: &str = "runmap-export.json";
+/// How long after a workout ends its VO2 max can still be measured and count for it.
+const VO2_MAX_AFTER_WORKOUT_MINUTES: i64 = 30;
 const FORMAT_VERSION: u32 = 1;
 /// Activities read from the database at a time, to keep memory use low.
 const ACTIVITIES_PER_QUERY: usize = 100;
@@ -396,63 +398,125 @@ impl Import<'_> {
             .context("there is no Export.xml in this ZIP. Is it an Apple Health export?")?;
         let parsed = {
             let entry = archive.by_name(export)?;
-            apple_health::parse(
-                BufReader::new(entry.take(MAX_ENTRY_BYTES)),
-                scope == AppleHealthScope::Workouts,
-            )?
+            // The workouts are read for health data too, which links its VO2 max to them.
+            apple_health::parse(BufReader::new(entry.take(MAX_ENTRY_BYTES)), true)?
         };
 
         let mut report = ImportReport::default();
-        for (day, metrics) in &parsed.days {
-            self.save_apple_day(*day, metrics)?;
-            report.health_documents += 1;
-        }
         let routes: HashMap<String, String> = names
             .iter()
             .filter(|name| name.to_ascii_lowercase().ends_with(".gpx"))
             .map(|name| (file_name(name), name.clone()))
             .collect();
-        for workout in &parsed.workouts {
-            match self.import_workout(archive, workout, &routes) {
-                Ok(true) => report.activities += 1,
-                Ok(false) => report.skipped += 1,
-                Err(error) => {
-                    tracing::warn!(start = %workout.start, "could not import: {error:#}");
-                    report.failed += 1;
+        // The activities that the workouts are, by the time they span.
+        let mut activities: Vec<(
+            DateTime<chrono::FixedOffset>,
+            DateTime<chrono::FixedOffset>,
+            Uuid,
+        )> = Vec::new();
+        if scope == AppleHealthScope::Workouts {
+            for workout in &parsed.workouts {
+                match self.import_workout(archive, workout, &routes) {
+                    Ok(Some(id)) => {
+                        report.activities += 1;
+                        activities.push((workout.start, workout.end, id));
+                    }
+                    Ok(None) => report.skipped += 1,
+                    Err(error) => {
+                        tracing::warn!(start = %workout.start, "could not import: {error:#}");
+                        report.failed += 1;
+                    }
                 }
             }
+        } else {
+            // Workouts from an earlier import still get their VO2 max.
+            let garmin_ids: Vec<i64> = parsed
+                .workouts
+                .iter()
+                .map(|workout| self.workout_id(workout))
+                .collect();
+            let known =
+                self.handle
+                    .block_on(db::ids_by_garmin_id(self.pool, self.user_id, &garmin_ids))?;
+            for (workout, garmin_id) in parsed.workouts.iter().zip(garmin_ids) {
+                if let Some(id) = known.get(&garmin_id) {
+                    activities.push((workout.start, workout.end, *id));
+                }
+            }
+        }
+
+        // Each VO2 max goes to the workout that it ended, if there is one.
+        let mut vo2_max: BTreeMap<NaiveDate, Vec<db::Vo2Reading>> = BTreeMap::new();
+        for measured in &parsed.vo2_max {
+            let slack = chrono::Duration::minutes(VO2_MAX_AFTER_WORKOUT_MINUTES);
+            let activity_id = activities
+                .iter()
+                .filter(|(start, end, _)| *start <= measured.time && measured.time <= *end + slack)
+                .max_by_key(|(start, _, _)| *start)
+                .map(|(_, _, id)| *id);
+            vo2_max
+                .entry(measured.time.naive_local().date())
+                .or_default()
+                .push(db::Vo2Reading {
+                    value: measured.value,
+                    activity_id,
+                });
+        }
+
+        let days: BTreeSet<NaiveDate> = parsed.days.keys().chain(vo2_max.keys()).copied().collect();
+        let no_metrics = BTreeMap::new();
+        for day in days {
+            let metrics = parsed.days.get(&day).unwrap_or(&no_metrics);
+            let readings = vo2_max.get(&day).map_or(&[][..], Vec::as_slice);
+            self.save_apple_day(day, metrics, readings)?;
+            report.health_documents += 1;
         }
         Ok(report)
     }
 
-    fn save_apple_day(&self, day: NaiveDate, metrics: &BTreeMap<String, f64>) -> Result<()> {
+    fn save_apple_day(
+        &self,
+        day: NaiveDate,
+        metrics: &BTreeMap<String, f64>,
+        vo2_max: &[db::Vo2Reading],
+    ) -> Result<()> {
         let mut kept = self.kept.borrow_mut();
         kept.documents
             .insert((apple_health::DOCUMENT_KIND.to_owned(), day.to_string()));
         kept.metrics
             .extend(metrics.keys().map(|metric| (metric.clone(), day)));
+        if !vo2_max.is_empty() {
+            kept.metrics.insert((db::VO2_MAX_METRIC.to_owned(), day));
+        }
         drop(kept);
         self.handle.block_on(db::save_apple_health_day(
             self.pool,
             self.user_id,
             day,
             metrics,
+            vo2_max,
         ))
     }
 
-    /// Imports one workout, with its route if the export has it. False if another account has it.
+    /// The ID that a workout gets, which is the same on every import.
+    fn workout_id(&self, workout: &apple_health::Workout) -> i64 {
+        let mut identity = self.user_id.to_le_bytes().to_vec();
+        identity.extend(b"apple-health");
+        identity.extend(workout.start.to_rfc3339().as_bytes());
+        identity.extend(workout.activity_type.as_bytes());
+        imported_id(&identity)
+    }
+
+    /// Imports one workout, with its route if the export has it. Gives the ID of the
+    /// activity, or `None` if another account has it.
     fn import_workout(
         &self,
         archive: &mut ZipArchive<File>,
         workout: &apple_health::Workout,
         routes: &HashMap<String, String>,
-    ) -> Result<bool> {
+    ) -> Result<Option<Uuid>> {
         let (type_key, name) = apple_health::activity_type(&workout.activity_type);
-        let mut identity = self.user_id.to_le_bytes().to_vec();
-        identity.extend(b"apple-health");
-        identity.extend(workout.start.to_rfc3339().as_bytes());
-        identity.extend(workout.activity_type.as_bytes());
-        let id = imported_id(&identity);
+        let id = self.workout_id(workout);
 
         let route = workout
             .route
@@ -473,7 +537,7 @@ impl Import<'_> {
         let summary = workout_summary(id, &name, &type_key, workout, &samples);
         let activity = Activity::from_summary(summary)?;
         let Some(saved) = self.claim(&activity, None)? else {
-            return Ok(false);
+            return Ok(None);
         };
         let original = original.filter(|_| !samples.is_empty());
         self.save_track(&activity, saved, original.as_deref())?;
@@ -484,7 +548,7 @@ impl Import<'_> {
             .block_on(db::save_workouts(self.pool, saved, &json!([])))?;
         self.handle
             .block_on(db::save_images(self.pool, saved, &[]))?;
-        Ok(true)
+        Ok(Some(saved))
     }
 
     /// False if another account has this route.
@@ -656,7 +720,14 @@ impl Import<'_> {
                 .map(|metrics| serde_json::from_value(metrics.clone()))
                 .transpose()?
                 .unwrap_or_default();
-            return self.save_apple_day(day, &metrics);
+            let vo2_max: Vec<db::Vo2Reading> = document
+                .data
+                .as_ref()
+                .and_then(|data| data.get("vo2_max"))
+                .map(|readings| serde_json::from_value(readings.clone()))
+                .transpose()?
+                .unwrap_or_default();
+            return self.save_apple_day(day, &metrics, &vo2_max);
         }
         let metrics = match (
             KINDS.iter().find(|kind| kind.name == document.kind),

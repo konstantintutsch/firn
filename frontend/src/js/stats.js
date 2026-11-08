@@ -199,7 +199,7 @@ async function load() {
       : activities.length === 0 && !hasHealth
         ? t("Nothing saved for this period. Select Sync to save your data from Garmin.")
         : "";
-  renderActivities(activities, buckets);
+  renderActivities(activities, buckets, metrics);
   renderHealth(metrics, buckets);
 }
 
@@ -318,7 +318,7 @@ function averagePerDay(points) {
   return [...days.entries()].sort((a, b) => a[0] - b[0]).map(([time, [total, count]]) => [time, total / count]);
 }
 
-function renderActivities(activities, buckets) {
+function renderActivities(activities, buckets, metrics) {
   const container = document.querySelector("#activity-charts");
   forgetCharts(container);
   container.replaceChildren();
@@ -429,8 +429,11 @@ function renderActivities(activities, buckets) {
       points: dated.filter((activity) => activity.vo2_max != null && matches(activity)).map((activity) => [activity.time, activity.vo2_max]),
     }))
     .filter(({ points }) => points.length > 1);
+  // What a health app measured, which may be several values a day.
+  const measured = (metrics.vo2_max ?? []).map(([day, value]) => [parseDay(day), value]);
+  if (measured.length > 1) vo2Series.push({ name: t("Apple Health"), slot: 3, points: measured });
   if (vo2Series.length > 0) {
-    chart(card(container, "VO2 max", "As Garmin estimated it for each activity"), {
+    chart(card(container, "VO2 max", "As Garmin and Apple Health estimated it"), {
       kind: "line",
       series: vo2Series.map(({ name, slot, points }) => ({ name, slot, values: averagePerDay(points) })),
       format: number(1),
