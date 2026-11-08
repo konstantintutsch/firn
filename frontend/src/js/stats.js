@@ -122,6 +122,16 @@ const HEALTH_CHARTS = [
   },
   { title: "Hydration", subtitle: "Per day", kind: "columns", format: unit(1, "l"), metrics: [["hydration_l", "Water"]] },
   {
+    title: "VO2 max",
+    subtitle: "As Garmin estimated it after activities",
+    kind: "line",
+    format: number(1),
+    metrics: [
+      ["vo2_max", "Running"],
+      ["vo2_max_cycling", "Cycling"],
+    ],
+  },
+  {
     title: "Fitness age",
     kind: "line",
     format: unit(1, "years"),
@@ -417,7 +427,6 @@ function renderActivities(activities, buckets) {
   }
 
   lineFromActivities(container, dated, "average_heart_rate", "Heart rate in activities", "Average per activity", unit(0, "bpm"));
-  lineFromActivities(container, dated, "vo2_max", "VO2 max", "As Garmin estimated it after activities", number(0));
 
   const loads = dated.filter((activity) => activity.training_load != null);
   if (loads.length > 0) {

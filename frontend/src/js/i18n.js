@@ -323,6 +323,8 @@ const GERMAN = {
   "Average per activity": "Durchschnitt pro Aktivität",
   "VO2 max": "VO2max",
   "As Garmin estimated it after activities": "Wie Garmin sie nach Aktivitäten geschätzt hat",
+  Running: "Laufen",
+  Cycling: "Radfahren",
   "Training load": "Trainingsbelastung",
   Load: "Belastung",
   "Training load per period": "Trainingsbelastung pro Zeitraum",

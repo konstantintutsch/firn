@@ -480,7 +480,6 @@ def track_summary(samples, activity_type, progress, rng):
         **{f"hrTimeInZone_{index + 1}": seconds for index, seconds in enumerate(zones)},
     }
     if activity_type in ("running", "trail_running"):
-        summary["vO2MaxValue"] = round(46 + 5 * progress + rng.uniform(-0.5, 0.5))
         summary["averageRunningCadenceInStepsPerMinute"] = 168 + round(rng.uniform(-4, 6))
         summary["maxRunningCadenceInStepsPerMinute"] = 182 + round(rng.uniform(0, 8))
         summary["steps"] = round(duration / 60 * 170)
@@ -535,6 +534,7 @@ def make_health(today):
             "hrv": round(rng.gauss(48 + 10 * progress, 5)),
             "weight": round((78.5 - 3 * progress + rng.gauss(0, 0.4)) * 1000),
             "hydration": round(rng.gauss(2200, 400)),
+            "vo2Max": round(46 + 5 * progress + rng.gauss(0, 0.3), 1),
         }
     return days
 
@@ -655,6 +655,13 @@ def answer(path, query):
         if not day:
             return 404, {}
         return 200, {"calendarDate": day["calendarDate"], "averageSpO2": day["averageSpo2"], "lowestSpO2": day["lowestSpo2"]}
+    if path.startswith("/metrics-service/metrics/maxmet/daily/"):
+        # Garmin only has a record for the days where VO2 max changed, like after a run.
+        return 200, [
+            {"generic": {"calendarDate": day["calendarDate"], "vo2MaxPreciseValue": day["vo2Max"],
+                         "vo2MaxValue": round(day["vo2Max"])}, "cycling": None}
+            for day in days_between(HEALTH, parts[4], parts[5]) if date.fromisoformat(day["calendarDate"]).weekday() in (1, 5)
+        ]
     if path.startswith("/fitnessage-service/fitnessage/v2/"):
         return 200, {"fitnessAge": 31.4, "chronologicalAge": 36}
     if path == "/userprofile-service/userprofile/settings":
