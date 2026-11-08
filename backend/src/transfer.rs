@@ -14,13 +14,13 @@
 //! synchronously. They reach the database through the runtime's handle.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
-use std::io::{Cursor, Read, Seek, Write};
+use std::io::{BufReader, Cursor, Read, Seek, Write};
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
-use chrono::{DateTime, NaiveDate};
+use chrono::{DateTime, NaiveDate, Utc};
 use fitparser::profile::MesgNum;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -29,6 +29,7 @@ use uuid::Uuid;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
+use crate::apple_health;
 use crate::db::{self, Pool};
 use crate::files::FileStore;
 use crate::garmin::Activity;
@@ -185,6 +186,16 @@ pub struct ImportReport {
     pub replace_skipped: bool,
 }
 
+/// What to read from an Apple Health export.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum AppleHealthScope {
+    /// Only the daily health values, like steps, sleep and heart rate.
+    Health,
+    /// The health values and the workouts, which become activities.
+    Workouts,
+}
+
 /// What an import saved, which a replacing import keeps.
 #[derive(Default)]
 struct Kept {
@@ -197,6 +208,8 @@ struct Kept {
 /// Imports a Runmap export, or a ZIP with FIT, GPX or TCX files, which may also
 /// be inside ZIPs of their own, like in Garmin's download of an activity.
 ///
+/// With `apple_health`, the ZIP is the export of the Apple Health app instead.
+///
 /// With `replace`, the account ends up with what the import holds and nothing
 /// else: activities, routes and health data that were not in it are removed,
 /// unless some of its files could not be read.
@@ -207,6 +220,7 @@ pub fn import(
     user_id: i64,
     path: &Path,
     replace: bool,
+    apple_health: Option<AppleHealthScope>,
 ) -> Result<ImportReport> {
     let mut archive = ZipArchive::new(File::open(path)?).context("this is not a ZIP file")?;
     let context = Import {
@@ -216,7 +230,9 @@ pub fn import(
         user_id,
         kept: RefCell::default(),
     };
-    let mut report = if archive.index_for_name(MARKER).is_some() {
+    let mut report = if let Some(scope) = apple_health {
+        context.import_apple_health(&mut archive, scope)?
+    } else if archive.index_for_name(MARKER).is_some() {
         context.import_export(&mut archive)?
     } else {
         context.import_files(&mut archive)?
@@ -359,6 +375,116 @@ impl Import<'_> {
             }
         }
         Ok(report)
+    }
+
+    /// Imports the health values of an Apple Health export, and with
+    /// `AppleHealthScope::Workouts` its workouts as activities.
+    fn import_apple_health(
+        &self,
+        archive: &mut ZipArchive<File>,
+        scope: AppleHealthScope,
+    ) -> Result<ImportReport> {
+        let names: Vec<String> = archive
+            .file_names()
+            .filter_map(Result::ok)
+            .map(|name| name.into_owned())
+            .collect();
+        let file_name = |name: &str| name.rsplit('/').next().unwrap_or(name).to_owned();
+        let export = names
+            .iter()
+            .find(|name| file_name(name).eq_ignore_ascii_case("export.xml"))
+            .context("there is no Export.xml in this ZIP. Is it an Apple Health export?")?;
+        let parsed = {
+            let entry = archive.by_name(export)?;
+            apple_health::parse(
+                BufReader::new(entry.take(MAX_ENTRY_BYTES)),
+                scope == AppleHealthScope::Workouts,
+            )?
+        };
+
+        let mut report = ImportReport::default();
+        for (day, metrics) in &parsed.days {
+            self.save_apple_day(*day, metrics)?;
+            report.health_documents += 1;
+        }
+        let routes: HashMap<String, String> = names
+            .iter()
+            .filter(|name| name.to_ascii_lowercase().ends_with(".gpx"))
+            .map(|name| (file_name(name), name.clone()))
+            .collect();
+        for workout in &parsed.workouts {
+            match self.import_workout(archive, workout, &routes) {
+                Ok(true) => report.activities += 1,
+                Ok(false) => report.skipped += 1,
+                Err(error) => {
+                    tracing::warn!(start = %workout.start, "could not import: {error:#}");
+                    report.failed += 1;
+                }
+            }
+        }
+        Ok(report)
+    }
+
+    fn save_apple_day(&self, day: NaiveDate, metrics: &BTreeMap<String, f64>) -> Result<()> {
+        let mut kept = self.kept.borrow_mut();
+        kept.documents
+            .insert((apple_health::DOCUMENT_KIND.to_owned(), day.to_string()));
+        kept.metrics
+            .extend(metrics.keys().map(|metric| (metric.clone(), day)));
+        drop(kept);
+        self.handle.block_on(db::save_apple_health_day(
+            self.pool,
+            self.user_id,
+            day,
+            metrics,
+        ))
+    }
+
+    /// Imports one workout, with its route if the export has it. False if another account has it.
+    fn import_workout(
+        &self,
+        archive: &mut ZipArchive<File>,
+        workout: &apple_health::Workout,
+        routes: &HashMap<String, String>,
+    ) -> Result<bool> {
+        let (type_key, name) = apple_health::activity_type(&workout.activity_type);
+        let mut identity = self.user_id.to_le_bytes().to_vec();
+        identity.extend(b"apple-health");
+        identity.extend(workout.start.to_rfc3339().as_bytes());
+        identity.extend(workout.activity_type.as_bytes());
+        let id = imported_id(&identity);
+
+        let route = workout
+            .route
+            .as_deref()
+            .and_then(|path| path.rsplit('/').next())
+            .and_then(|file| routes.get(file));
+        let original = match route {
+            Some(entry) => {
+                let gpx = read_entry(archive, entry)?;
+                Some(single_file_zip("route.gpx", &gpx)?)
+            }
+            None => None,
+        };
+        let samples = original
+            .as_deref()
+            .and_then(|zip| track::parse_samples(zip).ok())
+            .unwrap_or_default();
+        let summary = workout_summary(id, &name, &type_key, workout, &samples);
+        let activity = Activity::from_summary(summary)?;
+        let Some(saved) = self.claim(&activity, None)? else {
+            return Ok(false);
+        };
+        let original = original.filter(|_| !samples.is_empty());
+        self.save_track(&activity, saved, original.as_deref())?;
+        // Apple has nothing more for a workout, so syncs never ask.
+        self.handle
+            .block_on(db::save_details(self.pool, saved, &json!({})))?;
+        self.handle
+            .block_on(db::save_workouts(self.pool, saved, &json!([])))?;
+        self.handle
+            .block_on(db::save_images(self.pool, saved, &[]))?;
+        Ok(true)
     }
 
     /// False if another account has this route.
@@ -521,6 +647,17 @@ impl Import<'_> {
     }
 
     fn save_document(&self, document: &ExportedDocument) -> Result<()> {
+        if document.kind == apple_health::DOCUMENT_KIND {
+            let day = NaiveDate::parse_from_str(&document.period, "%Y-%m-%d")?;
+            let metrics: BTreeMap<String, f64> = document
+                .data
+                .as_ref()
+                .and_then(|data| data.get("metrics"))
+                .map(|metrics| serde_json::from_value(metrics.clone()))
+                .transpose()?
+                .unwrap_or_default();
+            return self.save_apple_day(day, &metrics);
+        }
         let metrics = match (
             KINDS.iter().find(|kind| kind.name == document.kind),
             &document.data,
@@ -725,6 +862,56 @@ fn summary_of(id: i64, name: &str, sport: &str, samples: &[Sample]) -> Result<Va
         );
     }
     Ok(summary)
+}
+
+/// A summary like Garmin's for a workout of Apple Health. What the workout says
+/// wins over what its route's samples add up to.
+fn workout_summary(
+    id: i64,
+    name: &str,
+    sport: &str,
+    workout: &apple_health::Workout,
+    samples: &[Sample],
+) -> Value {
+    let mut summary = summary_of(id, name, sport, samples).unwrap_or_else(|_| {
+        json!({
+            "activityId": id,
+            "activityName": name,
+            "activityType": {"typeKey": sport},
+        })
+    });
+    let fields = summary.as_object_mut().expect("an object");
+    let format = "%Y-%m-%d %H:%M:%S";
+    fields.insert(
+        "startTimeGMT".into(),
+        json!(workout.start.with_timezone(&Utc).format(format).to_string()),
+    );
+    fields.insert(
+        "startTimeLocal".into(),
+        json!(workout.start.naive_local().format(format).to_string()),
+    );
+    for key in ["duration", "movingDuration", "elapsedDuration"] {
+        fields.insert(key.into(), json!(workout.duration_s));
+    }
+    if let Some(distance) = workout.distance_m.filter(|distance| *distance > 0.0) {
+        fields.insert("distance".into(), json!(distance));
+        if workout.duration_s > 0.0 {
+            fields.insert("averageSpeed".into(), json!(distance / workout.duration_s));
+        }
+    } else if !fields.contains_key("distance") {
+        fields.insert("distance".into(), json!(0.0));
+    }
+    if let Some(energy) = workout.energy_kcal {
+        fields.insert("calories".into(), json!(energy.round()));
+    }
+    if let Some(average) = workout.average_heart_rate {
+        fields.insert("averageHR".into(), json!(average.round()));
+    }
+    if let Some(max) = workout.max_heart_rate {
+        fields.insert("maxHR".into(), json!(max.round()));
+    }
+    fields.insert("source".into(), json!("apple_health"));
+    summary
 }
 
 /// The distance between two points on the earth, in meters.

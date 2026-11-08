@@ -37,27 +37,48 @@ function setUpChoice(selector, current, save) {
 }
 
 
-/** Uploads a ZIP to import. Through XMLHttpRequest, since fetch cannot report upload progress. */
+/**
+ * Imports a ZIP. A dialog asks what it holds and how to import it before the file
+ * dialog opens. Uploads through XMLHttpRequest, since fetch cannot report progress.
+ */
 function setUpImport() {
   const input = document.querySelector("#import-file");
   const progress = document.querySelector("#import-progress");
   const message = document.querySelector("#import-message");
-  const replace = document.querySelector("#import-replace");
+  const dialog = document.querySelector("#import-dialog");
+  const form = document.querySelector("#import-form");
+  const appleOptions = document.querySelector("#import-apple");
+
+  document.querySelector("#import-open").addEventListener("click", () => dialog.showModal());
+  document.querySelector("#import-cancel").addEventListener("click", () => dialog.close());
+  form.addEventListener("change", () => {
+    appleOptions.hidden = form.elements.source.value !== "apple";
+  });
+
+  /** The address to upload to, with what the dialog chose. */
+  function importUrl() {
+    const query = new URLSearchParams();
+    if (form.elements.source.value === "apple") query.set("apple_health", form.elements.scope.value);
+    if (form.elements.replace.checked) query.set("replace", "true");
+    return query.size > 0 ? `/api/import?${query}` : "/api/import";
+  }
 
   input.addEventListener("change", () => {
     const [file] = input.files;
     if (!file) return;
-    if (replace.checked && !confirm(t("Remove everything in this account that is not in the import? This cannot be undone. A later sync from Garmin saves it again."))) {
+    const replace = form.elements.replace.checked;
+    if (replace && !confirm(t("Remove everything in this account that is not in the import? This cannot be undone. A later sync from Garmin saves it again."))) {
       input.value = "";
       return;
     }
-    input.disabled = true;
+    dialog.close();
+    document.querySelector("#import-open").disabled = true;
     progress.hidden = false;
     progress.value = 0;
     message.textContent = t("Uploading…");
 
     const request = new XMLHttpRequest();
-    request.open("POST", replace.checked ? "/api/import?replace=true" : "/api/import");
+    request.open("POST", importUrl());
     request.setRequestHeader("X-Requested-With", "runmap");
     request.setRequestHeader("Content-Type", "application/zip");
     request.upload.addEventListener("progress", (event) => {
@@ -68,7 +89,7 @@ function setUpImport() {
       }
     });
     request.addEventListener("loadend", async () => {
-      input.disabled = false;
+      document.querySelector("#import-open").disabled = false;
       input.value = "";
       progress.hidden = true;
       if (request.status === 200) {

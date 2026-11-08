@@ -354,3 +354,137 @@ async fn a_replacing_import_with_unreadable_files_removes_nothing() {
     assert_eq!(report["removed_activities"], 0);
     assert_eq!(activity_ids(&pool).await, before);
 }
+
+const APPLE_EXPORT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_DE">
+ <Record type="HKQuantityTypeIdentifierStepCount" unit="count" value="4000" sourceName="Watch" startDate="2026-04-10 08:00:00 +0200" endDate="2026-04-10 09:00:00 +0200"/>
+ <Record type="HKQuantityTypeIdentifierHeartRate" unit="count/min" value="61" sourceName="Watch" startDate="2026-04-10 08:00:00 +0200" endDate="2026-04-10 08:00:00 +0200"/>
+ <Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="30" durationUnit="min" totalDistance="5" totalDistanceUnit="km" totalEnergyBurned="350" sourceName="Watch" startDate="2026-04-10 08:00:00 +0200" endDate="2026-04-10 08:30:00 +0200">
+  <WorkoutRoute sourceName="Watch"><FileReference path="/workout-routes/route_1.gpx"/></WorkoutRoute>
+ </Workout>
+ <Workout workoutActivityType="HKWorkoutActivityTypeTraditionalStrengthTraining" duration="45" durationUnit="min" sourceName="Watch" startDate="2026-04-11 18:00:00 +0200" endDate="2026-04-11 18:45:00 +0200"/>
+</HealthData>"#;
+
+fn apple_zip() -> Vec<u8> {
+    common::zip_of(&[
+        ("apple_health_export/Export.xml", APPLE_EXPORT.as_bytes()),
+        ("apple_health_export/workout-routes/route_1.gpx", GPX),
+    ])
+}
+
+async fn import_apple(state: &AppState, scope: &str, replace: bool) -> (StatusCode, Value) {
+    let uri = format!("/api/import?apple_health={scope}&replace={replace}");
+    let (status, body) = send(state, Request::post(uri), Body::from(apple_zip())).await;
+    (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
+}
+
+#[tokio::test]
+async fn imports_only_the_health_data_of_apple_health() {
+    let pool = common::test_pool().await;
+    let state = common::state(pool.clone(), "http://unused", None).await;
+
+    let (status, report) = import_apple(&state, "health", false).await;
+    assert_eq!(status, StatusCode::OK, "{report}");
+    assert_eq!(report["health_documents"], 1);
+    assert_eq!(report["activities"], 0);
+    assert!(activity_ids(&pool).await.is_empty());
+    let (_, body) = send(
+        &state,
+        Request::get("/api/statistics/health"),
+        Body::empty(),
+    )
+    .await;
+    let health: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(health["metrics"]["steps"][0], json!(["2026-04-10", 4000.0]));
+    assert_eq!(health["metrics"]["min_heart_rate"][0][1], 61.0);
+}
+
+#[tokio::test]
+async fn imports_the_workouts_of_apple_health_once() {
+    let pool = common::test_pool().await;
+    let state = common::state(pool.clone(), "http://unused", None).await;
+
+    let (status, report) = import_apple(&state, "workouts", false).await;
+    assert_eq!(status, StatusCode::OK, "{report}");
+    assert_eq!(
+        (report["activities"].clone(), report["failed"].clone()),
+        (json!(2), json!(0))
+    );
+    let (_, again) = import_apple(&state, "workouts", false).await;
+    assert_eq!(again["activities"], 2);
+    let ids = activity_ids(&pool).await;
+    assert_eq!(ids.len(), 2);
+    assert!(ids.iter().all(|id| *id < 0));
+
+    let (_, body) = send(
+        &state,
+        Request::get("/api/activities?without_gps=true&sort=oldest"),
+        Body::empty(),
+    )
+    .await;
+    let list: Value = serde_json::from_slice(&body).unwrap();
+    let [run, gym] = &list["activities"].as_array().unwrap()[..] else {
+        panic!("{list}");
+    };
+    assert_eq!(run["activity_type"], "running");
+    assert_eq!(run["distance_m"], 5000.0);
+    assert_eq!(run["duration_s"], 1800.0);
+    assert_eq!(run["name"], "Running");
+    assert!(run["bounds"].is_array());
+    assert_eq!(gym["activity_type"], "strength_training");
+    assert_eq!(gym["bounds"], Value::Null);
+    let (_, body) = send(
+        &state,
+        Request::get(format!("/api/activities/{}", run["id"].as_str().unwrap())),
+        Body::empty(),
+    )
+    .await;
+    let detail: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(detail["summary"]["calories"], 350.0);
+    assert_eq!(detail["summary"]["startTimeLocal"], "2026-04-10 08:00:00");
+    assert_eq!(detail["summary"]["startTimeGMT"], "2026-04-10 06:00:00");
+}
+
+#[tokio::test]
+async fn a_zip_without_apple_health_data_is_refused() {
+    let pool = common::test_pool().await;
+    let state = common::state(pool.clone(), "http://unused", None).await;
+    let zip = common::zip_of(&[("notes.txt", b"hi")]);
+    let request = Request::post("/api/import?apple_health=health");
+    let (status, _) = send(&state, request, Body::from(zip)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn replacing_with_apple_health_removes_the_rest() {
+    let pool = common::test_pool().await;
+    let state = common::state(pool.clone(), "http://unused", None).await;
+    import(&state, common::zip_of(&[("Morning.gpx", GPX)])).await;
+    assert_eq!(activity_ids(&pool).await.len(), 1);
+
+    let (_, report) = import_apple(&state, "health", true).await;
+    assert_eq!(report["removed_activities"], 1);
+    assert!(activity_ids(&pool).await.is_empty());
+}
+
+#[tokio::test]
+async fn an_export_carries_the_health_data_of_apple_health() {
+    let source_pool = common::test_pool().await;
+    let source = common::state(source_pool.clone(), "http://unused", None).await;
+    import_apple(&source, "health", false).await;
+    let (_, zip) = send(&source, Request::get("/api/export"), Body::empty()).await;
+
+    let pool = common::test_pool().await;
+    let target = common::state(pool.clone(), "http://unused", None).await;
+    let (status, report) = import(&target, zip).await;
+    assert_eq!(status, StatusCode::OK, "{report}");
+    assert_eq!(report["health_documents"], 1);
+    let (_, body) = send(
+        &target,
+        Request::get("/api/statistics/health"),
+        Body::empty(),
+    )
+    .await;
+    let health: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(health["metrics"]["steps"][0], json!(["2026-04-10", 4000.0]));
+}

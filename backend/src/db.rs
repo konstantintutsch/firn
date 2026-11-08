@@ -1134,6 +1134,61 @@ pub async fn activity_ids(pool: &Pool, user_id: i64) -> Result<Vec<Uuid>> {
         .await?)
 }
 
+/// Saves a day of values from Apple Health as a document of its own, so that an
+/// export holds them. Values that Garmin or an earlier import saved stay.
+pub async fn save_apple_health_day(
+    pool: &Pool,
+    user_id: i64,
+    day: NaiveDate,
+    metrics: &std::collections::BTreeMap<String, f64>,
+) -> Result<()> {
+    let rows: Vec<_> = metrics
+        .iter()
+        .map(|(metric, value)| {
+            (
+                daily_metrics::user_id.eq(user_id),
+                daily_metrics::day.eq(day),
+                daily_metrics::metric.eq(metric.as_str()),
+                daily_metrics::value.eq(*value),
+            )
+        })
+        .collect();
+    let data = json!({ "metrics": metrics });
+    let mut connection = pool.get().await?;
+    connection
+        .transaction::<_, diesel::result::Error, _>(async |connection| {
+            diesel::insert_into(garmin_documents::table)
+                .values((
+                    garmin_documents::user_id.eq(user_id),
+                    garmin_documents::kind.eq(crate::apple_health::DOCUMENT_KIND),
+                    garmin_documents::period.eq(day.to_string()),
+                    garmin_documents::data.eq(&data),
+                ))
+                .on_conflict((
+                    garmin_documents::user_id,
+                    garmin_documents::kind,
+                    garmin_documents::period,
+                ))
+                .do_update()
+                .set((
+                    garmin_documents::data.eq(excluded(garmin_documents::data)),
+                    garmin_documents::fetched_at.eq(diesel::dsl::now),
+                ))
+                .execute(&mut *connection)
+                .await?;
+            if !rows.is_empty() {
+                diesel::insert_into(daily_metrics::table)
+                    .values(&rows)
+                    .on_conflict_do_nothing()
+                    .execute(&mut *connection)
+                    .await?;
+            }
+            Ok(())
+        })
+        .await?;
+    Ok(())
+}
+
 /// Deletes some of the account's activities, with their tracks, photos and results.
 pub async fn delete_activities(pool: &Pool, user_id: i64, ids: &[Uuid]) -> Result<()> {
     diesel::delete(

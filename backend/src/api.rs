@@ -1101,6 +1101,11 @@ struct ImportQuery {
     /// other activities, routes and health data are removed. Does nothing if
     /// some files of the import could not be read. Defaults to `false`.
     replace: Option<bool>,
+    /// Reads the ZIP as the export of the Apple Health app: `health` for only
+    /// its daily values, like steps, sleep and heart rate, or `workouts` for
+    /// those and its workouts, which become activities. Values that Garmin
+    /// saved already stay.
+    apple_health: Option<transfer::AppleHealthScope>,
 }
 
 /// Imports a ZIP: a Runmap export, or FIT, GPX and TCX files from other apps and
@@ -1163,6 +1168,7 @@ async fn import(
                 user.id,
                 &path,
                 query.replace.unwrap_or(false),
+                query.apple_health,
             )
         })
         .await

@@ -1,4 +1,5 @@
 pub mod api;
+pub mod apple_health;
 pub mod auth;
 pub mod db;
 pub mod files;

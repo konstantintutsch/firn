@@ -31,18 +31,38 @@
       <section class="card">
         <h2 data-i18n>Your data</h2>
         <p class="muted" data-i18n>An export holds all activities with their files and photos, your routes and the health data. Importing it restores them, here or in another Runmap.</p>
-        <p class="muted" data-i18n>Import also takes a ZIP of FIT, GPX or TCX files from other apps and devices.</p>
+        <p class="muted" data-i18n>Import also takes a ZIP of FIT, GPX or TCX files from other apps and devices, and the export of Apple Health.</p>
         <div class="panel-actions">
           <a class="panel-button" href="/api/export" download data-i18n>Export</a>
-          <label class="panel-button file-button">
-            <span data-i18n>Import</span>
-            <input id="import-file" type="file" accept=".zip,application/zip">
-          </label>
+          <button id="import-open" class="panel-button" type="button" data-i18n>Import</button>
         </div>
-        <label class="check-field">
-          <input id="import-replace" type="checkbox">
-          <span data-i18n>Keep only the data from the import. Everything else in this account is removed.</span>
-        </label>
+        <dialog id="import-dialog" class="form-dialog" aria-labelledby="import-title">
+          <form id="import-form" method="dialog">
+            <h3 id="import-title" data-i18n>Import</h3>
+            <fieldset>
+              <legend data-i18n>What do you import?</legend>
+              <label class="check-field"><input type="radio" name="source" value="files" checked><span data-i18n>A Runmap export, or FIT, GPX and TCX files</span></label>
+              <label class="check-field"><input type="radio" name="source" value="apple"><span data-i18n>An Apple Health export</span></label>
+            </fieldset>
+            <fieldset id="import-apple" hidden>
+              <legend data-i18n>From Apple Health</legend>
+              <label class="check-field"><input type="radio" name="scope" value="health" checked><span data-i18n>Only health data, like steps, sleep and heart rate</span></label>
+              <label class="check-field"><input type="radio" name="scope" value="workouts"><span data-i18n>Health data and workouts</span></label>
+              <p class="muted" data-i18n>Values that Garmin saved already stay.</p>
+            </fieldset>
+            <label class="check-field">
+              <input name="replace" type="checkbox">
+              <span data-i18n>Keep only the data from the import. Everything else in this account is removed.</span>
+            </label>
+            <div class="panel-actions">
+              <label class="primary-button file-button">
+                <span data-i18n>Choose file…</span>
+                <input id="import-file" type="file" accept=".zip,application/zip">
+              </label>
+              <button id="import-cancel" class="panel-button" type="button" data-i18n>Cancel</button>
+            </div>
+          </form>
+        </dialog>
         <progress id="import-progress" max="1" value="0" hidden></progress>
         <p id="import-message" role="status"></p>
       </section>

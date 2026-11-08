@@ -6,3 +6,5 @@ _site/
 __pycache__/
 # The raw course export holds heart rate and cadence, build_marathon.py keeps only the course.
 dev/demo/*.gpx
+# Exports of the Health app, which hold personal data.
+apple_health*.zip

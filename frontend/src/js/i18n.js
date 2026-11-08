@@ -148,8 +148,8 @@ const GERMAN = {
   "Your data": "Deine Daten",
   "An export holds all activities with their files and photos, your routes and the health data. Importing it restores them, here or in another Runmap.":
     "Ein Export enthält alle Aktivitäten mit ihren Dateien und Fotos, deine Routen sowie die Gesundheitsdaten. Ein Import stellt sie wieder her, hier oder in einer anderen Runmap.",
-  "Import also takes a ZIP of FIT, GPX or TCX files from other apps and devices.":
-    "Der Import nimmt auch ein ZIP mit FIT-, GPX- oder TCX-Dateien von anderen Apps und Geräten.",
+  "Import also takes a ZIP of FIT, GPX or TCX files from other apps and devices, and the export of Apple Health.":
+    "Der Import nimmt auch ein ZIP mit FIT-, GPX- oder TCX-Dateien von anderen Apps und Geräten sowie den Export von Apple Health.",
   Export: "Exportieren",
   Import: "Importieren",
   "Uploading…": "Wird hochgeladen…",
@@ -164,6 +164,14 @@ const GERMAN = {
     "Nur die Daten aus dem Import behalten. Alles andere in diesem Konto wird entfernt.",
   "Remove everything in this account that is not in the import? This cannot be undone. A later sync from Garmin saves it again.":
     "Alles in diesem Konto entfernen, was nicht im Import ist? Das lässt sich nicht rückgängig machen. Eine spätere Synchronisierung mit Garmin speichert es wieder.",
+  "What do you import?": "Was importierst du?",
+  "A Runmap export, or FIT, GPX and TCX files": "Einen Runmap-Export oder FIT-, GPX- und TCX-Dateien",
+  "An Apple Health export": "Einen Apple-Health-Export",
+  "From Apple Health": "Aus Apple Health",
+  "Only health data, like steps, sleep and heart rate": "Nur Gesundheitsdaten, wie Schritte, Schlaf und Herzfrequenz",
+  "Health data and workouts": "Gesundheitsdaten und Workouts",
+  "Values that Garmin saved already stay.": "Werte, die Garmin schon gespeichert hat, bleiben.",
+  "Choose file…": "Datei auswählen…",
   "Nothing was removed, since some files could not be read.":
     "Es wurde nichts entfernt, da einige Dateien nicht gelesen werden konnten.",
   "Removed: {counts}.": "Entfernt: {counts}.",
