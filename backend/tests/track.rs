@@ -194,10 +194,11 @@ fn finds_the_original_file_in_the_archive() {
 }
 
 #[test]
-fn reads_the_last_vo2_max_from_fit() {
-    let fit = fit_of_vo2_max(&[(0, 524), (1, 481)]);
-    let found = vo2_max(&zip_of(&[("a.fit", &fit)])).unwrap();
-    assert_eq!(found, Some(48.1));
+fn reads_vo2_max_from_the_activity_metrics_of_fit() {
+    // A raw 0 is no estimate yet.
+    let fit = fit_of_vo2_max(&[0, 926_115]);
+    let found = vo2_max(&zip_of(&[("a.fit", &fit)])).unwrap().unwrap();
+    assert!((found - 49.4599).abs() < 1e-4, "{found}");
 }
 
 #[test]

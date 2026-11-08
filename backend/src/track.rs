@@ -110,7 +110,14 @@ pub fn original_file(zip: &[u8]) -> Result<(String, Vec<u8>)> {
     bail!("no FIT, GPX or TCX file in the archive")
 }
 
-/// The last VO2 max that a device recorded in an activity's FIT file. Other formats have none.
+/// Garmin's activity metrics, which the FIT profile does not name.
+const ACTIVITY_METRICS_MESSAGE: u16 = 140;
+/// The field of the activity metrics that holds VO2 max, in 1/65536 of a MET.
+const VO2_MAX_FIELD: &str = "unknown_field_7";
+/// One MET is 3.5 mL of oxygen per kg and minute.
+const ML_PER_KG_MIN_PER_RAW: f64 = 3.5 / 65536.0;
+
+/// The VO2 max that a device recorded in an activity's FIT file. Other formats have none.
 pub fn vo2_max(zip: &[u8]) -> Result<Option<f64>> {
     let (name, content) = original_file(zip)?;
     if !name.ends_with(".fit") {
@@ -118,14 +125,15 @@ pub fn vo2_max(zip: &[u8]) -> Result<Option<f64>> {
     }
     let mut found = None;
     for record in fitparser::from_bytes(&content).context("malformed FIT")? {
-        if record.kind() != MesgNum::MaxMetData {
+        if record.kind().as_u16() != ACTIVITY_METRICS_MESSAGE {
             continue;
         }
         let value = record
             .fields()
             .iter()
-            .find(|field| field.name() == "vo2_max")
-            .and_then(|field| number(field.value()));
+            .find(|field| field.name() == VO2_MAX_FIELD)
+            .and_then(|field| number(field.value()))
+            .map(|raw| raw * ML_PER_KG_MIN_PER_RAW);
         // Devices write 0 where they have no estimate yet.
         if let Some(value) = value.filter(|value| (5.0..=100.0).contains(value)) {
             found = Some(value);

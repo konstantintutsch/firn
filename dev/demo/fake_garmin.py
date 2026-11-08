@@ -254,9 +254,9 @@ def fit_file(samples, vo2_max=None):
             round(sample["speed"] * 1000),
         )
     if vo2_max is not None:
-        # A max_met_data message: vo2_max in tenths, and the generic (running) category.
-        data += bytes([0x41, 0, 0]) + struct.pack("<H", 229) + bytes([2, 2, 2, 0x84, 8, 1, 0x00])
-        data += bytes([1]) + struct.pack("<HB", round(vo2_max * 10), 0)
+        # Garmin's activity metrics message, where VO2 max is in 1/65536 of a MET.
+        data += bytes([0x41, 0, 0]) + struct.pack("<H", 140) + bytes([1, 7, 4, 0x86])
+        data += bytes([1]) + struct.pack("<I", round(vo2_max / 3.5 * 65536))
     header = bytearray([14, 0x20]) + struct.pack("<H", 2132) + struct.pack("<I", len(data)) + b".FIT"
     header += struct.pack("<H", fit_crc(header))
     body = header + data

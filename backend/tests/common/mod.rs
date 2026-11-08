@@ -196,20 +196,18 @@ pub fn fit_of_records(records: &[FitRecord]) -> Vec<u8> {
     fit_file(data)
 }
 
-/// Encodes a FIT file with one max_met_data message per `(category, vo2_max)`, where
-/// the category is 0 for running and 1 for cycling, and VO2 max is in tenths.
-pub fn fit_of_vo2_max(estimates: &[(u8, u16)]) -> Vec<u8> {
-    const ENUM: u8 = 0x00;
-    const UINT16: u8 = 0x84;
-    const MAX_MET_DATA_MESSAGE: u16 = 229;
+/// Encodes a FIT file with Garmin's activity metrics message (140) per raw VO2 max,
+/// which is in 1/65536 of a MET.
+pub fn fit_of_vo2_max(raw: &[u32]) -> Vec<u8> {
+    const UINT32: u8 = 0x86;
+    const ACTIVITY_METRICS_MESSAGE: u16 = 140;
 
     let mut data = vec![0x40, 0, 0];
-    data.extend(MAX_MET_DATA_MESSAGE.to_le_bytes());
-    data.extend([2, 2, 2, UINT16, 8, 1, ENUM]);
-    for (category, vo2_max) in estimates {
+    data.extend(ACTIVITY_METRICS_MESSAGE.to_le_bytes());
+    data.extend([1, 7, 4, UINT32]);
+    for raw in raw {
         data.push(0);
-        data.extend(vo2_max.to_le_bytes());
-        data.push(*category);
+        data.extend(raw.to_le_bytes());
     }
     fit_file(data)
 }
