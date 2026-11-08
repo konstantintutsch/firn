@@ -2050,3 +2050,26 @@ a.chart-tooltip-row:focus-visible {
   padding: 0;
   list-style: none;
 }
+
+.detail-weather {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-weather[hidden] {
+  display: none;
+}
+
+.icon-weather {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

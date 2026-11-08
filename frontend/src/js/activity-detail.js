@@ -4,7 +4,7 @@
  */
 
 import { bars } from "/js/charts.js";
-import { devicesList, trainingLabel } from "/js/facts.js";
+import { devicesList, trainingLabel, weatherInfo } from "/js/facts.js";
 import { accentColor, activityDetails, errorMessage, send, t, typeName } from "/js/account.js";
 import { RACE_DISTANCES, duration, html, number, pace, raceDistanceName, unit } from "/js/format.js";
 import { profile } from "/js/profile.js";
@@ -237,6 +237,7 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
   const metaElement = document.querySelector("#detail-meta");
   const descriptionElement = document.querySelector("#detail-description");
   const metricsElement = document.querySelector("#detail-metrics");
+  const weatherElement = document.querySelector("#detail-weather");
   const splitsElement = document.querySelector("#detail-splits");
   const devicesElement = document.querySelector("#detail-devices");
   const zonesElement = document.querySelector("#detail-zones");
@@ -476,6 +477,8 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
         // The primary training effect, with what it trained.
         return [t(name), key === "aerobicTrainingEffect" && label ? `${value} (${trainingLabel(label)})` : value];
       });
+    const weather = weatherInfo(activity.weather);
+    rows.push(...(weather?.rows ?? []));
     metricsElement.replaceChildren(
       ...rows.map(([label, value]) => {
         const row = html("div");
@@ -494,6 +497,16 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
       }),
     );
 
+  }
+
+  /** An icon of the weather with the temperature, under the title. */
+  function renderWeather(weather) {
+    const info = weatherInfo(weather);
+    weatherElement.hidden = info?.temperature == null;
+    weatherElement.replaceChildren();
+    if (info?.temperature == null) return;
+    weatherElement.title = info.title ?? "";
+    weatherElement.append(info.icon, info.temperature);
   }
 
   /** The watch and the heart rate sensor that recorded the activity. */
@@ -607,6 +620,7 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     descriptionElement.textContent = activity.description ?? "";
     statusElement.textContent = "";
     renderMetrics(summary, activity);
+    renderWeather(activity.weather);
     renderDevices(activity.devices);
     renderImages(images ?? []);
     renderActions(activity, samples, detail.original_format);
@@ -666,6 +680,7 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     renderImages([]);
     metricsElement.replaceChildren();
     devicesElement.hidden = true;
+    weatherElement.hidden = true;
     splitsElement.hidden = true;
     zonesElement.hidden = true;
     profileSection.hidden = true;
