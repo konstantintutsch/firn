@@ -756,9 +756,9 @@ function trainingBlocks(oldestFirst) {
     .reverse();
 }
 
-/** A selection of the training blocks, or nothing if the races make up a single one. */
+/** A selection of the training blocks, or nothing without races. */
 function blockSelect(blocks, onChange) {
-  if (blocks.length < 2) return null;
+  if (blocks.length === 0) return null;
   const label = document.createElement("label");
   label.className = "block-filter";
   const text = document.createElement("span");

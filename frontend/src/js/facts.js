@@ -1,4 +1,4 @@
-/** Short texts about an activity for the list: race, training effect, weather and devices. */
+/** Short texts about an activity: its race, weather and devices. */
 
 import { duration, number, raceDistanceName } from "/js/format.js";
 import { t } from "/js/i18n.js";
@@ -26,12 +26,8 @@ export function raceText(result) {
   return parts.join(" · ");
 }
 
-/** The primary training effect and what it trained, like "Training effect 3.4 · Tempo". */
-export function trainingEffectText({ aerobic_training_effect: effect, training_effect_label: label }) {
-  if (effect == null) return null;
-  const text = `${t("Training effect")} ${number(1)(effect)}`;
-  return label ? `${text} (${spaced(label.toLowerCase()).replace(/^./, (first) => first.toUpperCase())})` : text;
-}
+/** Garmin's name of what an activity trained, like `AEROBIC_BASE`, as "Aerobic base". */
+export const trainingLabel = (label) => spaced(label.toLowerCase()).replace(/^./, (first) => first.toUpperCase());
 
 /** Temperature, conditions, wind and humidity, for the parts that Garmin listed. */
 export function weatherText(weather) {
@@ -52,17 +48,15 @@ function deviceName({ manufacturer, product }) {
   return [brand, product && spaced(product)].filter(Boolean).join(" ");
 }
 
-/** The watch and the heart rate sensor, like "Garmin fenix7, Heart rate sensor (Garmin hrm_pro)". */
-export function devicesText(devices) {
-  const main = (devices ?? []).filter((device) => device.creator || device.kind === "heart_rate");
-  if (main.length === 0) return null;
-  return main
+/** The watch and the heart rate sensor, like "Garmin fenix7" and "Heart rate sensor (Garmin hrm_pro)". */
+export function devicesList(devices) {
+  return (devices ?? [])
+    .filter((device) => device.creator || device.kind === "heart_rate")
     .map((device) => {
       const name = deviceName(device);
       if (device.creator || !device.kind) return name;
       const kind = SENSOR_NAMES[device.kind] ? t(SENSOR_NAMES[device.kind]) : spaced(device.kind);
       return name ? `${kind} (${name})` : kind;
     })
-    .filter(Boolean)
-    .join(", ");
+    .filter(Boolean);
 }

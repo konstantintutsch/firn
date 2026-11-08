@@ -1,5 +1,5 @@
 import { activityDetails, activityTitle, plural, requireAccount, setUpSync, t, typeName } from "/js/account.js";
-import { devicesText, raceText, trainingEffectText, weatherText } from "/js/facts.js";
+import { raceText, weatherText } from "/js/facts.js";
 import { language } from "/js/i18n.js";
 import { setUpFilters } from "/js/filters.js";
 import { trackPreview } from "/js/preview.js";
@@ -138,7 +138,7 @@ function listItem(activity) {
   type.textContent = activity.bounds ? typeName(activity.activity_type) : `${typeName(activity.activity_type)} · ${t("No GPS track")}`;
   const details = document.createElement("small");
   details.textContent = activityDetails(activity);
-  const facts = [raceText(activity.result), trainingEffectText(activity), weatherText(activity.weather), devicesText(activity.devices)]
+  const facts = [raceText(activity.result), weatherText(activity.weather)]
     .filter(Boolean)
     .map((fact) => {
       const line = document.createElement("small");

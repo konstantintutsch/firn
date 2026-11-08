@@ -2046,3 +2046,11 @@ a.chart-tooltip-row:focus-visible {
     navigation: none;
   }
 }
+
+.device-list {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}

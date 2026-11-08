@@ -4,6 +4,7 @@
  */
 
 import { bars } from "/js/charts.js";
+import { devicesList, trainingLabel } from "/js/facts.js";
 import { accentColor, activityDetails, errorMessage, send, t, typeName } from "/js/account.js";
 import { RACE_DISTANCES, duration, html, number, pace, raceDistanceName, unit } from "/js/format.js";
 import { profile } from "/js/profile.js";
@@ -237,6 +238,7 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
   const descriptionElement = document.querySelector("#detail-description");
   const metricsElement = document.querySelector("#detail-metrics");
   const splitsElement = document.querySelector("#detail-splits");
+  const devicesElement = document.querySelector("#detail-devices");
   const zonesElement = document.querySelector("#detail-zones");
   const profileSection = document.querySelector("#detail-profile");
   const profileTabs = document.querySelector("#profile-tabs");
@@ -465,10 +467,15 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     scrub(null);
   }
 
-  function renderMetrics(summary, type) {
-    const rows = summaryMetrics(type)
+  function renderMetrics(summary, activity) {
+    const label = activity.training_effect_label;
+    const rows = summaryMetrics(activity.activity_type)
       .filter(([key]) => summary[key] != null && summary[key] !== 0)
-      .map(([key, label, format]) => [t(label), format(summary[key])]);
+      .map(([key, name, format]) => {
+        const value = format(summary[key]);
+        // The primary training effect, with what it trained.
+        return [t(name), key === "aerobicTrainingEffect" && label ? `${value} (${trainingLabel(label)})` : value];
+      });
     metricsElement.replaceChildren(
       ...rows.map(([label, value]) => {
         const row = html("div");
@@ -487,6 +494,13 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
       }),
     );
 
+  }
+
+  /** The watch and the heart rate sensor that recorded the activity. */
+  function renderDevices(devices) {
+    const names = devicesList(devices);
+    devicesElement.hidden = names.length === 0;
+    devicesElement.querySelector("ul").replaceChildren(...names.map((name) => html("li", null, name)));
   }
 
   /** Time per heart rate zone, each in its color, with its range if Garmin has one. */
@@ -592,7 +606,8 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
       .join(" · ");
     descriptionElement.textContent = activity.description ?? "";
     statusElement.textContent = "";
-    renderMetrics(summary, activity.activity_type);
+    renderMetrics(summary, activity);
+    renderDevices(activity.devices);
     renderImages(images ?? []);
     renderActions(activity, samples, detail.original_format);
     race.show(activity, detail.result);
@@ -650,6 +665,7 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     nextButton.disabled = true;
     renderImages([]);
     metricsElement.replaceChildren();
+    devicesElement.hidden = true;
     splitsElement.hidden = true;
     zonesElement.hidden = true;
     profileSection.hidden = true;
