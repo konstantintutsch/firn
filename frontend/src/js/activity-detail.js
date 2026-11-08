@@ -289,6 +289,30 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     }
   });
 
+  const routeButton = document.querySelector("#detail-route");
+  routeButton.addEventListener("click", async () => {
+    const id = detail?.activity.id;
+    if (id == null) return;
+    routeButton.disabled = true;
+    statusElement.textContent = t("Saving the route…");
+    try {
+      const response = await send("/api/routes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ activity_id: id }),
+      });
+      if (response.ok) {
+        const route = await response.json();
+        location.href = `/routes/?${new URLSearchParams({ route: route.id })}`;
+        return;
+      }
+      statusElement.textContent = await errorMessage(response, t("Could not save the route."));
+    } catch {
+      statusElement.textContent = t("Could not reach the API. Is it running?");
+    }
+    routeButton.disabled = false;
+  });
+
   colorSelect.addEventListener("change", () => {
     colorKey = colorSelect.value;
     writeStorage(COLOR_STORAGE_KEY, colorKey);
@@ -543,6 +567,8 @@ export function setUpActivityDetail(map, { heatLayers, beforeLayer, legend, onCl
     document.querySelector("#detail-garmin").href = `https://connect.garmin.com/modern/activity/${activity.id}`;
     document.querySelector("#detail-garmin").hidden = !fromGarmin;
     document.querySelector("#detail-resync").hidden = !fromGarmin;
+    // A route needs positions.
+    document.querySelector("#detail-route").hidden = samples.position == null;
     actionsElement.hidden = false;
   }
 

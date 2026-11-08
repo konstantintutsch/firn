@@ -21,6 +21,9 @@ a server with.
   and power to scrub along, the track colored by any of them, kilometer or mile
   splits, heart rate zones and photos. Download the original
   FIT file or a GPX file, and step to the previous or next activity.
+- **Routes** to run again: save the track of an activity as a route, or import
+  a GPX file. Routes show on a map with distance and climb, can be renamed and
+  downloaded as GPX.
 - **Statistics** on distance, time, pace, heart rate, VO2 max and training load,
   a calendar of the last year and a year over year comparison.
 - **Personal records** from the official race results you enter for an

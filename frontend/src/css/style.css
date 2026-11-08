@@ -328,6 +328,11 @@ body {
   height: 16px;
 }
 
+/* Only an icon, so that the row of buttons still fits in German. */
+.detail-actions #detail-route {
+  padding-inline: 6px;
+}
+
 /* A download button with a menu of other formats beside it. */
 .split-button {
   position: relative;
@@ -1294,6 +1299,27 @@ a {
   width: 100%;
   margin-top: 12px;
   accent-color: var(--accent);
+}
+
+.routes-page .activity[aria-current] {
+  background: var(--accent-soft);
+}
+
+.settings-page #route-form[hidden] {
+  display: none;
+}
+
+.route-map {
+  height: 320px;
+  margin: 12px 0;
+  border-radius: var(--radius-md);
+  corner-shape: var(--corner);
+  overflow: hidden;
+}
+
+#route-status {
+  margin: 14px 0 0;
+  font-size: 13px;
 }
 
 .activity-list {

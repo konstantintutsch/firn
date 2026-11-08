@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  {%- set title = "Runmap routes" %}
+  {%- set map = true %}
+  {% include "head.njk" %}
+  <body class="page">
+    <header class="page-header">
+      {% include "header.njk" %}
+      <p id="sync-status" role="status"></p>
+    </header>
+    <main class="settings-page routes-page">
+      <section class="card">
+        <h2 data-i18n>Routes</h2>
+        <p class="muted" data-i18n>Save the track of an activity as a route, or import a GPX file, to run it again.</p>
+        <div class="panel-actions">
+          <label class="panel-button file-button">
+            <span data-i18n>Import GPX</span>
+            <input id="route-import" type="file" accept=".gpx,application/gpx+xml">
+          </label>
+        </div>
+        <p id="route-message" role="status"></p>
+      </section>
+      <section id="route-detail" class="card" hidden>
+        <h2 id="route-title"></h2>
+        <p id="route-meta" class="muted"></p>
+        <p id="route-description" class="muted"></p>
+        <div id="route-map" class="route-map" role="img" aria-label="Map of the route" data-i18n-attrs="aria-label"></div>
+        <div class="panel-actions">
+          <a id="route-download" class="panel-button" download>{% icon "download" %}<span>GPX</span></a>
+          <a id="route-activity" class="panel-button" hidden data-i18n>Activity</a>
+          <button id="route-edit" class="panel-button" type="button" data-i18n>Edit</button>
+          <button id="route-delete" class="panel-button" type="button" data-i18n>Delete</button>
+        </div>
+        <form id="route-form" hidden>
+          <label><span data-i18n>Name</span>
+            <input name="name" maxlength="200" required>
+          </label>
+          <label><span data-i18n>Description</span>
+            <input name="description" maxlength="5000">
+          </label>
+          <div class="panel-actions">
+            <button class="primary-button" type="submit" data-i18n>Save</button>
+            <button id="route-cancel" class="panel-button" type="button" data-i18n>Cancel</button>
+          </div>
+        </form>
+      </section>
+      <p id="route-status" role="status"></p>
+      <ul id="route-list" class="activity-list"></ul>
+    </main>
+    {% include "nav.njk" %}
+    {% include "account.njk" %}
+    <script type="module" src="/js/routes.js"></script>
+  </body>
+</html>

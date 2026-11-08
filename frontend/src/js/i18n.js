@@ -23,8 +23,10 @@ const GERMAN = {
   "Runmap statistics": "Runmap-Statistik",
   "Runmap activities": "Runmap-Aktivitäten",
   "Runmap settings": "Runmap-Einstellungen",
+  "Runmap routes": "Runmap-Routen",
   Map: "Karte",
   Activities: "Aktivitäten",
+  Routes: "Routen",
   Statistics: "Statistik",
   Settings: "Einstellungen",
   Pages: "Seiten",
@@ -182,6 +184,14 @@ const GERMAN = {
   "from is after to": "Das Startdatum liegt nach dem Enddatum.",
   "Garmin refused this API key": "Garmin hat diesen API-Schlüssel abgelehnt.",
   "sign in first": "Melde dich zuerst an.",
+  "no such route": "Diese Route gibt es nicht.",
+  "no such activity": "Diese Aktivität gibt es nicht.",
+  "this activity has no track": "Diese Aktivität hat keinen Track.",
+  "the track has fewer than two points": "Der Track hat weniger als zwei Punkte.",
+  "this is not a GPX file Runmap can read": "Runmap kann diese GPX-Datei nicht lesen.",
+  "the name is empty": "Der Name ist leer.",
+  "the name is too long": "Der Name ist zu lang.",
+  "the description is too long": "Die Beschreibung ist zu lang.",
   "the API key is empty": "Der API-Schlüssel ist leer.",
 
   // Map
@@ -282,6 +292,25 @@ const GERMAN = {
   "Load more": "Mehr laden",
   "Loading…": "Wird geladen…",
   "No GPS track": "Kein GPS-Track",
+
+  // Routes
+  "Save the track of an activity as a route, or import a GPX file, to run it again.":
+    "Speichere den Track einer Aktivität als Route oder importiere eine GPX-Datei, um sie noch einmal zu laufen.",
+  "Import GPX": "GPX importieren",
+  "Map of the route": "Karte der Route",
+  Activity: "Aktivität",
+  Edit: "Bearbeiten",
+  Delete: "Löschen",
+  Name: "Name",
+  "Save as route": "Als Route speichern",
+  "Saving the route…": "Route wird gespeichert…",
+  "Could not save the route.": "Die Route konnte nicht gespeichert werden.",
+  "Could not delete the route.": "Die Route konnte nicht gelöscht werden.",
+  "Could not load routes. Is the API running?": "Die Routen konnten nicht geladen werden. Läuft die API?",
+  "No routes saved yet.": "Noch keine Routen gespeichert.",
+  "Imported the route “{name}”.": "Route „{name}“ importiert.",
+  "Delete the route “{name}”? The activity it was made from stays.":
+    "Route „{name}“ löschen? Die Aktivität, aus der sie entstanden ist, bleibt erhalten.",
 
   // Statistics
   Period: "Zeitraum",
