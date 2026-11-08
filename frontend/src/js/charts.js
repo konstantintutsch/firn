@@ -60,6 +60,20 @@ function columnPath(x, y, width, height) {
 }
 
 /**
+ * Columns start at the first bucket with a value, like lines start at their first
+ * point, so that a metric Garmin recorded later is not preceded by empty space.
+ */
+function fromFirstValue({ buckets, series, ...rest }) {
+  const first = buckets.findIndex((_, index) => series.some(({ values }) => values[index] != null && values[index] !== 0));
+  if (first <= 0) return { buckets, series, ...rest };
+  return {
+    ...rest,
+    buckets: Object.assign(buckets.slice(first), { size: buckets.size }),
+    series: series.map((entry) => ({ ...entry, values: entry.values.slice(first) })),
+  };
+}
+
+/**
  * Draws a chart into `container` and keeps it drawn at the container's width.
  *
  * - `kind`: "line" (points over time) or "columns" (one column per bucket).
@@ -70,14 +84,14 @@ function columnPath(x, y, width, height) {
  * - `format`: turns a value into text.
  */
 export function chart(container, options) {
-  const state = { container, ...options };
+  const state = { container, ...(options.kind === "columns" ? fromFirstValue(options) : options) };
   state.draw = () => draw(state);
   container.replaceChildren();
   container.classList.add("chart");
 
-  if (options.series.length > 1) {
+  if (state.series.length > 1) {
     const legend = html("div", "chart-legend");
-    for (const { name, slot } of options.series) {
+    for (const { name, slot } of state.series) {
       const item = html("span", "chart-legend-item");
       const swatch = html("span", "chart-swatch");
       swatch.style.background = `var(--series-${slot})`;
@@ -90,7 +104,7 @@ export function chart(container, options) {
   state.tooltip = html("div", "chart-tooltip");
   state.tooltip.hidden = true;
   state.plot.append(state.tooltip);
-  container.append(state.plot, dataTable(options));
+  container.append(state.plot, dataTable(state));
   charts.add(state);
   state.draw();
 }
