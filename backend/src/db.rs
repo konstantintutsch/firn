@@ -20,7 +20,7 @@ use crate::schema::{
     activities, activity_images, daily_metrics, garmin_documents, race_results, sessions,
     track_points, users,
 };
-use crate::track::{Point, Vo2Max};
+use crate::track::Point;
 
 pub type Pool = deadpool::Pool<AsyncPgConnection>;
 
@@ -923,7 +923,6 @@ pub struct ActivityRecord {
     pub duration_s: Option<f64>,
     pub summary: Value,
     pub vo2_max: Option<f64>,
-    pub vo2_max_cycling: Option<f64>,
 }
 
 /// The matching activities, oldest first.
@@ -1253,11 +1252,10 @@ pub async fn move_files_to_store(pool: &Pool, files: &FileStore) -> Result<()> {
 }
 
 /// Saves the VO2 max that an activity's file holds, and marks the file as searched.
-pub async fn save_vo2_max(pool: &Pool, id: i64, vo2_max: Vo2Max) -> Result<()> {
+pub async fn save_vo2_max(pool: &Pool, id: i64, vo2_max: Option<f64>) -> Result<()> {
     diesel::update(activities::table.find(id))
         .set((
-            activities::vo2_max.eq(vo2_max.running),
-            activities::vo2_max_cycling.eq(vo2_max.cycling),
+            activities::vo2_max.eq(vo2_max),
             activities::vo2_max_checked_at.eq(diesel::dsl::now),
         ))
         .execute(&mut pool.get().await?)
@@ -1278,11 +1276,11 @@ pub async fn backfill_vo2_max(pool: &Pool, files: &FileStore) -> Result<()> {
         let vo2_max = match files.original(id).await? {
             Some(zip) => crate::track::vo2_max(&zip).unwrap_or_else(|error| {
                 tracing::warn!(id, %error, "could not read VO2 max from the file");
-                Vo2Max::default()
+                None
             }),
-            None => Vo2Max::default(),
+            None => None,
         };
-        found += usize::from(vo2_max != Vo2Max::default());
+        found += usize::from(vo2_max.is_some());
         save_vo2_max(pool, id, vo2_max).await?;
     }
     if !ids.is_empty() {

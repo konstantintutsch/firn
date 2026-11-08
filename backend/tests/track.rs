@@ -194,17 +194,16 @@ fn finds_the_original_file_in_the_archive() {
 }
 
 #[test]
-fn reads_running_and_cycling_vo2_max_from_fit() {
+fn reads_the_last_vo2_max_from_fit() {
     let fit = fit_of_vo2_max(&[(0, 524), (1, 481)]);
     let found = vo2_max(&zip_of(&[("a.fit", &fit)])).unwrap();
-    assert_eq!(found.running, Some(52.4));
-    assert_eq!(found.cycling, Some(48.1));
+    assert_eq!(found, Some(48.1));
 }
 
 #[test]
 fn fit_and_gpx_without_vo2_max_have_none() {
     let fit = vo2_max(&zip_of(&[("a.fit", &fit_of(&[]))])).unwrap();
-    assert_eq!((fit.running, fit.cycling), (None, None));
+    assert_eq!(fit, None);
     let gpx = vo2_max(&zip_of(&[("a.gpx", GPX)])).unwrap();
-    assert_eq!((gpx.running, gpx.cycling), (None, None));
+    assert_eq!(gpx, None);
 }

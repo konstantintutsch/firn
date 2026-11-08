@@ -829,10 +829,7 @@ async fn activity_statistics_include_activities_without_gps() {
     db::save_vo2_max(
         &pool,
         1,
-        runmap::track::Vo2Max {
-            running: Some(52.4),
-            cycling: None,
-        },
+        Some(52.4),
     )
     .await
     .unwrap();
@@ -858,7 +855,6 @@ async fn activity_statistics_include_activities_without_gps() {
         .unwrap();
     assert_eq!(run["average_heart_rate"], 151.0);
     assert_eq!(run["vo2_max"], 52.4);
-    assert_eq!(run["vo2_max_cycling"], Value::Null);
     assert_eq!(run["result"], Value::Null);
     let gym = activities
         .iter()

@@ -1,0 +1,1 @@
+ALTER TABLE activities ADD COLUMN vo2_max_cycling DOUBLE PRECISION;

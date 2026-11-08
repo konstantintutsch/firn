@@ -21,7 +21,6 @@ diesel::table! {
         images_synced_at -> Nullable<Timestamptz>,
         vo2_max_checked_at -> Nullable<Timestamptz>,
         vo2_max -> Nullable<Float8>,
-        vo2_max_cycling -> Nullable<Float8>,
     }
 }
 

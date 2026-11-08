@@ -196,7 +196,7 @@ async fn save_original(
     db::save_track(pool, activity.id, &points).await?;
     let vo2_max = track::vo2_max(&zip).unwrap_or_else(|error| {
         tracing::warn!(id = activity.id, %error, "could not read VO2 max from the file");
-        Default::default()
+        None
     });
     db::save_vo2_max(pool, activity.id, vo2_max).await?;
     Ok(())

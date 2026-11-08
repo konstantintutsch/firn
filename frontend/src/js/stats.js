@@ -418,14 +418,15 @@ function renderActivities(activities, buckets) {
 
   lineFromActivities(container, dated, "average_heart_rate", "Heart rate in activities", "Average per activity", unit(0, "bpm"));
 
+  const isCycling = ({ activity_type }) => /cycling|biking/.test(activity_type);
   const vo2Series = [
-    ["vo2_max", "Running", 1],
-    ["vo2_max_cycling", "Cycling", 2],
+    ["Running", 1, (activity) => !isCycling(activity)],
+    ["Cycling", 2, isCycling],
   ]
-    .map(([key, name, slot]) => ({
+    .map(([name, slot, matches]) => ({
       name: t(name),
       slot,
-      points: dated.filter((activity) => activity[key] != null).map((activity) => [activity.time, activity[key]]),
+      points: dated.filter((activity) => activity.vo2_max != null && matches(activity)).map((activity) => [activity.time, activity.vo2_max]),
     }))
     .filter(({ points }) => points.length > 1);
   if (vo2Series.length > 0) {

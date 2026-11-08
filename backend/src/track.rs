@@ -110,40 +110,25 @@ pub fn original_file(zip: &[u8]) -> Result<(String, Vec<u8>)> {
     bail!("no FIT, GPX or TCX file in the archive")
 }
 
-/// The VO2 max that a device recorded in an activity's FIT file.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct Vo2Max {
-    pub running: Option<f64>,
-    pub cycling: Option<f64>,
-}
-
-/// The VO2 max in the FIT file of a Garmin download. Other formats have none.
-pub fn vo2_max(zip: &[u8]) -> Result<Vo2Max> {
+/// The last VO2 max that a device recorded in an activity's FIT file. Other formats have none.
+pub fn vo2_max(zip: &[u8]) -> Result<Option<f64>> {
     let (name, content) = original_file(zip)?;
     if !name.ends_with(".fit") {
-        return Ok(Vo2Max::default());
+        return Ok(None);
     }
-    let mut found = Vo2Max::default();
+    let mut found = None;
     for record in fitparser::from_bytes(&content).context("malformed FIT")? {
         if record.kind() != MesgNum::MaxMetData {
             continue;
         }
-        let (mut value, mut cycling) = (None, false);
-        for field in record.fields() {
-            match field.name() {
-                "vo2_max" => value = number(field.value()),
-                "max_met_category" => cycling = field.value().to_string() == "cycling",
-                _ => {}
-            }
-        }
+        let value = record
+            .fields()
+            .iter()
+            .find(|field| field.name() == "vo2_max")
+            .and_then(|field| number(field.value()));
         // Devices write 0 where they have no estimate yet.
-        let Some(value) = value.filter(|value| (5.0..=100.0).contains(value)) else {
-            continue;
-        };
-        if cycling {
-            found.cycling = Some(value);
-        } else {
-            found.running = Some(value);
+        if let Some(value) = value.filter(|value| (5.0..=100.0).contains(value)) {
+            found = Some(value);
         }
     }
     Ok(found)
