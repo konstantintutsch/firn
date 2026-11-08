@@ -25,6 +25,7 @@ services:
       - ./fake_garmin.py:/app/fake_garmin.py:ro
       - ./routes.json:/app/routes.json:ro
       - ./marathon.json:/app/marathon.json:ro
+      - ./berlin_marathon.json:/app/berlin_marathon.json:ro
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/fitnessage-service/fitnessage/v2/x')"]
       interval: 2s

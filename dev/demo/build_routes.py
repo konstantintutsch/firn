@@ -30,11 +30,6 @@ def loop(*points):
     return ("loop", [*points, points[0]])
 
 
-def path(*points):
-    """Through the waypoints, once."""
-    return ("path", list(points))
-
-
 def out_and_back(*points):
     """Through the waypoints, then back the same way."""
     return ("out_and_back", list(points))
@@ -187,21 +182,6 @@ HOME_ROUTES = {
     ),
 }
 
-# The Berlin Marathon 2025 along the main streets of its course, start to finish.
-RACES = {
-    "Berlin": {
-        "Berlin Marathon": path(
-            (52.5143, 13.3650), (52.5145, 13.3501), (52.5170, 13.3490), (52.5260, 13.3400),
-            (52.5250, 13.3690), (52.5310, 13.3840), (52.5280, 13.3950), (52.5215, 13.4130),
-            (52.5120, 13.4160), (52.4990, 13.4180), (52.4860, 13.4250), (52.4930, 13.3880),
-            (52.4750, 13.3880), (52.4600, 13.3850), (52.4560, 13.3220), (52.4750, 13.3400),
-            (52.4900, 13.3200), (52.5030, 13.3320), (52.5060, 13.3200),
-            (52.5075, 13.3050), (52.5040, 13.3400), (52.5096, 13.3760), (52.5163, 13.3777),
-        ),
-    },
-}
-
-
 def meters(a, b):
     dy = (b[0] - a[0]) * 111_320
     dx = (b[1] - a[1]) * 111_320 * math.cos(math.radians(a[0]))
@@ -257,16 +237,14 @@ def main():
         name = f"Home {number}"
         PLACES["Berlin"]["routes"][name] = home_loop(rng)
         generated.add(name)
-    for city, races in RACES.items():
-        PLACES[city]["races"] = races
     # Names given on the command line are the only ones asked for again.
     only = set(sys.argv[1:])
     target = Path(__file__).with_name("routes.json")
     old = json.loads(target.read_text()) if only and target.exists() else {}
     result = {}
     for city, place in PLACES.items():
-        result[city] = {"routes": {}, "rides": {}, "races": {}}
-        for group, profile in (("routes", "foot"), ("rides", "bike"), ("races", "foot")):
+        result[city] = {"routes": {}, "rides": {}}
+        for group, profile in (("routes", "foot"), ("rides", "bike")):
             for name, (kind, waypoints) in place.get(group, {}).items():
                 if only and name not in only:
                     if name in old.get(city, {}).get(group, {}):

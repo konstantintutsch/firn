@@ -267,116 +267,118 @@ def make_activities(today):
     for offset in range(DAYS + 1):
         day = start_day + timedelta(days=offset)
         progress = offset / DAYS
-        if rng.random() > 0.9:
-            continue
-        next_id += rng.randrange(1000, 90000)
-        # Mostly Berlin, with trips to the other places.
-        city = "Berlin"
-        if 200 <= offset < 214:
-            city = "Mallorca"
-        elif rng.random() < 0.12:
-            city = "Hamburg"
-        elif rng.random() < 0.1:
-            city = "Munich"
-        place = PLACES[city]
-        hour = rng.choice([6, 7, 7, 8, 12, 17, 18, 18, 19])
-        local = datetime.combine(day, time(hour, rng.randrange(60), rng.randrange(60)))
-        started = (local - timedelta(hours=place["timezone"])).replace(tzinfo=timezone.utc)
+        for session in range(2):
+            # Most days have a session, some a second one.
+            if rng.random() > (0.9 if session == 0 else 0.3):
+                continue
+            next_id += rng.randrange(1000, 90000)
+            # Mostly Berlin, with trips to the other places.
+            city = "Berlin"
+            if 200 <= offset < 214:
+                city = "Mallorca"
+            elif rng.random() < 0.12:
+                city = "Hamburg"
+            elif rng.random() < 0.1:
+                city = "Munich"
+            place = PLACES[city]
+            hour = rng.choice([6, 7, 7, 8, 12, 17, 18, 18, 19])
+            local = datetime.combine(day, time(hour, rng.randrange(60), rng.randrange(60)))
+            started = (local - timedelta(hours=place["timezone"])).replace(tzinfo=timezone.utc)
 
-        if rng.random() < 0.15:
-            activity_type, _, minutes = pick(rng, INDOOR_TYPES)
-            duration = rng.uniform(*minutes) * 60
-            summary = base_summary(next_id, activity_type, typename(activity_type), local, started, duration)
-            summary.update(averageHR=round(rng.uniform(110, 140)), maxHR=round(rng.uniform(150, 175)),
-                           calories=round(duration / 60 * rng.uniform(7, 11)))
-            if activity_type != "strength_training":
-                speed = rng.uniform(2.6, 3.2) if activity_type == "treadmill_running" else rng.uniform(6, 8)
-                summary.update(distance=round(speed * duration, 1), averageSpeed=speed)
+            if rng.random() < 0.15:
+                activity_type, _, minutes = pick(rng, INDOOR_TYPES)
+                duration = rng.uniform(*minutes) * 60
+                summary = base_summary(next_id, activity_type, typename(activity_type), local, started, duration)
+                summary.update(averageHR=round(rng.uniform(110, 140)), maxHR=round(rng.uniform(150, 175)),
+                               calories=round(duration / 60 * rng.uniform(7, 11)))
+                if activity_type != "strength_training":
+                    speed = rng.uniform(2.6, 3.2) if activity_type == "treadmill_running" else rng.uniform(6, 8)
+                    summary.update(distance=round(speed * duration, 1), averageSpeed=speed)
+                activities.append(summary)
+                continue
+
+            label = None
+            description = None
+            hard = False
+            if city == "Mallorca":
+                activity_type, _, speed, km = GPS_TYPES[2]
+                route = "Tramuntana"
+            else:
+                activity_type, _, speed, km = pick(rng, GPS_TYPES)
+                routes = [name for name in place["routes"] if name not in HOME_SPECIAL]
+                weights = [place.get("weights", {}).get(name, 3 if name.startswith("Home") else 1) for name in routes]
+                route = rng.choices(routes, weights)[0]
+                if activity_type in ("trail_running", "hiking") and city == "Berlin":
+                    route = "Grunewald"
+                elif activity_type == "cycling" and place.get("rides") and rng.random() < 0.6:
+                    route = rng.choice(list(place["rides"]))
+            speed *= 0.92 + 0.12 * progress + rng.uniform(-0.05, 0.05)
+            distance = rng.uniform(*km) * 1000
+            points = route_points[(city, route)]
+            # Runs from home and rides end at home, after whole laps.
+            from_start = route.startswith("Home") or route in place["rides"]
+            run = rng.random() if city == "Berlin" and activity_type == "running" else 1.0
+            if run < 0.64:
+                # Almost every easy run takes the same route.
+                points = route_points[(city, HOME_MAIN)]
+                distance = length_of(points) - 0.5
+                from_start = True
+            elif run < 0.78:
+                # Speed work on the first part of it and back.
+                main = route_points[(city, HOME_MAIN)]
+                points = and_back(first_part(main, rng.uniform(0.3, 0.5) * length_of(main)))
+                distance = length_of(points) - 0.5
+                speed *= 1.15
+                hard = True
+                from_start = True
+                label, description = "Intervals", rng.choice(INTERVALS)
+            elif run < 0.92:
+                # Long runs share the start of it and go on, to different distances.
+                long_run = rng.choices(HOME_LONG, [4, 2, 2, 2])[0]
+                points = route_points[(city, long_run)]
+                if long_run == "Home Long East":
+                    points = and_back(first_part(points[:(len(points) + 1) // 2], rng.uniform(10_000, 17_500)))
+                distance = length_of(points) - 0.5
+                speed *= 0.95
+                from_start = True
+                label, description = "Long Run", "Long and slow."
+            elif from_start:
+                distance = max(1, round(distance / length_of(points))) * length_of(points) - 0.5
+            name = f"{city} {label or typename(activity_type)}"
+            samples = track(points, distance, speed, started, place["elevation"], activity_type, progress, rng, from_start, hard)
+            summary = base_summary(next_id, activity_type, name, local, started, samples[-1]["elapsed"])
+            summary.update(track_summary(samples, activity_type, progress, rng))
+            summary["locationName"] = city
+            if description:
+                summary["description"] = description
+            elif rng.random() < 0.2:
+                summary["description"] = rng.choice(DESCRIPTIONS)
             activities.append(summary)
-            continue
-
-        label = None
-        description = None
-        hard = False
-        if city == "Mallorca":
-            activity_type, _, speed, km = GPS_TYPES[2]
-            route = "Tramuntana"
-        else:
-            activity_type, _, speed, km = pick(rng, GPS_TYPES)
-            routes = [name for name in place["routes"] if name not in HOME_SPECIAL]
-            weights = [place.get("weights", {}).get(name, 3 if name.startswith("Home") else 1) for name in routes]
-            route = rng.choices(routes, weights)[0]
-            if activity_type in ("trail_running", "hiking") and city == "Berlin":
-                route = "Grunewald"
-            elif activity_type == "cycling" and place.get("rides") and rng.random() < 0.6:
-                route = rng.choice(list(place["rides"]))
-        speed *= 0.92 + 0.12 * progress + rng.uniform(-0.05, 0.05)
-        distance = rng.uniform(*km) * 1000
-        points = route_points[(city, route)]
-        # Runs from home and rides end at home, after whole laps.
-        from_start = route.startswith("Home") or route in place["rides"]
-        run = rng.random() if city == "Berlin" and activity_type == "running" else 1.0
-        if run < 0.64:
-            # Almost every easy run takes the same route.
-            points = route_points[(city, HOME_MAIN)]
-            distance = length_of(points) - 0.5
-            from_start = True
-        elif run < 0.78:
-            # Speed work on the first part of it and back.
-            main = route_points[(city, HOME_MAIN)]
-            points = and_back(first_part(main, rng.uniform(0.3, 0.5) * length_of(main)))
-            distance = length_of(points) - 0.5
-            speed *= 1.15
-            hard = True
-            from_start = True
-            label, description = "Intervals", rng.choice(INTERVALS)
-        elif run < 0.92:
-            # Long runs share the start of it and go on, to different distances.
-            long_run = rng.choices(HOME_LONG, [4, 2, 2, 2])[0]
-            points = route_points[(city, long_run)]
-            if long_run == "Home Long East":
-                points = and_back(first_part(points[:(len(points) + 1) // 2], rng.uniform(10_000, 17_500)))
-            distance = length_of(points) - 0.5
-            speed *= 0.95
-            from_start = True
-            label, description = "Long Run", "Long and slow."
-        elif from_start:
-            distance = max(1, round(distance / length_of(points))) * length_of(points) - 0.5
-        name = f"{city} {label or typename(activity_type)}"
-        samples = track(points, distance, speed, started, place["elevation"], activity_type, progress, rng, from_start, hard)
-        summary = base_summary(next_id, activity_type, name, local, started, samples[-1]["elapsed"])
-        summary.update(track_summary(samples, activity_type, progress, rng))
-        summary["locationName"] = city
-        if description:
-            summary["description"] = description
-        elif rng.random() < 0.2:
-            summary["description"] = rng.choice(DESCRIPTIONS)
-        activities.append(summary)
-        vo2_max = round(46 + 5 * progress + rng.uniform(-0.5, 0.5), 1) if activity_type in ("running", "trail_running") else None
-        files[next_id] = zipped(f"{next_id}_ACTIVITY.fit", fit_file(samples, vo2_max))
-        if rng.random() < 0.08:
-            count = rng.randrange(1, 4)
-            images[next_id] = [
-                (f"img{next_id}{index}", png(320, 220, rng.choice([
-                    ((126, 172, 214), (92, 140, 82)),
-                    ((240, 182, 120), (70, 92, 120)),
-                    ((180, 200, 222), (210, 190, 150)),
-                ]), rng))
-                for index in range(count)
-            ]
+            vo2_max = round(46 + 5 * progress + rng.uniform(-0.5, 0.5), 1) if activity_type in ("running", "trail_running") else None
+            files[next_id] = zipped(f"{next_id}_ACTIVITY.fit", fit_file(samples, vo2_max))
+            if rng.random() < 0.08:
+                count = rng.randrange(1, 4)
+                images[next_id] = [
+                    (f"img{next_id}{index}", png(320, 220, rng.choice([
+                        ((126, 172, 214), (92, 140, 82)),
+                        ((240, 182, 120), (70, 92, 120)),
+                        ((180, 200, 222), (210, 190, 150)),
+                    ]), rng))
+                    for index in range(count)
+                ]
     make_races(activities, files, images)
     activities.sort(key=lambda summary: summary["startTimeGMT"], reverse=True)
     return activities, files, images
 
 
 def make_races(activities, files, images):
-    """Two marathons. Köln on its course from marathon.json, Berlin along the streets of its course."""
+    """Two marathons, on their courses from marathon.json and berlin_marathon.json."""
     rng = random.Random(SEED + 2)
-    berlin = ROUTES["Berlin"]["races"]["Berlin Marathon"]
+    berlin = json.loads(Path(__file__).with_name("berlin_marathon.json").read_text())
     course = [
         [lat, lon, 38 + 5 * math.sin(position / 1500) + 2 * math.sin(position / 380)]
         for (lat, lon), position in walk(berlin, length_of(berlin) - 0.5, rng, forward=True)
-    ][::3]
+    ][::12]
     race(
         activities, files, images, rng, activity_id=9_098_000_000, name="Berlin Marathon 2025", city="Berlin",
         start=datetime(2025, 9, 21, 7, 15, tzinfo=timezone.utc), seconds=14535,  # 4:02:15
