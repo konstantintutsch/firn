@@ -25,17 +25,19 @@ while request "$url/api/sync" | grep -q '"state":"running"'; do sleep 2; done
 request "$url/api/sync"
 echo
 
-# Official results for the made-up city runs, for the personal records.
-request "$url/api/activities?q=City%20Run&limit=100" | python3 -c '
+# Official results for the made-up marathons, for the personal records. The
+# time of a marathon is its recorded time.
+request "$url/api/activities?q=Marathon&limit=100" | python3 -c '
 import json, sys
 for activity in json.load(sys.stdin)["activities"]:
-    meters = activity["distance_m"]
-    # The race distance nearest to the run, at the run'"'"'s pace.
-    race = min([5000, 10000, 21097.5, 42195], key=lambda distance: abs(distance - meters))
-    print(activity["id"], round(activity["duration_s"] * race / meters), race)
-' | while read -r id seconds distance; do
-  request --request PUT --header "Content-Type: application/json" \
-    --data "{\"distance_m\": $distance, \"time_s\": $seconds, \"event\": \"City Run\", \"results_url\": \"https://results.example/city-run\"}" \
-    "$url/api/activities/$id/result"
+    result = {
+        "distance_m": 42195,
+        "time_s": round(activity["duration_s"]),
+        "event": activity["name"],
+        "results_url": "https://results.example/marathon",
+    }
+    print(activity["id"], json.dumps(result), sep="\t")
+' | while IFS="$(printf '\t')" read -r id result; do
+  request --request PUT --header "Content-Type: application/json" --data "$result" "$url/api/activities/$id/result"
 done
 echo "Open $url and set the cookie runmap_session=$token, or use the screenshots recipe."

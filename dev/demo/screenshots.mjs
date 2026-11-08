@@ -32,16 +32,12 @@ async function shoot(name, url, { theme, viewport = { width: 1440, height: 900 }
   console.log(`${name}-${theme}.jpg`);
 }
 
-/** A recent run with photos, which shows the most in its details. */
+/** The Köln Marathon, which has photos and shows the most in its details. */
 async function showcase() {
   const tab = await page("light", { width: 800, height: 600 });
   await tab.goto(`${BASE}/settings/`);
   const id = await tab.evaluate(async () => {
-    const { activities } = await (await fetch("/api/activities?limit=100")).json();
-    for (const activity of activities.filter(({ activity_type: type }) => type === "running")) {
-      const detail = await (await fetch(`/api/activities/${activity.id}`)).json();
-      if (detail.images.length > 0) return activity.id;
-    }
+    const { activities } = await (await fetch("/api/activities?q=K%C3%B6ln%20Marathon&limit=1")).json();
     return activities[0].id;
   });
   await tab.context().close();

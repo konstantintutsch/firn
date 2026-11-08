@@ -4,3 +4,5 @@ node_modules/
 _site/
 .DS_Store
 __pycache__/
+# The raw course export holds heart rate and cadence, build_marathon.py keeps only the course.
+dev/demo/*.gpx

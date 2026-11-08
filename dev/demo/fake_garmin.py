@@ -7,6 +7,7 @@ the same on every start, apart from moving along with today's date.
 Only the Python standard library, so that it runs in a plain python image.
 """
 
+import bisect
 import io
 import json
 import math
@@ -24,6 +25,10 @@ DAYS = 730
 PORT = 8000
 # The address the backend reaches this server at, for the photo links.
 PUBLIC_BASE = "http://fake-garmin:8000"
+MARATHON_ID = 9_099_000_000
+MARATHON_START = datetime(2026, 10, 4, 7, 30, tzinfo=timezone.utc)
+# The finish time of the Köln Marathon, 3:50:40.
+MARATHON_SECONDS = 13840
 
 # Routes follow real streets and paths, see build_routes.py. Each is a list of
 # (latitude, longitude) points and ends where it starts.
@@ -280,17 +285,24 @@ def make_activities(today):
                 route = rng.choice(list(place["rides"]))
         speed *= 0.92 + 0.12 * progress + rng.uniform(-0.05, 0.05)
         distance = rng.uniform(*km) * 1000
+        # Rare races are marathons. Runs from home and rides end at home, after whole laps.
+        race = activity_type == "running" and rng.random() < 0.012
+        from_start = route.startswith("Home") or route in place["rides"]
+        if race:
+            distance = 42_195
+        elif from_start:
+            length = sum(meters(a, b) for a, b in zip(route_points[(city, route)], route_points[(city, route)][1:]))
+            distance = max(1, round(distance / length)) * length - 0.5
         name = f"{city} {typename(activity_type)}"
-        samples = track(route_points[(city, route)], distance, speed, started, place["elevation"], activity_type, progress, rng,
-                        route.startswith("Home") or route in place["rides"])
+        samples = track(route_points[(city, route)], distance, speed, started, place["elevation"], activity_type, progress, rng, from_start)
         summary = base_summary(next_id, activity_type, name, local, started, samples[-1]["elapsed"])
         summary.update(track_summary(samples, activity_type, progress, rng))
         summary["locationName"] = city
         if rng.random() < 0.2:
             summary["description"] = rng.choice(DESCRIPTIONS)
-        if activity_type in ("running", "trail_running") and rng.random() < 0.04:
+        if race:
             summary["eventType"] = {"typeKey": "race"}
-            summary["activityName"] = f"{city} City Run"
+            summary["activityName"] = f"{city} Marathon"
         activities.append(summary)
         vo2_max = round(46 + 5 * progress + rng.uniform(-0.5, 0.5), 1) if activity_type in ("running", "trail_running") else None
         files[next_id] = zipped(f"{next_id}_ACTIVITY.fit", fit_file(samples, vo2_max))
@@ -304,8 +316,85 @@ def make_activities(today):
                 ]), rng))
                 for index in range(count)
             ]
+    marathon(activities, files, images)
     activities.sort(key=lambda summary: summary["startTimeGMT"], reverse=True)
     return activities, files, images
+
+
+def marathon(activities, files, images):
+    """The Köln Marathon 2026, on its course from marathon.json at a made-up pace."""
+    rng = random.Random(SEED + 2)
+    samples = marathon_samples(rng)
+    local = MARATHON_START + timedelta(hours=2)
+    summary = base_summary(MARATHON_ID, "running", "Köln Marathon 2026", local, MARATHON_START, MARATHON_SECONDS)
+    summary.update(track_summary(samples, "running", 1.0, rng))
+    summary.update(
+        eventType={"typeKey": "race"},
+        locationName="Köln",
+        description="Last 10 km hurt, but worth every step.",
+        aerobicTrainingEffect=4.7,
+        anaerobicTrainingEffect=1.1,
+    )
+    activities.append(summary)
+    files[MARATHON_ID] = zipped(f"{MARATHON_ID}_ACTIVITY.fit", fit_file(samples, 51.5))
+    images[MARATHON_ID] = [
+        (f"img{MARATHON_ID}{index}", png(320, 220, colors, rng))
+        for index, colors in enumerate([
+            ((126, 172, 214), (92, 140, 82)),
+            ((240, 182, 120), (70, 92, 120)),
+            ((180, 200, 222), (210, 190, 150)),
+        ])
+    ]
+
+
+def marathon_samples(rng):
+    """One sample per second along the course, slowing down a little towards the end."""
+    course = json.loads(Path(__file__).with_name("marathon.json").read_text())
+    total = 0.0
+    distances = [0.0]
+    for a, b in zip(course, course[1:]):
+        total += meters(a, b)
+        distances.append(total)
+    # The GPS elevation is jumpy, so average it over a minute of running.
+    elevations = []
+    for index in range(len(course)):
+        window = [point[2] for point in course[max(0, index - 30):index + 31]]
+        elevations.append(sum(window) / len(window))
+
+    def pace(distance):
+        """Relative seconds per meter."""
+        fraction = distance / total
+        return 1 + 0.1 * fraction ** 2 + 0.025 * math.sin(distance / 2600) - (0.03 if fraction > 0.976 else 0)
+
+    times = [0.0]
+    for index in range(1, len(distances)):
+        step = distances[index] - distances[index - 1]
+        times.append(times[-1] + step * pace((distances[index] + distances[index - 1]) / 2))
+    scale = MARATHON_SECONDS / times[-1]
+    times = [moment * scale for moment in times]
+
+    samples = []
+    for second in range(MARATHON_SECONDS + 1):
+        index = min(len(times) - 1, max(1, bisect.bisect_left(times, second)))
+        fraction = (second - times[index - 1]) / (times[index] - times[index - 1])
+        lerp = lambda values: values[index - 1] + (values[index] - values[index - 1]) * min(1.0, max(0.0, fraction))
+        distance = lerp(distances)
+        progress = distance / total
+        warmup = min(1.0, second / 300)
+        heart_rate = (104 + 44 * warmup + 26 * progress ** 1.3 + 3 * math.sin(distance / 1800)
+                      + (6 if progress > 0.976 else 0) + rng.uniform(-1.5, 1.5))
+        samples.append({
+            "time": MARATHON_START + timedelta(seconds=second),
+            "elapsed": float(second),
+            "lat": course[index - 1][0] + (course[index][0] - course[index - 1][0]) * min(1.0, max(0.0, fraction)),
+            "lon": course[index - 1][1] + (course[index][1] - course[index - 1][1]) * min(1.0, max(0.0, fraction)),
+            "elevation": lerp(elevations),
+            "heart_rate": max(90, min(190, round(heart_rate))),
+            "cadence": round(85 - 2 * progress + rng.uniform(-2, 2)),
+            "distance": distance,
+            "speed": 1 / (pace(distance) * scale),
+        })
+    return samples
 
 
 def typename(activity_type):
