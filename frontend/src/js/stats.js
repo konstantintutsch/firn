@@ -418,21 +418,23 @@ function renderActivities(activities, buckets, metrics) {
   lineFromActivities(container, dated, "average_heart_rate", "Heart rate in activities", "Average per activity", unit(0, "bpm"));
 
   const isCycling = ({ activity_type }) => /cycling|biking/.test(activity_type);
+  // What a health app measured, which may be several values a day, is of running like Garmin's.
+  const measured = (metrics.vo2_max ?? []).map(([day, value]) => [parseDay(day), value]);
   const vo2Series = [
-    ["Running", 1, (activity) => !isCycling(activity)],
-    ["Cycling", 2, isCycling],
+    ["Running", 1, (activity) => !isCycling(activity), measured],
+    ["Cycling", 2, isCycling, []],
   ]
-    .map(([name, slot, matches]) => ({
+    .map(([name, slot, matches, extra]) => ({
       name: t(name),
       slot,
-      points: dated.filter((activity) => activity.vo2_max != null && matches(activity)).map((activity) => [activity.time, activity.vo2_max]),
+      points: [
+        ...dated.filter((activity) => activity.vo2_max != null && matches(activity)).map((activity) => [activity.time, activity.vo2_max]),
+        ...extra,
+      ],
     }))
     .filter(({ points }) => points.length > 1);
-  // What a health app measured, which may be several values a day.
-  const measured = (metrics.vo2_max ?? []).map(([day, value]) => [parseDay(day), value]);
-  if (measured.length > 1) vo2Series.push({ name: t("Apple Health"), slot: 3, points: measured });
   if (vo2Series.length > 0) {
-    chart(card(container, "VO2 max", "As Garmin and Apple Health estimated it"), {
+    chart(card(container, "VO2 max", "As Garmin estimated it for each activity"), {
       kind: "line",
       series: vo2Series.map(({ name, slot, points }) => ({ name, slot, values: averagePerDay(points) })),
       format: number(1),

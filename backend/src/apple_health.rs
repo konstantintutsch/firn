@@ -50,6 +50,9 @@ const fn map(
     }
 }
 
+/// Days in the average of the HRV: the day itself and the ones before.
+const HRV_AVERAGE_DAYS: i64 = 7;
+
 /// The part of the basal energy that only adds up to the day's total calories.
 const BASAL_CALORIES: &str = "basal_calories";
 
@@ -269,6 +272,20 @@ pub fn parse(reader: impl BufRead, workouts: bool) -> Result<Export> {
             let total = basal + active;
             metrics.insert("calories".to_owned(), total);
         }
+    }
+
+    // Garmin reports an average of the last seven days next to the night's HRV. Apple does not.
+    let hrv: BTreeMap<NaiveDate, f64> = days
+        .iter()
+        .filter_map(|(day, metrics)| Some((*day, *metrics.get("hrv")?)))
+        .collect();
+    for &day in hrv.keys() {
+        let from = day - Duration::days(HRV_AVERAGE_DAYS - 1);
+        let window: Vec<f64> = hrv.range(from..=day).map(|(_, value)| *value).collect();
+        let average = window.iter().sum::<f64>() / window.len() as f64;
+        days.entry(day)
+            .or_default()
+            .insert("hrv_weekly".to_owned(), average);
     }
 
     let mut best_nights: BTreeMap<NaiveDate, Night> = BTreeMap::new();
@@ -609,6 +626,27 @@ mod tests {
         );
         let metrics = &export.days[&day()];
         assert!(!metrics.contains_key("vo2_max") && !metrics.contains_key("hydration_l"));
+    }
+
+    #[test]
+    fn hrv_gets_an_average_of_the_last_seven_days() {
+        let record = |day: u32, value: u32| {
+            format!(
+                r#"<Record type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN" unit="ms" value="{value}" sourceName="Watch" startDate="2026-04-{day:02} 03:00:00 +0200" endDate="2026-04-{day:02} 03:00:00 +0200"/>"#
+            )
+        };
+        // Days 1, 2 and 9, so that day 9 no longer reaches back to day 1 and 2.
+        let xml = format!(
+            "<HealthData>{}{}{}</HealthData>",
+            record(1, 40),
+            record(2, 50),
+            record(9, 70)
+        );
+        let days = parse(xml.as_bytes(), false).unwrap().days;
+        let weekly = |day: &str| days[&day.parse::<NaiveDate>().unwrap()]["hrv_weekly"];
+        assert_eq!(weekly("2026-04-01"), 40.0);
+        assert_eq!(weekly("2026-04-02"), 45.0);
+        assert_eq!(weekly("2026-04-09"), 70.0);
     }
 
     #[test]
