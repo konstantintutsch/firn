@@ -753,6 +753,7 @@ function setUpRace(statusElement, reload) {
     form.elements.other_km.value = result && !named ? result.distance_m / 1000 : "";
     other.hidden = form.elements.distance.value !== "other";
     form.elements.time.value = result ? duration(result.time_s) : "";
+    form.elements.target.value = result?.target_time_s ? duration(result.target_time_s) : "";
     form.elements.event.value = result?.event ?? activity.name ?? "";
     form.elements.results_url.value = result?.results_url ?? "";
     document.querySelector("#race-remove").hidden = result == null;
@@ -784,13 +785,15 @@ function setUpRace(statusElement, reload) {
     const choice = form.elements.distance.value;
     const meters = choice === "other" ? Number(form.elements.other_km.value) * 1000 : Number(choice);
     const seconds = parseClock(form.elements.time.value);
-    if (!(meters > 0) || seconds == null) {
-      statusElement.textContent = t("Enter a distance and a time like 1:29:59.");
+    const target = form.elements.target.value.trim() ? parseClock(form.elements.target.value) : null;
+    if (!(meters > 0) || seconds == null || (target == null && form.elements.target.value.trim())) {
+      statusElement.textContent = t("Enter a distance and times like 1:29:59.");
       return;
     }
     save("PUT", {
       distance_m: meters,
       time_s: seconds,
+      target_time_s: target,
       event: form.elements.event.value,
       results_url: form.elements.results_url.value,
     });
@@ -809,6 +812,7 @@ function setUpRace(statusElement, reload) {
       if (result) {
         const parts = [duration(result.time_s), raceDistanceName(result.distance_m)];
         if (result.event) parts.push(result.event);
+        if (result.target_time_s) parts.push(`${t("Target")} ${duration(result.target_time_s)}`);
         summary.append(parts.join(" · "));
         if (result.results_url) {
           const link = document.createElement("a");

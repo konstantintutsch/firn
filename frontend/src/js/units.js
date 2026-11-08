@@ -35,6 +35,9 @@ export const speedUnit = imperial ? "mph" : "km/h";
 /** "/km" or "/mi". */
 export const paceUnit = `/${distanceUnit}`;
 
+export const temperatureUnit = imperial ? "°F" : "°C";
+export const windSpeedUnit = imperial ? "mph" : "km/h";
+
 /** Kilometers or miles. */
 export const toDistance = (meters) => meters / DISTANCE_M;
 /** Meters or feet. */
@@ -43,3 +46,7 @@ export const toElevation = (meters) => (imperial ? meters / 0.3048 : meters);
 export const toSpeed = (metersPerSecond) => (metersPerSecond * 3600) / DISTANCE_M;
 /** Minutes per kilometer or mile. */
 export const toPace = (metersPerSecond) => DISTANCE_M / metersPerSecond / 60;
+/** Degrees Celsius or Fahrenheit, from the Fahrenheit that Garmin's weather has. */
+export const fromFahrenheit = (degrees) => (imperial ? degrees : ((degrees - 32) * 5) / 9);
+/** Kilometers or miles per hour, from the miles per hour that Garmin's weather has. */
+export const fromMilesPerHour = (speed) => (imperial ? speed : speed * 1.609344);

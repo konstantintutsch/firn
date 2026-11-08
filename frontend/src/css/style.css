@@ -1439,6 +1439,11 @@ a.activity:hover {
   font-weight: 600;
 }
 
+.activity small.race-fact {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .activity small {
   color: var(--ink-muted);
   font-size: 12px;
@@ -1568,6 +1573,15 @@ a.chart-tooltip-row:focus-visible {
   gap: 12px;
 }
 
+/* A crown on the days of races. It sits on the squares, so the pointer ignores it. */
+.calendar-crown {
+  fill: var(--zone-4);
+  stroke: var(--surface);
+  stroke-width: 0.6;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
 .calendar-day.level-0 {
   fill: var(--fill);
 }
@@ -1610,6 +1624,19 @@ a.chart-tooltip-row:focus-visible {
   margin: 0;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+
+.block-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--ink-muted);
+}
+
+.block-filter select {
+  min-width: 0;
+  flex: 1;
 }
 
 .records-results {

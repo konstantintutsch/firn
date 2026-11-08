@@ -19,7 +19,8 @@ a server with.
   in the link, so you can bookmark and share a view.
 - **Activity details** with a profile of pace, elevation, heart rate, cadence
   and power to scrub along, the track colored by any of them, kilometer or mile
-  splits, heart rate zones and photos. Download the original
+  splits, heart rate zones, photos, the weather, the primary training effect
+  and the watch and sensors that recorded it, which the activity list shows too. Download the original
   FIT file or a GPX file, and step to the previous or next activity.
 - **Routes** to run again: save the track of an activity as a route, or import
   a GPX file. Routes show on a map with distance and climb, can be renamed and
@@ -27,7 +28,9 @@ a server with.
 - **Statistics** on distance, time, pace, heart rate, VO2 max and training load,
   a calendar of the last year and a year over year comparison.
 - **Personal records** from the official race results you enter for an
-  activity, each linked to the published results. Health charts cover sleep, HRV, resting heart rate, stress, Body
+  activity, each linked to the published results, with the time you aimed for.
+  Races can be filtered by training block, which runs from the last race at
+  least as long to the race itself. Race days wear a crown in the calendar. Health charts cover sleep, HRV, resting heart rate, stress, Body
   Battery, steps, SpO2, weight and more.
 - **Everything from Garmin**, synced with the Personal API: activities with and
   without GPS, their files, details and photos, and all health data. Syncs can

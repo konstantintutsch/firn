@@ -1,4 +1,5 @@
 import { activityDetails, activityTitle, plural, requireAccount, setUpSync, t, typeName } from "/js/account.js";
+import { devicesText, raceText, trainingEffectText, weatherText } from "/js/facts.js";
 import { language } from "/js/i18n.js";
 import { setUpFilters } from "/js/filters.js";
 import { trackPreview } from "/js/preview.js";
@@ -137,14 +138,22 @@ function listItem(activity) {
   type.textContent = activity.bounds ? typeName(activity.activity_type) : `${typeName(activity.activity_type)} · ${t("No GPS track")}`;
   const details = document.createElement("small");
   details.textContent = activityDetails(activity);
+  const facts = [raceText(activity.result), trainingEffectText(activity), weatherText(activity.weather), devicesText(activity.devices)]
+    .filter(Boolean)
+    .map((fact) => {
+      const line = document.createElement("small");
+      line.textContent = fact;
+      return line;
+    });
+  facts[0]?.classList.toggle("race-fact", activity.result != null);
   if (activity.preview) {
     // The picture beside the text.
     const text = document.createElement("span");
-    text.append(title, type, details);
+    text.append(title, type, details, ...facts);
     entry.classList.add("has-preview");
     entry.append(trackPreview(activity.preview), text);
   } else {
-    entry.append(title, type, details);
+    entry.append(title, type, details, ...facts);
   }
   item.append(entry);
   return item;

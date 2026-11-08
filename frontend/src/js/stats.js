@@ -1,7 +1,7 @@
 import { bars, chart, forgetCharts } from "/js/charts.js";
-import { duration, number, pace, raceDistanceName, unit } from "/js/format.js";
+import { duration, number, pace, raceDistanceName, svgElement, unit } from "/js/format.js";
 import { language } from "/js/i18n.js";
-import { requireAccount, setUpSync, t, typeName } from "/js/account.js";
+import { plural, requireAccount, setUpSync, t, typeName } from "/js/account.js";
 import { localDay, setUpFilters } from "/js/filters.js";
 import { distanceUnit, elevationUnit, toDistance, toElevation } from "/js/units.js";
 
@@ -560,6 +560,7 @@ function calendar(container, dated, buckets) {
   });
 
   const days = [];
+  const crowns = [];
   for (let week = 0, date = new Date(start); week < WEEKS; week++) {
     for (let weekday = 0; weekday < 7; weekday++, date.setDate(date.getDate() + 1)) {
       if (date.getTime() > last) break;
@@ -575,7 +576,14 @@ function calendar(container, dated, buckets) {
       square.dataset.index = days.length;
       days.push({ time: date.getTime(), entry, square });
       svg.append(square);
+      if (entry?.activities.some(({ result }) => result)) crowns.push([week * (SIZE + GAP), weekday * (SIZE + GAP)]);
     }
+  }
+
+  // On top of the squares, so that the pointer still reaches them.
+  for (const [x, y] of crowns) {
+    const crown = svgElement("path", { class: "calendar-crown", d: `M${x + 1.5} ${y + 8.5}L${x + 1} ${y + 3.5}L${x + 4} ${y + 6}L${x + 5.5} ${y + 2.5}L${x + 7} ${y + 6}L${x + 10} ${y + 3.5}L${x + 9.5} ${y + 8.5}Z` }, svg);
+    crown.setAttribute("aria-hidden", "true");
   }
 
   // Made once, since a new one on every day would slow the pop-up down.
@@ -712,10 +720,63 @@ function records(container, dated) {
 
   const all = document.createElement("dl");
   all.className = "records";
-  for (const race of races) {
-    all.append(raceRow(race, `${race.result.event || activityName(race)} · ${raceDistanceName(race.result.distance_m)}`));
+  const blocks = trainingBlocks([...races].reverse());
+  const body = card(container, "Races", "Every race with an official result, newest first");
+  const choice = blockSelect(blocks, () => showRaces());
+  if (choice) body.append(choice);
+  body.append(all);
+  function showRaces() {
+    const block = blocks.find(({ end }) => end.id === choice?.value);
+    const shown = block ? block.races : races;
+    all.replaceChildren(
+      ...shown.map((race) =>
+        raceRow(race, `${race.result.event || activityName(race)} · ${raceDistanceName(race.result.distance_m)}`),
+      ),
+    );
   }
-  card(container, "Races", "Every race with an official result, newest first").append(all);
+  showRaces();
+}
+
+/**
+ * The training blocks of races, oldest first: a block runs from the race before
+ * its last race to that race. Races that are shorter than the last race do not
+ * end a block, while a longer one or one as long does. Blocks inside the block
+ * of a longer race are left out, since that block shows them too.
+ * Each has its last race as `end` and its races, newest first, as `races`.
+ */
+function trainingBlocks(oldestFirst) {
+  const meters = (race) => race.result.distance_m;
+  const blocks = oldestFirst.map((end, index) => {
+    let start = index - 1;
+    // Within a meter counts as the same distance.
+    while (start >= 0 && meters(oldestFirst[start]) < meters(end) - 1) start--;
+    return { end, first: start + 1, last: index, races: oldestFirst.slice(start + 1, index + 1).reverse() };
+  });
+  return blocks
+    .filter((block) => !blocks.some((other) => other.last > block.last && other.first <= block.first))
+    .reverse();
+}
+
+/** A selection of the training blocks, or nothing if the races make up a single one. */
+function blockSelect(blocks, onChange) {
+  if (blocks.length < 2) return null;
+  const label = document.createElement("label");
+  label.className = "block-filter";
+  const text = document.createElement("span");
+  text.textContent = t("Training block");
+  const select = document.createElement("select");
+  const all = new Option(t("All races"), "");
+  select.append(all);
+  for (const { end, races } of blocks) {
+    const name = end.result.event || activityName(end);
+    const count = plural(races.length, "race", "races");
+    select.append(new Option(`${name} · ${new Date(end.time).toLocaleDateString(language)} · ${count}`, end.id));
+  }
+  select.addEventListener("change", onChange);
+  label.append(text, select);
+  // The value of the label is that of its selection, which the caller reads.
+  Object.defineProperty(label, "value", { get: () => select.value });
+  return label;
 }
 
 function activityName({ name, activity_type: type }) {
@@ -734,6 +795,11 @@ function raceRow(race, label) {
   const when = document.createElement("small");
   when.textContent = new Date(race.time).toLocaleDateString(language);
   value.append(link, when);
+  if (race.result.target_time_s) {
+    const target = document.createElement("small");
+    target.textContent = `${t("Target")} ${duration(race.result.target_time_s)}`;
+    value.append(target);
+  }
   if (race.result.results_url) {
     const results = document.createElement("a");
     results.href = race.result.results_url;

@@ -178,6 +178,11 @@ def fit_file(samples, vo2_max=None):
             round(sample["distance"] * 100),
             round(sample["speed"] * 1000),
         )
+    # Device info messages: the watch (a Garmin product, index 0) and an ANT+
+    # heart rate strap, with the source type ANT+ (1) and the device type 120.
+    data += bytes([0x42, 0, 0]) + struct.pack("<H", 23) + bytes([5, 0, 1, 0x02, 1, 1, 0x02, 2, 2, 0x84, 4, 2, 0x84, 25, 1, 0x00])
+    data += bytes([2, 0, 0]) + struct.pack("<HH", 1, 3906) + bytes([0])
+    data += bytes([2, 1, 120]) + struct.pack("<HH", 1, 2) + bytes([1])
     if vo2_max is not None:
         # Garmin's activity metrics message, where VO2 max is in 1/65536 of a MET.
         data += bytes([0x41, 0, 0]) + struct.pack("<H", 140) + bytes([1, 7, 4, 0x86])
@@ -551,6 +556,13 @@ def track_summary(samples, activity_type, progress, rng):
         "startLatitude": samples[0]["lat"],
         "startLongitude": samples[0]["lon"],
         "aerobicTrainingEffect": round(rng.uniform(2.2, 4.2), 1),
+        "trainingEffectLabel": rng.choice(["BASE", "TEMPO", "AEROBIC_BASE", "VO2MAX"]),
+        "weather": {
+            "temp": round(rng.uniform(41, 77)),
+            "windSpeed": round(rng.uniform(0, 14)),
+            "relativeHumidity": round(rng.uniform(45, 90)),
+            "weatherTypeDTO": {"desc": rng.choice(["Sunny", "Cloudy", "Partly cloudy", "Light rain"])},
+        },
         "anaerobicTrainingEffect": round(rng.uniform(0.2, 2.0), 1),
         "activityTrainingLoad": round(duration / 60 * rng.uniform(0.9, 1.6)),
         **{f"hrTimeInZone_{index + 1}": seconds for index, seconds in enumerate(zones)},

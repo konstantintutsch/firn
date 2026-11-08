@@ -35,6 +35,7 @@ for activity in json.load(sys.stdin)["activities"]:
         "time_s": round(activity["duration_s"]),
         "event": activity["name"],
         "results_url": "https://results.example/marathon",
+        "target_time_s": round(activity["duration_s"]) - 300,
     }
     print(activity["id"], json.dumps(result), sep="\t")
 ' | while IFS="$(printf '\t')" read -r id result; do
