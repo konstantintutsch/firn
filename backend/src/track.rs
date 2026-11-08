@@ -177,6 +177,22 @@ fn text(value: &Value) -> Option<String> {
     }
 }
 
+/// Garmin products that are newer than the FIT profile of the parser, which lists
+/// them by number only. Their names come from Garmin's own export of FIT files.
+const NEWER_GARMIN_PRODUCTS: &[(&str, &str)] = &[("4607", "hrm_600")];
+
+/// The product's name, or the number again if it is not known.
+fn product_name(manufacturer: Option<&str>, product: String) -> String {
+    if manufacturer == Some("garmin")
+        && let Some((_, name)) = NEWER_GARMIN_PRODUCTS
+            .iter()
+            .find(|(number, _)| *number == product)
+    {
+        return (*name).to_owned();
+    }
+    product
+}
+
 /// The watch and the sensors that a FIT file lists, the watch first. A sensor has
 /// a product and one of the `SENSOR_KINDS`. Each product of a maker counts once,
 /// however many times or with whatever serial number the file lists it.
@@ -208,7 +224,8 @@ pub fn devices(zip: &[u8]) -> Result<Vec<Device>> {
             "garmin_product",
             "favero_product",
             "product",
-        ]);
+        ])
+        .map(|product| product_name(manufacturer.as_deref(), product));
         // The name of the type depends on how the sensor is connected.
         let kind = field(&[
             "antplus_device_type",
