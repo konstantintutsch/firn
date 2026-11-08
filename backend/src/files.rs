@@ -1,8 +1,9 @@
 //! Keeps the large files of activities, the original files and photos, on disk
 //! instead of in the database, which stays small and quick to back up.
 //!
-//! Each activity has a folder named by its Garmin ID, which is unique across
-//! accounts: `activities/<id>/original.zip` and `activities/<id>/images/<image>`.
+//! Each activity has a folder named by its ID: `activities/<id>/original.zip`
+//! and `activities/<id>/images/<image>`. Versions before activities had IDs of
+//! their own named the folder by the Garmin ID, which `rename_activity` fixes.
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -10,6 +11,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use uuid::Uuid;
 
 use crate::secret;
 
@@ -23,27 +25,27 @@ impl FileStore {
         Self { root: root.into() }
     }
 
-    fn activity_dir(&self, activity_id: i64) -> PathBuf {
+    fn activity_dir(&self, activity_id: Uuid) -> PathBuf {
         self.root.join("activities").join(activity_id.to_string())
     }
 
-    fn original_path(&self, activity_id: i64) -> PathBuf {
+    fn original_path(&self, activity_id: Uuid) -> PathBuf {
         self.activity_dir(activity_id).join("original.zip")
     }
 
-    fn image_path(&self, activity_id: i64, image_id: &str) -> PathBuf {
+    fn image_path(&self, activity_id: Uuid, image_id: &str) -> PathBuf {
         self.activity_dir(activity_id)
             .join("images")
             .join(file_name(image_id))
     }
 
     /// The original file as Garmin sent it, in its ZIP.
-    pub async fn original(&self, activity_id: i64) -> Result<Option<Vec<u8>>> {
+    pub async fn original(&self, activity_id: Uuid) -> Result<Option<Vec<u8>>> {
         read(&self.original_path(activity_id)).await
     }
 
     /// Saves the original file, or removes it with `None`.
-    pub async fn save_original(&self, activity_id: i64, zip: Option<&[u8]>) -> Result<()> {
+    pub async fn save_original(&self, activity_id: Uuid, zip: Option<&[u8]>) -> Result<()> {
         let path = self.original_path(activity_id);
         match zip {
             Some(zip) => write(&path, zip).await,
@@ -51,12 +53,12 @@ impl FileStore {
         }
     }
 
-    pub async fn image(&self, activity_id: i64, image_id: &str) -> Result<Option<Vec<u8>>> {
+    pub async fn image(&self, activity_id: Uuid, image_id: &str) -> Result<Option<Vec<u8>>> {
         read(&self.image_path(activity_id, image_id)).await
     }
 
     /// Replaces all images of an activity.
-    pub async fn save_images(&self, activity_id: i64, images: &[(&str, &[u8])]) -> Result<()> {
+    pub async fn save_images(&self, activity_id: Uuid, images: &[(&str, &[u8])]) -> Result<()> {
         let dir = self.activity_dir(activity_id).join("images");
         remove_dir(&dir).await?;
         for (image_id, data) in images {
@@ -65,7 +67,7 @@ impl FileStore {
         Ok(())
     }
 
-    pub async fn save_image(&self, activity_id: i64, image_id: &str, data: &[u8]) -> Result<()> {
+    pub async fn save_image(&self, activity_id: Uuid, image_id: &str, data: &[u8]) -> Result<()> {
         write(&self.image_path(activity_id, image_id), data).await
     }
 
@@ -79,8 +81,21 @@ impl FileStore {
         Ok(dir.join(format!("{prefix}-{}", secret::random_token())))
     }
 
+    /// Gives the folder that was named by the Garmin ID the activity's own ID.
+    /// Does nothing if there is no such folder, or the new one exists already.
+    pub async fn rename_activity(&self, garmin_id: i64, activity_id: Uuid) -> Result<()> {
+        let from = self.root.join("activities").join(garmin_id.to_string());
+        let to = self.activity_dir(activity_id);
+        if !tokio::fs::try_exists(&from).await? || tokio::fs::try_exists(&to).await? {
+            return Ok(());
+        }
+        tokio::fs::rename(&from, &to)
+            .await
+            .with_context(|| format!("could not rename {}", from.display()))
+    }
+
     /// Removes everything of an activity.
-    pub async fn remove_activity(&self, activity_id: i64) -> Result<()> {
+    pub async fn remove_activity(&self, activity_id: Uuid) -> Result<()> {
         remove_dir(&self.activity_dir(activity_id)).await
     }
 }
@@ -155,29 +170,49 @@ mod tests {
     async fn saves_reads_and_removes_files() {
         let root = std::env::temp_dir().join(format!("runmap-files-{}", secret::random_token()));
         let store = FileStore::new(&root);
-        assert_eq!(store.original(1).await.unwrap(), None);
+        let id = Uuid::new_v4();
+        assert_eq!(store.original(id).await.unwrap(), None);
 
-        store.save_original(1, Some(b"zip")).await.unwrap();
+        store.save_original(id, Some(b"zip")).await.unwrap();
         store
-            .save_images(1, &[("a", b"one"), ("b", b"two")])
+            .save_images(id, &[("a", b"one"), ("b", b"two")])
             .await
             .unwrap();
         assert_eq!(
-            store.original(1).await.unwrap().as_deref(),
+            store.original(id).await.unwrap().as_deref(),
             Some(&b"zip"[..])
         );
         assert_eq!(
-            store.image(1, "b").await.unwrap().as_deref(),
+            store.image(id, "b").await.unwrap().as_deref(),
             Some(&b"two"[..])
         );
 
-        store.save_images(1, &[("c", b"three")]).await.unwrap();
-        assert_eq!(store.image(1, "a").await.unwrap(), None);
+        store.save_images(id, &[("c", b"three")]).await.unwrap();
+        assert_eq!(store.image(id, "a").await.unwrap(), None);
 
-        store.save_original(1, None).await.unwrap();
-        assert_eq!(store.original(1).await.unwrap(), None);
-        store.remove_activity(1).await.unwrap();
-        assert_eq!(store.image(1, "c").await.unwrap(), None);
+        store.save_original(id, None).await.unwrap();
+        assert_eq!(store.original(id).await.unwrap(), None);
+        store.remove_activity(id).await.unwrap();
+        assert_eq!(store.image(id, "c").await.unwrap(), None);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn renames_a_folder_named_by_the_garmin_id() {
+        let root = std::env::temp_dir().join(format!("runmap-files-{}", secret::random_token()));
+        let store = FileStore::new(&root);
+        let id = Uuid::new_v4();
+        let old = root.join("activities").join("42");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("original.zip"), b"zip").unwrap();
+
+        store.rename_activity(42, id).await.unwrap();
+        assert_eq!(
+            store.original(id).await.unwrap().as_deref(),
+            Some(&b"zip"[..])
+        );
+        // Again, with nothing left to rename.
+        store.rename_activity(42, id).await.unwrap();
         std::fs::remove_dir_all(root).unwrap();
     }
 }

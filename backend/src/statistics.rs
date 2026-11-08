@@ -8,6 +8,7 @@ use chrono::{Days, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
 
 use crate::api::{ApiError, AppState, ErrorBody, FilterQuery};
 use crate::auth::CurrentUser;
@@ -34,7 +35,7 @@ const RESTING_AVERAGE_DAYS: u64 = 7;
 
 #[derive(Serialize, ToSchema)]
 pub struct ActivityStatistic {
-    id: i64,
+    id: Uuid,
     name: String,
     activity_type: String,
     /// The local day it started.
@@ -88,7 +89,7 @@ pub async fn activity_statistics(
     };
     check_range(filter.from, filter.to)?;
     let records = db::activity_records(&state.pool, &filter).await?;
-    let ids: Vec<i64> = records.iter().map(|record| record.id).collect();
+    let ids: Vec<Uuid> = records.iter().map(|record| record.id).collect();
     let mut results = db::race_results(&state.pool, &ids).await?;
     Ok(Json(ActivityStatistics {
         activities: records

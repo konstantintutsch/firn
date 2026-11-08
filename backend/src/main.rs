@@ -84,6 +84,7 @@ async fn main() -> Result<()> {
     let pool = db::connect(&cli.database_url)?;
     db::migrate(&pool).await?;
     let files = FileStore::new(&cli.data_dir);
+    db::rename_activity_folders(&pool, &files).await?;
     db::move_files_to_store(&pool, &files).await?;
     db::backfill_vo2_max(&pool, &files).await?;
 

@@ -37,10 +37,29 @@ async fn import(state: &AppState, zip: Vec<u8>) -> (StatusCode, Value) {
     (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
 }
 
+/// The Garmin IDs of the test account's activities, oldest first.
 async fn activity_ids(pool: &Pool) -> Vec<i64> {
-    db::activity_ids(pool, common::user(pool).await)
-        .await
-        .unwrap()
+    let user_id = common::user(pool).await;
+    let ids = db::activity_ids(pool, user_id).await.unwrap();
+    ids_to_garmin(pool, &ids).await
+}
+
+async fn ids_to_garmin(pool: &Pool, ids: &[uuid::Uuid]) -> Vec<i64> {
+    use diesel::prelude::*;
+    use diesel_async::RunQueryDsl;
+    use runmap::schema::activities;
+    let mut garmin_ids = Vec::new();
+    for id in ids {
+        garmin_ids.push(
+            activities::table
+                .find(id)
+                .select(activities::garmin_id)
+                .first(&mut pool.get().await.unwrap())
+                .await
+                .unwrap(),
+        );
+    }
+    garmin_ids
 }
 
 /// Syncs one activity with a photo and a day of health data from a fake Garmin.
@@ -125,12 +144,13 @@ async fn synced_state() -> AppState {
 #[tokio::test]
 async fn an_export_restores_everything_in_another_runmap() {
     let source = synced_state().await;
+    let id = common::activity_id(source.pool(), 7).await;
     let result = json!({"distance_m": 1000.0, "time_s": 240.0, "event": null, "results_url": null});
-    let request =
-        Request::put("/api/activities/7/result").header("content-type", "application/json");
+    let request = Request::put(format!("/api/activities/{}/result", id))
+        .header("content-type", "application/json");
     let (status, _) = send(&source, request, Body::from(result.to_string())).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    let route = json!({"activity_id": 7});
+    let route = json!({"activity_id": id});
     let request = Request::post("/api/routes").header("content-type", "application/json");
     let (status, body) = send(&source, request, Body::from(route.to_string())).await;
     assert_eq!(status, StatusCode::CREATED);
@@ -149,13 +169,21 @@ async fn an_export_restores_everything_in_another_runmap() {
 
     assert_eq!(activity_ids(&pool).await, [7]);
     let files = common::files(&pool).await;
-    assert!(files.original(7).await.unwrap().is_some());
-    assert_eq!(files.image(7, "p1").await.unwrap(), Some(b"jpeg".to_vec()));
-    let (_, body) = send(&target, Request::get("/api/activities/7"), Body::empty()).await;
+    assert!(files.original(id).await.unwrap().is_some());
+    assert_eq!(files.image(id, "p1").await.unwrap(), Some(b"jpeg".to_vec()));
+    let (_, body) = send(
+        &target,
+        Request::get(format!("/api/activities/{}", id)),
+        Body::empty(),
+    )
+    .await;
     let detail: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(detail["activity"]["name"], "Lunch run");
     assert_eq!(detail["result"], result);
-    assert_eq!(detail["images"], json!(["/api/activities/7/images/p1"]));
+    assert_eq!(
+        detail["images"],
+        json!([format!("/api/activities/{id}/images/p1")])
+    );
     assert_eq!(detail["samples"]["position"].as_array().unwrap().len(), 2);
     let (_, body) = send(
         &target,
@@ -172,7 +200,7 @@ async fn an_export_restores_everything_in_another_runmap() {
     assert_eq!(status, StatusCode::OK);
     let imported: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(imported["id"], route["id"]);
-    assert_eq!(imported["activity_id"], 7);
+    assert_eq!(imported["activity_id"], id.to_string());
     assert_eq!(imported["created_at"], route["created_at"]);
     assert_eq!(imported["points"].as_array().unwrap().len(), 2);
     assert_eq!(imported["preview"].as_array().unwrap().len(), 2);
@@ -219,13 +247,14 @@ async fn imports_loose_files_once() {
     let ids = activity_ids(&pool).await;
     assert_eq!(ids.len(), 1);
     assert!(ids[0] < 0);
+    let id = common::activity_id(&pool, ids[0]).await;
 
     import(&state, zip).await;
     assert_eq!(activity_ids(&pool).await, ids);
 
     let (_, body) = send(
         &state,
-        Request::get(format!("/api/activities/{}", ids[0])),
+        Request::get(format!("/api/activities/{id}")),
         Body::empty(),
     )
     .await;

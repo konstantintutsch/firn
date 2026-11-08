@@ -92,14 +92,25 @@ async fn run_sync(pool: &Pool, server: &MockServer) -> Result<Report, GarminErro
     .await
 }
 
-async fn is_track_synced(pool: &Pool, id: i64) -> bool {
+/// The ID that a sync gave the activity with this Garmin ID.
+async fn id_of(pool: &Pool, garmin_id: i64) -> uuid::Uuid {
+    activities::table
+        .filter(activities::garmin_id.eq(garmin_id))
+        .select(activities::id)
+        .first(&mut pool.get().await.unwrap())
+        .await
+        .unwrap()
+}
+
+async fn is_track_synced(pool: &Pool, garmin_id: i64) -> bool {
     let user_id = common::user(pool).await;
+    let id = id_of(pool, garmin_id).await;
     !db::missing(pool, user_id, id).await.unwrap().unwrap().track
 }
 
-async fn point_count(pool: &Pool, id: i64) -> i64 {
+async fn point_count(pool: &Pool, garmin_id: i64) -> i64 {
     track_points::table
-        .filter(track_points::activity_id.eq(id))
+        .filter(track_points::activity_id.eq(id_of(pool, garmin_id).await))
         .count()
         .get_result(&mut pool.get().await.unwrap())
         .await
@@ -144,13 +155,17 @@ async fn saves_all_pages_and_keeps_raw_data() {
     assert_eq!(point_count(&pool, 2).await, 2);
 
     let (name, summary): (String, Value) = activities::table
-        .find(2)
+        .filter(activities::garmin_id.eq(2))
         .select((activities::name, activities::summary))
         .first(&mut pool.get().await.unwrap())
         .await
         .unwrap();
     assert_eq!(name, "Run 2");
-    let original = common::files(&pool).await.original(2).await.unwrap();
+    let original = common::files(&pool)
+        .await
+        .original(id_of(&pool, 2).await)
+        .await
+        .unwrap();
     assert_eq!(original, Some(original_zip()));
     assert_eq!(summary["startLatitude"], 52.5);
 }
@@ -178,7 +193,7 @@ async fn activity_of_another_account_is_left_unchanged() {
         .unwrap();
 
     let (name, activity_type, owner): (String, String, Option<i64>) = activities::table
-        .find(1)
+        .filter(activities::garmin_id.eq(1))
         .select((
             activities::name,
             activities::activity_type,
@@ -520,7 +535,7 @@ async fn saves_activity_details() {
     // Nothing is left to download, so a second sync asks for nothing.
     assert_eq!(run_sync(&pool, &server).await.unwrap().to_download, 0);
     let details: Option<Value> = activities::table
-        .find(1)
+        .filter(activities::garmin_id.eq(1))
         .select(activities::details)
         .first(&mut pool.get().await.unwrap())
         .await
@@ -681,7 +696,7 @@ async fn saves_activity_workouts() {
     run_sync(&pool, &server).await.unwrap();
     assert_eq!(run_sync(&pool, &server).await.unwrap().to_download, 0);
     let workouts: Option<Value> = activities::table
-        .find(1)
+        .filter(activities::garmin_id.eq(1))
         .select(activities::workouts)
         .first(&mut pool.get().await.unwrap())
         .await
@@ -741,12 +756,21 @@ async fn saves_activity_images_without_sending_the_token() {
         .unwrap();
     assert!(!image_request.headers.contains_key("authorization"));
     let user_id = common::user(&pool).await;
-    assert_eq!(db::image_ids(&pool, 1).await.unwrap(), ["a"]);
     assert_eq!(
-        db::image_type(&pool, user_id, 1, "a").await.unwrap(),
+        db::image_ids(&pool, id_of(&pool, 1).await).await.unwrap(),
+        ["a"]
+    );
+    assert_eq!(
+        db::image_type(&pool, user_id, id_of(&pool, 1).await, "a")
+            .await
+            .unwrap(),
         Some("image/jpeg".to_owned())
     );
-    let image = common::files(&pool).await.image(1, "a").await.unwrap();
+    let image = common::files(&pool)
+        .await
+        .image(id_of(&pool, 1).await, "a")
+        .await
+        .unwrap();
     assert_eq!(image, Some(b"jpeg".to_vec()));
 }
 
@@ -757,7 +781,7 @@ async fn saved_details_without_images_need_no_request() {
     mount_file(&server, 1, 1).await;
     run_sync(&pool, &server).await.unwrap();
     // Activities saved before images were synced have details but no images yet.
-    diesel::update(activities::table.find(1))
+    diesel::update(activities::table.find(id_of(&pool, 1).await))
         .set(activities::images_synced_at.eq(None::<chrono::DateTime<chrono::Utc>>))
         .execute(&mut pool.get().await.unwrap())
         .await
@@ -789,7 +813,12 @@ async fn image_that_garmin_refuses_is_skipped_for_good() {
     let report = run_sync(&pool, &server).await.unwrap();
     assert_eq!((report.downloaded, report.failed), (1, 0));
     assert_eq!(run_sync(&pool, &server).await.unwrap().to_download, 0);
-    assert!(db::image_ids(&pool, 1).await.unwrap().is_empty());
+    assert!(
+        db::image_ids(&pool, id_of(&pool, 1).await)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -801,15 +830,16 @@ async fn files_from_the_database_move_to_the_file_store() {
     mount_file(&server, 1, 1).await;
     run_sync(&pool, &server).await.unwrap();
     // As older versions saved them.
+    let id = id_of(&pool, 1).await;
     let mut connection = pool.get().await.unwrap();
-    diesel::update(activities::table.find(1))
+    diesel::update(activities::table.find(id))
         .set(activities::original_zip.eq(Some(b"old zip".to_vec())))
         .execute(&mut connection)
         .await
         .unwrap();
     diesel::insert_into(activity_images::table)
         .values((
-            activity_images::activity_id.eq(1),
+            activity_images::activity_id.eq(id),
             activity_images::image_id.eq("a"),
             activity_images::seq.eq(0),
             activity_images::content_type.eq("image/png"),
@@ -822,8 +852,14 @@ async fn files_from_the_database_move_to_the_file_store() {
 
     let files = common::files(&pool).await;
     db::move_files_to_store(&pool, &files).await.unwrap();
-    assert_eq!(files.original(1).await.unwrap(), Some(b"old zip".to_vec()));
-    assert_eq!(files.image(1, "a").await.unwrap(), Some(b"png".to_vec()));
+    assert_eq!(
+        files.original(id_of(&pool, 1).await).await.unwrap(),
+        Some(b"old zip".to_vec())
+    );
+    assert_eq!(
+        files.image(id_of(&pool, 1).await, "a").await.unwrap(),
+        Some(b"png".to_vec())
+    );
     let (zip, data): (Option<Vec<u8>>, Option<Vec<u8>>) = activities::table
         .inner_join(activity_images::table)
         .select((activities::original_zip, activity_images::data))

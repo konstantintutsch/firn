@@ -46,8 +46,8 @@ pub struct RouteDetail {
 
 #[derive(Deserialize, ToSchema)]
 pub struct NewRouteFromActivity {
-    /// Garmin's ID of the activity to take the track from.
-    activity_id: i64,
+    /// The ID of the activity to take the track from.
+    activity_id: Uuid,
     /// Defaults to the activity's title.
     name: Option<String>,
     description: Option<String>,
@@ -190,7 +190,7 @@ async fn save(
     name: &str,
     description: Option<&str>,
     points: Vec<RoutePoint>,
-    activity_id: Option<i64>,
+    activity_id: Option<Uuid>,
 ) -> Result<RouteSummary, ApiError> {
     let prepared = prepare(points)?;
     let route = NewRoute {
@@ -261,7 +261,7 @@ pub async fn create_route(
         .await
         .map_err(anyhow::Error::from)?
         .map_err(|error| {
-            tracing::warn!(id, "could not read the activity file: {error:#}");
+            tracing::warn!(%id, "could not read the activity file: {error:#}");
             ApiError::BadRequest("this activity has no track")
         })?;
     let points = route_points(&samples)?;

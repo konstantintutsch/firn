@@ -3,8 +3,8 @@
 //!
 //! An export holds:
 //! - `runmap-export.json`, which marks it, with the format version,
-//! - `activities/<id>/activity.json` with the summary, details, workouts and
-//!   the list of images,
+//! - `activities/<id>/activity.json` with the activity's ID, the summary,
+//!   details, workouts and the list of images,
 //! - `activities/<id>/original.zip`, the file as Garmin sent it,
 //! - `activities/<id>/images/<n>`, the photos in the order of the list,
 //! - `routes/<id>.json`, one saved route with its points,
@@ -23,6 +23,7 @@ use fitparser::profile::MesgNum;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::runtime::Handle;
+use uuid::Uuid;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
@@ -51,6 +52,9 @@ struct Marker {
 
 #[derive(Serialize, Deserialize)]
 struct ExportedActivity {
+    /// Missing in exports from before activities had IDs of their own.
+    #[serde(default)]
+    id: Option<Uuid>,
     summary: Value,
     details: Option<Value>,
     workouts: Option<Value>,
@@ -105,6 +109,7 @@ pub fn export(
             serde_json::to_writer(
                 &mut zip,
                 &ExportedActivity {
+                    id: Some(activity.id),
                     summary: activity.summary,
                     details: activity.details,
                     workouts: activity.workouts,
@@ -274,18 +279,18 @@ impl Import<'_> {
         let exported: ExportedActivity =
             serde_json::from_slice(&read_entry(archive, &format!("{dir}/activity.json"))?)?;
         let activity = Activity::from_summary(exported.summary)?;
-        if !self.claim(&activity)? {
+        let Some(id) = self.claim(&activity, exported.id)? else {
             return Ok(false);
-        }
+        };
         let original = optional_entry(archive, &format!("{dir}/original.zip"))?;
-        self.save_track(&activity, original.as_deref())?;
+        self.save_track(&activity, id, original.as_deref())?;
         if let Some(details) = &exported.details {
             self.handle
-                .block_on(db::save_details(self.pool, activity.id, details))?;
+                .block_on(db::save_details(self.pool, id, details))?;
         }
         if let Some(workouts) = &exported.workouts {
             self.handle
-                .block_on(db::save_workouts(self.pool, activity.id, workouts))?;
+                .block_on(db::save_workouts(self.pool, id, workouts))?;
         }
         let mut images = Vec::new();
         let mut saved = Vec::new();
@@ -302,17 +307,12 @@ impl Import<'_> {
             .iter()
             .map(|(id, data)| (id.as_str(), data.as_slice()))
             .collect();
+        self.handle.block_on(self.files.save_images(id, &images))?;
         self.handle
-            .block_on(self.files.save_images(activity.id, &images))?;
-        self.handle
-            .block_on(db::save_images(self.pool, activity.id, &saved))?;
+            .block_on(db::save_images(self.pool, id, &saved))?;
         if let Some(result) = &exported.result {
-            self.handle.block_on(db::save_race_result(
-                self.pool,
-                self.user_id,
-                activity.id,
-                result,
-            ))?;
+            self.handle
+                .block_on(db::save_race_result(self.pool, self.user_id, id, result))?;
         }
         Ok(true)
     }
@@ -364,44 +364,49 @@ impl Import<'_> {
         identity.extend(&content);
         let summary = summary_of(imported_id(&identity), name, &sport, &samples)?;
         let activity = Activity::from_summary(summary)?;
-        if !self.claim(&activity)? {
+        let Some(id) = self.claim(&activity, None)? else {
             return Ok(false);
-        }
-        self.save_track(&activity, Some(original))?;
+        };
+        self.save_track(&activity, id, Some(original))?;
         // Garmin has nothing more for files from elsewhere, so syncs never ask.
         self.handle
-            .block_on(db::save_details(self.pool, activity.id, &json!({})))?;
+            .block_on(db::save_details(self.pool, id, &json!({})))?;
         self.handle
-            .block_on(db::save_workouts(self.pool, activity.id, &json!([])))?;
-        self.handle
-            .block_on(db::save_images(self.pool, activity.id, &[]))?;
+            .block_on(db::save_workouts(self.pool, id, &json!([])))?;
+        self.handle.block_on(db::save_images(self.pool, id, &[]))?;
         Ok(true)
     }
 
-    /// Saves the activity for the account, unless another account has it.
-    fn claim(&self, activity: &Activity) -> Result<bool> {
+    /// Saves the activity for the account and gives its ID, unless another
+    /// account has it. A new activity takes `id` if there is one.
+    fn claim(&self, activity: &Activity, id: Option<Uuid>) -> Result<Option<Uuid>> {
         if let Some(Some(owner)) = self.handle.block_on(db::owner(self.pool, activity.id))?
             && owner != self.user_id
         {
-            return Ok(false);
+            return Ok(None);
         }
-        self.handle.block_on(db::upsert_activities(
+        self.handle.block_on(db::upsert_activities_with_ids(
             self.pool,
             self.user_id,
-            std::slice::from_ref(activity),
+            &[(activity, id)],
         ))?;
-        Ok(true)
+        let mut ids = self.handle.block_on(db::ids_by_garmin_id(
+            self.pool,
+            self.user_id,
+            &[activity.id],
+        ))?;
+        Ok(ids.remove(&activity.id))
     }
 
-    fn save_track(&self, activity: &Activity, original: Option<&[u8]>) -> Result<()> {
+    fn save_track(&self, activity: &Activity, id: Uuid, original: Option<&[u8]>) -> Result<()> {
         let points = match original {
             Some(zip) if activity.has_track => track::parse_archive(zip)?,
             _ => Vec::new(),
         };
         self.handle
-            .block_on(self.files.save_original(activity.id, original))?;
+            .block_on(self.files.save_original(id, original))?;
         self.handle
-            .block_on(db::save_track(self.pool, activity.id, &points))?;
+            .block_on(db::save_track(self.pool, id, &points))?;
         Ok(())
     }
 

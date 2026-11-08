@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use chrono::{Days, NaiveDate};
 use serde_json::{Value, json};
+use uuid::Uuid;
 
 use crate::db::{self, Pool};
 use crate::files::FileStore;
@@ -80,17 +81,17 @@ pub async fn sync_activities(
     let mut missing = db::missing_many(pool, user_id, &ids).await?;
     let mut pending = Vec::new();
     for activity in &activities {
-        if let Some(missing) = missing.remove(&activity.id)
+        if let Some((id, missing)) = missing.remove(&activity.id)
             && (missing.track || missing.details || missing.workouts || missing.images)
         {
-            pending.push((activity, missing));
+            pending.push((activity, id, missing));
         }
     }
     report.to_download = pending.len();
     on_progress(&report);
 
-    for (activity, missing) in pending {
-        let result = download_activity(pool, files, client, activity, &missing).await;
+    for (activity, id, missing) in pending {
+        let result = download_activity(pool, files, client, activity, id, &missing).await;
         match result {
             Ok(()) => {
                 report.downloaded += 1;
@@ -114,10 +115,11 @@ async fn download_activity(
     files: &FileStore,
     client: &mut GarminClient,
     activity: &Activity,
+    id: Uuid,
     missing: &db::Missing,
 ) -> Result<(), GarminError> {
     if missing.track {
-        save_original(pool, files, client, activity).await?;
+        save_original(pool, files, client, activity, id).await?;
     }
     let mut details = None;
     if missing.details {
@@ -125,15 +127,15 @@ async fn download_activity(
             .activity_details(activity.id)
             .await?
             .unwrap_or_else(|| json!({}));
-        db::save_details(pool, activity.id, &fetched).await?;
+        db::save_details(pool, id, &fetched).await?;
         details = Some(fetched);
     }
     if missing.workouts {
         let workouts = client.activity_workouts(activity.id).await?;
-        db::save_workouts(pool, activity.id, &workouts.unwrap_or_else(|| json!([]))).await?;
+        db::save_workouts(pool, id, &workouts.unwrap_or_else(|| json!([]))).await?;
     }
     if missing.images {
-        save_images(pool, files, client, activity.id, details).await?;
+        save_images(pool, files, client, id, activity.id, details).await?;
     }
     Ok(())
 }
@@ -145,7 +147,7 @@ pub async fn resync_activity(
     files: &FileStore,
     client: &mut GarminClient,
     user_id: i64,
-    id: i64,
+    id: Uuid,
 ) -> Result<Option<()>, GarminError> {
     let Some(summary) = db::summary(pool, user_id, id).await? else {
         return Ok(None);
@@ -157,7 +159,7 @@ pub async fn resync_activity(
         workouts: true,
         images: true,
     };
-    download_activity(pool, files, client, &activity, &everything).await?;
+    download_activity(pool, files, client, &activity, id, &everything).await?;
     Ok(Some(()))
 }
 
@@ -174,13 +176,14 @@ async fn save_original(
     files: &FileStore,
     client: &mut GarminClient,
     activity: &Activity,
+    id: Uuid,
 ) -> Result<(), GarminError> {
     let zip = match client.download_original(activity.id).await {
         Ok(zip) => zip,
         Err(GarminError::NotFound) => {
             tracing::warn!(id = activity.id, "Garmin has no file for this activity");
-            files.save_original(activity.id, None).await?;
-            db::save_track(pool, activity.id, &[]).await?;
+            files.save_original(id, None).await?;
+            db::save_track(pool, id, &[]).await?;
             return Ok(());
         }
         Err(error) => return Err(error),
@@ -192,13 +195,13 @@ async fn save_original(
         Vec::new()
     };
     // The file first: a saved track marks the activity as done.
-    files.save_original(activity.id, Some(&zip)).await?;
-    db::save_track(pool, activity.id, &points).await?;
+    files.save_original(id, Some(&zip)).await?;
+    db::save_track(pool, id, &points).await?;
     let vo2_max = track::vo2_max(&zip).unwrap_or_else(|error| {
         tracing::warn!(id = activity.id, %error, "could not read VO2 max from the file");
         None
     });
-    db::save_vo2_max(pool, activity.id, vo2_max).await?;
+    db::save_vo2_max(pool, id, vo2_max).await?;
     Ok(())
 }
 
@@ -207,7 +210,8 @@ async fn save_images(
     pool: &Pool,
     files: &FileStore,
     client: &mut GarminClient,
-    id: i64,
+    id: Uuid,
+    garmin_id: i64,
     fresh: Option<Value>,
 ) -> Result<(), GarminError> {
     let details = match fresh {
@@ -219,7 +223,7 @@ async fn save_images(
             } else {
                 // The links in saved details expire after a day, so this asks for new ones.
                 let details = client
-                    .activity_details(id)
+                    .activity_details(garmin_id)
                     .await?
                     .unwrap_or_else(|| json!({}));
                 db::save_details(pool, id, &details).await?;
@@ -234,7 +238,7 @@ async fn save_images(
             Ok(download) => download,
             // Garmin lists older images with links that do not work, and retrying does not help.
             Err(error @ (GarminError::Forbidden | GarminError::NotFound)) => {
-                tracing::warn!(id, image = image.id, %error, "skipped image");
+                tracing::warn!(%id, image = image.id, %error, "skipped image");
                 continue;
             }
             Err(error) => return Err(error),

@@ -2,7 +2,7 @@
 
 diesel::table! {
     activities (id) {
-        id -> Int8,
+        id -> Uuid,
         name -> Text,
         activity_type -> Text,
         started_at -> Timestamptz,
@@ -21,12 +21,14 @@ diesel::table! {
         images_synced_at -> Nullable<Timestamptz>,
         vo2_max_checked_at -> Nullable<Timestamptz>,
         vo2_max -> Nullable<Float8>,
+        garmin_id -> Int8,
+        preview -> Nullable<Jsonb>,
     }
 }
 
 diesel::table! {
     activity_images (activity_id, image_id) {
-        activity_id -> Int8,
+        activity_id -> Uuid,
         image_id -> Text,
         seq -> Int4,
         content_type -> Text,
@@ -62,7 +64,7 @@ diesel::table! {
         distance_m -> Float8,
         elevation_gain_m -> Nullable<Float8>,
         points -> Jsonb,
-        activity_id -> Nullable<Int8>,
+        activity_id -> Nullable<Uuid>,
         created_at -> Timestamptz,
         preview -> Jsonb,
     }
@@ -79,7 +81,7 @@ diesel::table! {
 
 diesel::table! {
     track_points (activity_id, seq) {
-        activity_id -> Int8,
+        activity_id -> Uuid,
         seq -> Int4,
         lat -> Float8,
         lon -> Float8,
@@ -90,7 +92,7 @@ diesel::table! {
 
 diesel::table! {
     race_results (activity_id) {
-        activity_id -> Int8,
+        activity_id -> Uuid,
         distance_m -> Float8,
         time_s -> Float8,
         event -> Nullable<Text>,

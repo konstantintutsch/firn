@@ -14,6 +14,29 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use wiremock::MockServer;
 use zip::write::SimpleFileOptions;
 
+/// The ID that tests give the activity with the Garmin ID `garmin_id`, so that
+/// they can name it without looking it up.
+pub fn uuid(garmin_id: i64) -> uuid::Uuid {
+    uuid::Uuid::from_u128(garmin_id.unsigned_abs() as u128 | ((garmin_id < 0) as u128) << 100)
+}
+
+/// Saves an activity under `uuid(activity.id)`, for the test account.
+pub async fn add_activity(pool: &Pool, activity: runmap::garmin::Activity) -> uuid::Uuid {
+    let id = uuid(activity.id);
+    db::upsert_activities_with_ids(pool, user(pool).await, &[(&activity, Some(id))])
+        .await
+        .unwrap();
+    id
+}
+
+/// The ID of the test account's activity with this Garmin ID, which a sync or an import chose.
+pub async fn activity_id(pool: &Pool, garmin_id: i64) -> uuid::Uuid {
+    let user_id = user(pool).await;
+    db::ids_by_garmin_id(pool, user_id, &[garmin_id])
+        .await
+        .unwrap()[&garmin_id]
+}
+
 static NEXT_DATABASE: AtomicU32 = AtomicU32::new(0);
 
 /// Creates a fresh, migrated database so that tests stay independent.

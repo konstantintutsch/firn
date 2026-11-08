@@ -108,9 +108,7 @@ async fn add_run_with_file(pool: &Pool, id: i64, gpx: Option<&str>) {
         has_track: true,
         summary: json!({"activityId": id, "startTimeGMT": "2026-03-01 08:00:00"}),
     };
-    db::upsert_activities(pool, common::user(pool).await, &[activity])
-        .await
-        .unwrap();
+    let id = common::add_activity(pool, activity).await;
     db::save_track(
         pool,
         id,
@@ -184,17 +182,23 @@ async fn takes_route_points_when_a_file_has_no_track() {
 async fn saves_an_activity_as_a_route() {
     let pool = common::test_pool().await;
     add_run_with_file(&pool, 1, Some(GPX)).await;
-    let reply = send(&pool, "POST", "/api/routes", json!({"activity_id": 1})).await;
+    let reply = send(
+        &pool,
+        "POST",
+        "/api/routes",
+        json!({"activity_id": common::uuid(1)}),
+    )
+    .await;
     assert_eq!(reply.status, StatusCode::CREATED);
     let route = reply.json();
     assert_eq!(route["name"], "Morning loop");
-    assert_eq!(route["activity_id"], 1);
+    assert_eq!(route["activity_id"], common::uuid(1).to_string());
 
     let named = send(
         &pool,
         "POST",
         "/api/routes",
-        json!({"activity_id": 1, "name": "Sunday", "description": " Flat "}),
+        json!({"activity_id": common::uuid(1), "name": "Sunday", "description": " Flat "}),
     )
     .await
     .json();
@@ -211,9 +215,21 @@ async fn saves_an_activity_as_a_route() {
 async fn an_activity_without_a_file_or_an_owner_makes_no_route() {
     let pool = common::test_pool().await;
     add_run_with_file(&pool, 1, None).await;
-    let reply = send(&pool, "POST", "/api/routes", json!({"activity_id": 1})).await;
+    let reply = send(
+        &pool,
+        "POST",
+        "/api/routes",
+        json!({"activity_id": common::uuid(1)}),
+    )
+    .await;
     assert_eq!(reply.status, StatusCode::BAD_REQUEST);
-    let reply = send(&pool, "POST", "/api/routes", json!({"activity_id": 2})).await;
+    let reply = send(
+        &pool,
+        "POST",
+        "/api/routes",
+        json!({"activity_id": common::uuid(2)}),
+    )
+    .await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
 }
 
@@ -251,11 +267,16 @@ async fn renames_and_deletes_a_route() {
 async fn deleting_the_activity_keeps_the_route() {
     let pool = common::test_pool().await;
     add_run_with_file(&pool, 1, Some(GPX)).await;
-    let id = send(&pool, "POST", "/api/routes", json!({"activity_id": 1}))
-        .await
-        .json()["id"]
+    let id = send(
+        &pool,
+        "POST",
+        "/api/routes",
+        json!({"activity_id": common::uuid(1)}),
+    )
+    .await
+    .json()["id"]
         .clone();
-    diesel::sql_query("DELETE FROM activities WHERE id = 1")
+    diesel::sql_query("DELETE FROM activities WHERE garmin_id = 1")
         .execute(&mut pool.get().await.unwrap())
         .await
         .unwrap();

@@ -317,7 +317,7 @@ async fn data_needs_a_session() {
         "/api/me",
         "/api/stats",
         "/api/activities",
-        "/api/activities/1",
+        &format!("/api/activities/{}", common::uuid(1)),
         "/api/activity-types",
         "/api/sync",
         "/api/heatmap?zoom=1&west=-180&south=-90&east=180&north=90",
@@ -434,7 +434,7 @@ async fn first_account_claims_activities_from_before_accounts() {
     {
         use diesel_async::RunQueryDsl;
         diesel::sql_query(
-            "INSERT INTO activities (id, name, activity_type, started_at, summary) \
+            "INSERT INTO activities (garmin_id, name, activity_type, started_at, summary) \
              VALUES (7, 'Old run', 'running', now(), '{}')",
         )
         .execute(&mut pool.get().await.unwrap())

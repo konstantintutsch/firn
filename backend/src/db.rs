@@ -11,7 +11,7 @@ use diesel_async::pooled_connection::deadpool;
 
 use diesel_async::{AsyncConnection, AsyncMigrationHarness, AsyncPgConnection, RunQueryDsl};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
-use serde_json::Value;
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::files::FileStore;
@@ -51,7 +51,9 @@ pub async fn migrate(pool: &Pool) -> Result<()> {
 #[derive(Insertable)]
 #[diesel(table_name = activities)]
 struct NewActivity<'a> {
-    id: i64,
+    /// `None` gives the activity a new random ID, unless it is saved already.
+    id: Option<Uuid>,
+    garmin_id: i64,
     user_id: i64,
     name: &'a str,
     activity_type: &'a str,
@@ -64,10 +66,21 @@ struct NewActivity<'a> {
 /// Inserts or updates activity metadata. Never touches a run's saved track, and
 /// never changes or moves an activity that another account saved already.
 pub async fn upsert_activities(pool: &Pool, user_id: i64, activities: &[Activity]) -> Result<()> {
+    let activities: Vec<_> = activities.iter().map(|activity| (activity, None)).collect();
+    upsert_activities_with_ids(pool, user_id, &activities).await
+}
+
+/// Like `upsert_activities`, and a new activity takes the ID that goes with it, if any.
+pub async fn upsert_activities_with_ids(
+    pool: &Pool,
+    user_id: i64,
+    activities: &[(&Activity, Option<Uuid>)],
+) -> Result<()> {
     let rows: Vec<_> = activities
         .iter()
-        .map(|activity| NewActivity {
-            id: activity.id,
+        .map(|(activity, id)| NewActivity {
+            id: *id,
+            garmin_id: activity.id,
             user_id,
             name: &activity.name,
             activity_type: &activity.activity_type,
@@ -79,7 +92,7 @@ pub async fn upsert_activities(pool: &Pool, user_id: i64, activities: &[Activity
         .collect();
     let upsert = diesel::insert_into(activities::table)
         .values(&rows)
-        .on_conflict(activities::id)
+        .on_conflict(activities::garmin_id)
         .do_update()
         .set((
             activities::name.eq(excluded(activities::name)),
@@ -116,7 +129,7 @@ pub struct Missing {
 
 /// `None` if the activity belongs to another account.
 /// The summary of one of the account's activities, as Garmin's list sent it.
-pub async fn summary(pool: &Pool, user_id: i64, id: i64) -> Result<Option<Value>> {
+pub async fn summary(pool: &Pool, user_id: i64, id: Uuid) -> Result<Option<Value>> {
     Ok(activities::table
         .find(id)
         .filter(activities::user_id.eq(user_id))
@@ -140,13 +153,18 @@ impl Missing {
     }
 }
 
-/// What is missing for each of the account's activities in `ids`, in one query.
-/// Activities of other accounts are left out.
-pub async fn missing_many(pool: &Pool, user_id: i64, ids: &[i64]) -> Result<HashMap<i64, Missing>> {
-    let rows: Vec<(i64, MissingRow)> = activities::table
-        .filter(activities::id.eq_any(ids))
+/// The ID and what is missing for each of the account's activities with these
+/// Garmin IDs, in one query, by Garmin ID. Activities of other accounts are left out.
+pub async fn missing_many(
+    pool: &Pool,
+    user_id: i64,
+    garmin_ids: &[i64],
+) -> Result<HashMap<i64, (Uuid, Missing)>> {
+    let rows: Vec<(i64, Uuid, MissingRow)> = activities::table
+        .filter(activities::garmin_id.eq_any(garmin_ids))
         .filter(activities::user_id.eq(user_id))
         .select((
+            activities::garmin_id,
             activities::id,
             (
                 activities::track_synced_at,
@@ -159,11 +177,11 @@ pub async fn missing_many(pool: &Pool, user_id: i64, ids: &[i64]) -> Result<Hash
         .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, row)| (id, Missing::from_row(row)))
+        .map(|(garmin_id, id, row)| (garmin_id, (id, Missing::from_row(row))))
         .collect())
 }
 
-pub async fn missing(pool: &Pool, user_id: i64, id: i64) -> Result<Option<Missing>> {
+pub async fn missing(pool: &Pool, user_id: i64, id: Uuid) -> Result<Option<Missing>> {
     let row: Option<MissingRow> = activities::table
         .find(id)
         .filter(activities::user_id.eq(user_id))
@@ -197,7 +215,7 @@ pub async fn skip_activities_without_images(pool: &Pool, user_id: i64) -> Result
     Ok(())
 }
 
-pub async fn details(pool: &Pool, id: i64) -> Result<Option<Value>> {
+pub async fn details(pool: &Pool, id: Uuid) -> Result<Option<Value>> {
     Ok(activities::table
         .find(id)
         .select(activities::details)
@@ -214,7 +232,7 @@ pub struct Image {
 }
 
 /// Replaces the images of an activity atomically and marks them as done.
-pub async fn save_images(pool: &Pool, id: i64, images: &[Image]) -> Result<()> {
+pub async fn save_images(pool: &Pool, id: Uuid, images: &[Image]) -> Result<()> {
     let rows: Vec<_> = images
         .iter()
         .enumerate()
@@ -251,7 +269,7 @@ pub async fn save_images(pool: &Pool, id: i64, images: &[Image]) -> Result<()> {
 }
 
 /// The IDs of an activity's images, in Garmin's order.
-pub async fn image_ids(pool: &Pool, id: i64) -> Result<Vec<String>> {
+pub async fn image_ids(pool: &Pool, id: Uuid) -> Result<Vec<String>> {
     Ok(activity_images::table
         .filter(activity_images::activity_id.eq(id))
         .order(activity_images::seq)
@@ -264,7 +282,7 @@ pub async fn image_ids(pool: &Pool, id: i64) -> Result<Vec<String>> {
 pub async fn image_type(
     pool: &Pool,
     user_id: i64,
-    id: i64,
+    id: Uuid,
     image_id: &str,
 ) -> Result<Option<String>> {
     Ok(activity_images::table
@@ -279,7 +297,7 @@ pub async fn image_type(
 }
 
 /// `details` is an empty object if Garmin had none, so that no sync asks again.
-pub async fn save_details(pool: &Pool, id: i64, details: &Value) -> Result<()> {
+pub async fn save_details(pool: &Pool, id: Uuid, details: &Value) -> Result<()> {
     diesel::update(activities::table.find(id))
         .set(activities::details.eq(details))
         .execute(&mut pool.get().await?)
@@ -288,7 +306,7 @@ pub async fn save_details(pool: &Pool, id: i64, details: &Value) -> Result<()> {
 }
 
 /// `workouts` is an empty array if Garmin had none, so that no sync asks again.
-pub async fn save_workouts(pool: &Pool, id: i64, workouts: &Value) -> Result<()> {
+pub async fn save_workouts(pool: &Pool, id: Uuid, workouts: &Value) -> Result<()> {
     diesel::update(activities::table.find(id))
         .set(activities::workouts.eq(workouts))
         .execute(&mut pool.get().await?)
@@ -298,7 +316,7 @@ pub async fn save_workouts(pool: &Pool, id: i64, workouts: &Value) -> Result<()>
 
 /// Stores a track atomically and marks the run as done. `None` means no track exists.
 /// Replaces the track of an activity. Its original file goes to the file store.
-pub async fn save_track(pool: &Pool, id: i64, points: &[Point]) -> Result<()> {
+pub async fn save_track(pool: &Pool, id: Uuid, points: &[Point]) -> Result<()> {
     let rows: Vec<_> = points
         .iter()
         .enumerate()
@@ -311,6 +329,7 @@ pub async fn save_track(pool: &Pool, id: i64, points: &[Point]) -> Result<()> {
             )
         })
         .collect();
+    let preview = (!points.is_empty()).then(|| json!(crate::track::preview(points)));
     let mut connection = pool.get().await?;
     connection
         .transaction::<_, diesel::result::Error, _>(async |connection| {
@@ -324,7 +343,10 @@ pub async fn save_track(pool: &Pool, id: i64, points: &[Point]) -> Result<()> {
                     .await?;
             }
             diesel::update(activities::table.find(id))
-                .set(activities::track_synced_at.eq(diesel::dsl::now))
+                .set((
+                    activities::track_synced_at.eq(diesel::dsl::now),
+                    activities::preview.eq(preview),
+                ))
                 .execute(&mut *connection)
                 .await?;
             Ok(())
@@ -335,7 +357,7 @@ pub async fn save_track(pool: &Pool, id: i64, points: &[Point]) -> Result<()> {
 
 /// Loads the Web Mercator positions of an account's tracks, each in recording order.
 pub async fn load_tracks(pool: &Pool, user_id: i64) -> Result<Vec<ActivityTrack>> {
-    let rows: Vec<(i64, Option<f64>, Option<f64>)> = track_points::table
+    let rows: Vec<(Uuid, Option<f64>, Option<f64>)> = track_points::table
         .inner_join(activities::table)
         .filter(activities::user_id.eq(user_id))
         .select((track_points::activity_id, track_points::x, track_points::y))
@@ -366,7 +388,7 @@ pub async fn load_tracks(pool: &Pool, user_id: i64) -> Result<Vec<ActivityTrack>
 }
 
 pub struct ActivityTrack {
-    pub id: i64,
+    pub id: Uuid,
     pub track: Track,
     /// Around the whole track, so that the heatmap can skip tracks outside the viewport.
     pub bounds: Viewport,
@@ -377,7 +399,7 @@ pub struct ActivityTrack {
 pub struct Filter {
     /// The account whose activities count.
     pub user_id: i64,
-    pub id: Option<i64>,
+    pub id: Option<Uuid>,
     pub query: Option<String>,
     pub activity_types: Vec<String>,
     pub title: Option<String>,
@@ -530,8 +552,8 @@ fn contains(text: &str) -> String {
 }
 
 /// The activities that match, for the heatmap to pick from its tracks.
-pub async fn matching_ids(pool: &Pool, filter: &Filter) -> Result<HashSet<i64>> {
-    let ids: Vec<i64> = filter
+pub async fn matching_ids(pool: &Pool, filter: &Filter) -> Result<HashSet<Uuid>> {
+    let ids: Vec<Uuid> = filter
         .apply(activities::table.select(activities::id).into_boxed())
         .load(&mut pool.get().await?)
         .await?;
@@ -541,7 +563,8 @@ pub async fn matching_ids(pool: &Pool, filter: &Filter) -> Result<HashSet<i64>> 
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = activities)]
 pub struct ActivitySummary {
-    pub id: i64,
+    pub id: Uuid,
+    pub garmin_id: i64,
     pub name: String,
     pub activity_type: String,
     pub started_at: DateTime<Utc>,
@@ -549,6 +572,8 @@ pub struct ActivitySummary {
     pub duration_s: Option<f64>,
     pub description: Option<String>,
     pub location: Option<String>,
+    /// About 64 points along the track as `[latitude, longitude]`.
+    pub preview: Option<Value>,
 }
 
 /// The newest activities that match, after skipping the `offset` newest.
@@ -598,7 +623,7 @@ pub async fn search_activities(
 pub async fn activity_with_summary(
     pool: &Pool,
     user_id: i64,
-    id: i64,
+    id: Uuid,
 ) -> Result<Option<(ActivitySummary, Value)>> {
     Ok(activities::table
         .filter(activities::user_id.eq(user_id))
@@ -916,7 +941,7 @@ pub async fn daily_metrics(
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = activities)]
 pub struct ActivityRecord {
-    pub id: i64,
+    pub id: Uuid,
     pub name: String,
     pub activity_type: String,
     pub started_local: Option<String>,
@@ -963,8 +988,8 @@ pub struct RaceResult {
 }
 
 /// The race results of activities, by activity.
-pub async fn race_results(pool: &Pool, ids: &[i64]) -> Result<HashMap<i64, RaceResult>> {
-    let rows: Vec<(i64, RaceResult)> = race_results::table
+pub async fn race_results(pool: &Pool, ids: &[Uuid]) -> Result<HashMap<Uuid, RaceResult>> {
+    let rows: Vec<(Uuid, RaceResult)> = race_results::table
         .filter(race_results::activity_id.eq_any(ids))
         .select((race_results::activity_id, RaceResult::as_select()))
         .load(&mut pool.get().await?)
@@ -976,7 +1001,7 @@ pub async fn race_results(pool: &Pool, ids: &[i64]) -> Result<HashMap<i64, RaceR
 pub async fn save_race_result(
     pool: &Pool,
     user_id: i64,
-    id: i64,
+    id: Uuid,
     result: &RaceResult,
 ) -> Result<bool> {
     let mut connection = pool.get().await?;
@@ -1008,7 +1033,7 @@ pub async fn save_race_result(
 }
 
 /// Removes the result of one of the account's activities.
-pub async fn delete_race_result(pool: &Pool, user_id: i64, id: i64) -> Result<()> {
+pub async fn delete_race_result(pool: &Pool, user_id: i64, id: Uuid) -> Result<()> {
     diesel::delete(
         race_results::table.filter(
             race_results::activity_id.eq_any(
@@ -1052,9 +1077,9 @@ pub async fn document(
 pub async fn neighbors(
     pool: &Pool,
     user_id: i64,
-    id: i64,
+    id: Uuid,
     started_at: DateTime<Utc>,
-) -> Result<(Option<i64>, Option<i64>)> {
+) -> Result<(Option<Uuid>, Option<Uuid>)> {
     let mut connection = pool.get().await?;
     let previous = activities::table
         .filter(activities::user_id.eq(user_id))
@@ -1088,7 +1113,7 @@ pub async fn neighbors(
 }
 
 /// The IDs of all of the account's activities, oldest first.
-pub async fn activity_ids(pool: &Pool, user_id: i64) -> Result<Vec<i64>> {
+pub async fn activity_ids(pool: &Pool, user_id: i64) -> Result<Vec<Uuid>> {
     Ok(activities::table
         .filter(activities::user_id.eq(user_id))
         .order((activities::started_at, activities::id))
@@ -1099,7 +1124,7 @@ pub async fn activity_ids(pool: &Pool, user_id: i64) -> Result<Vec<i64>> {
 
 /// Everything about activities that an export holds, apart from files.
 pub struct ActivityExport {
-    pub id: i64,
+    pub id: Uuid,
     pub summary: Value,
     pub details: Option<Value>,
     pub workouts: Option<Value>,
@@ -1110,10 +1135,10 @@ pub struct ActivityExport {
 pub async fn activity_exports(
     pool: &Pool,
     user_id: i64,
-    ids: &[i64],
+    ids: &[Uuid],
 ) -> Result<Vec<ActivityExport>> {
     let mut connection = pool.get().await?;
-    let rows: Vec<(i64, Value, Option<Value>, Option<Value>)> = activities::table
+    let rows: Vec<(Uuid, Value, Option<Value>, Option<Value>)> = activities::table
         .filter(activities::user_id.eq(user_id))
         .filter(activities::id.eq_any(ids))
         .order((activities::started_at, activities::id))
@@ -1125,7 +1150,7 @@ pub async fn activity_exports(
         ))
         .load(&mut connection)
         .await?;
-    let images: Vec<(i64, String, String)> = activity_images::table
+    let images: Vec<(Uuid, String, String)> = activity_images::table
         .filter(activity_images::activity_id.eq_any(ids))
         .order((activity_images::activity_id, activity_images::seq))
         .select((
@@ -1135,7 +1160,7 @@ pub async fn activity_exports(
         ))
         .load(&mut connection)
         .await?;
-    let mut by_activity: HashMap<i64, Vec<(String, String)>> = HashMap::new();
+    let mut by_activity: HashMap<Uuid, Vec<(String, String)>> = HashMap::new();
     for (id, image_id, content_type) in images {
         by_activity
             .entry(id)
@@ -1183,11 +1208,38 @@ pub async fn documents(
     Ok(query.load(&mut pool.get().await?).await?)
 }
 
+/// The IDs of the account's activities with these Garmin IDs, by Garmin ID.
+pub async fn ids_by_garmin_id(
+    pool: &Pool,
+    user_id: i64,
+    garmin_ids: &[i64],
+) -> Result<HashMap<i64, Uuid>> {
+    let rows: Vec<(i64, Uuid)> = activities::table
+        .filter(activities::user_id.eq(user_id))
+        .filter(activities::garmin_id.eq_any(garmin_ids))
+        .select((activities::garmin_id, activities::id))
+        .load(&mut pool.get().await?)
+        .await?;
+    Ok(rows.into_iter().collect())
+}
+
+/// Renames the folders that older versions named by Garmin ID, once.
+pub async fn rename_activity_folders(pool: &Pool, files: &FileStore) -> Result<()> {
+    let rows: Vec<(i64, Uuid)> = activities::table
+        .select((activities::garmin_id, activities::id))
+        .load(&mut pool.get().await?)
+        .await?;
+    for (garmin_id, id) in rows {
+        files.rename_activity(garmin_id, id).await?;
+    }
+    Ok(())
+}
+
 /// Whose an activity is: `None` if it is not saved, `Some(None)` if it is from
 /// before accounts.
-pub async fn owner(pool: &Pool, id: i64) -> Result<Option<Option<i64>>> {
+pub async fn owner(pool: &Pool, garmin_id: i64) -> Result<Option<Option<i64>>> {
     Ok(activities::table
-        .find(id)
+        .filter(activities::garmin_id.eq(garmin_id))
         .select(activities::user_id)
         .first(&mut pool.get().await?)
         .await
@@ -1203,7 +1255,7 @@ const FILES_PER_MOVE: i64 = 20;
 pub async fn move_files_to_store(pool: &Pool, files: &FileStore) -> Result<()> {
     let mut moved = 0;
     loop {
-        let originals: Vec<(i64, Option<Vec<u8>>)> = activities::table
+        let originals: Vec<(Uuid, Option<Vec<u8>>)> = activities::table
             .filter(activities::original_zip.is_not_null())
             .select((activities::id, activities::original_zip))
             .limit(FILES_PER_MOVE)
@@ -1222,7 +1274,7 @@ pub async fn move_files_to_store(pool: &Pool, files: &FileStore) -> Result<()> {
         }
     }
     loop {
-        let images: Vec<(i64, String, Option<Vec<u8>>)> = activity_images::table
+        let images: Vec<(Uuid, String, Option<Vec<u8>>)> = activity_images::table
             .filter(activity_images::data.is_not_null())
             .select((
                 activity_images::activity_id,
@@ -1253,7 +1305,7 @@ pub async fn move_files_to_store(pool: &Pool, files: &FileStore) -> Result<()> {
 }
 
 /// Saves the VO2 max that an activity's file holds, and marks the file as searched.
-pub async fn save_vo2_max(pool: &Pool, id: i64, vo2_max: Option<f64>) -> Result<()> {
+pub async fn save_vo2_max(pool: &Pool, id: Uuid, vo2_max: Option<f64>) -> Result<()> {
     diesel::update(activities::table.find(id))
         .set((
             activities::vo2_max.eq(vo2_max),
@@ -1266,7 +1318,7 @@ pub async fn save_vo2_max(pool: &Pool, id: i64, vo2_max: Option<f64>) -> Result<
 
 /// Reads VO2 max from the saved files of activities that were not searched yet.
 pub async fn backfill_vo2_max(pool: &Pool, files: &FileStore) -> Result<()> {
-    let ids: Vec<i64> = activities::table
+    let ids: Vec<Uuid> = activities::table
         .filter(activities::vo2_max_checked_at.is_null())
         .filter(activities::track_synced_at.is_not_null())
         .select(activities::id)
@@ -1276,7 +1328,7 @@ pub async fn backfill_vo2_max(pool: &Pool, files: &FileStore) -> Result<()> {
     for &id in &ids {
         let vo2_max = match files.original(id).await? {
             Some(zip) => crate::track::vo2_max(&zip).unwrap_or_else(|error| {
-                tracing::warn!(id, %error, "could not read VO2 max from the file");
+                tracing::warn!(%id, %error, "could not read VO2 max from the file");
                 None
             }),
             None => None,
@@ -1340,7 +1392,7 @@ pub struct RouteSummary {
     pub distance_m: f64,
     pub elevation_gain_m: Option<f64>,
     /// The activity that the route was made from, if it still exists.
-    pub activity_id: Option<i64>,
+    pub activity_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     /// About 64 points along the route, as `[latitude, longitude]`, to draw a small picture of it.
     #[schema(value_type = Vec<Vec<f64>>)]
@@ -1357,7 +1409,7 @@ pub struct NewRoute<'a> {
     pub elevation_gain_m: Option<f64>,
     pub points: &'a Value,
     pub preview: &'a Value,
-    pub activity_id: Option<i64>,
+    pub activity_id: Option<Uuid>,
 }
 
 pub async fn insert_route(pool: &Pool, route: &NewRoute<'_>) -> Result<RouteSummary> {
@@ -1430,7 +1482,7 @@ pub struct RouteRecord {
     pub distance_m: f64,
     pub elevation_gain_m: Option<f64>,
     pub points: Value,
-    pub activity_id: Option<i64>,
+    pub activity_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 

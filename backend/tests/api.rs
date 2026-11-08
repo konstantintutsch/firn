@@ -55,9 +55,7 @@ async fn add_run(pool: &Pool, id: i64, points: &[Point]) {
         has_track: true,
         summary,
     };
-    db::upsert_activities(pool, common::user(pool).await, &[activity])
-        .await
-        .unwrap();
+    let id = common::add_activity(pool, activity).await;
     db::save_track(pool, id, points).await.unwrap();
 }
 
@@ -263,7 +261,7 @@ async fn stats_sum_all_runs() {
     for (actual, expected) in bounds.iter().zip(expected) {
         assert!((actual - expected).abs() < 1e-6, "{bounds:?}");
     }
-    let (_, filtered) = get(&pool, "/api/stats?id=1").await;
+    let (_, filtered) = get(&pool, &format!("/api/stats?id={}", common::uuid(1))).await;
     assert!((filtered["bounds"][0].as_f64().unwrap() - BERLIN.lon).abs() < 1e-6);
 }
 
@@ -299,9 +297,7 @@ async fn add_activity(pool: &Pool, id: i64, summary: Value, points: &[Point]) {
         has_track: true,
         summary: full,
     };
-    db::upsert_activities(pool, common::user(pool).await, &[activity])
-        .await
-        .unwrap();
+    let id = common::add_activity(pool, activity).await;
     db::save_track(pool, id, points).await.unwrap();
 }
 
@@ -334,13 +330,19 @@ async fn add_two_activities(pool: &Pool) {
 }
 
 async fn found_ids(pool: &Pool, query: &str) -> Vec<i64> {
+    // `id=2` names the activity with Garmin ID 2.
+    let query = match query.strip_prefix("id=") {
+        Some(garmin_id) => format!("id={}", common::uuid(garmin_id.parse().unwrap())),
+        None => query.to_owned(),
+    };
+    let query = query.as_str();
     let (status, body) = get(pool, &format!("/api/activities?{query}")).await;
     assert_eq!(status, StatusCode::OK, "{query}: {body}");
     let mut ids: Vec<i64> = body["activities"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|activity| activity["id"].as_i64().unwrap())
+        .map(|activity| activity["garmin_id"].as_i64().unwrap())
         .collect();
     ids.sort();
     ids
@@ -438,7 +440,7 @@ async fn filters_apply_to_heatmap_and_stats() {
     let points = lines_at("types=road_biking").await;
     assert_eq!(points.len(), 2);
     assert!(points.iter().all(|(lon, _)| *lon > 100.0));
-    assert_eq!(lines_at("id=1").await.len(), 2);
+    assert_eq!(lines_at(&format!("id={}", common::uuid(1))).await.len(), 2);
     assert!(lines_at("location=nowhere").await.is_empty());
 
     let (_, stats) = get(&pool, "/api/stats?types=road_biking").await;
@@ -760,12 +762,20 @@ async fn activity_has_its_summary_and_samples() {
         },
     ]);
     let zip = common::zip_of(&[("1.fit", &fit)]);
-    db::save_track(&pool, 1, &[BERLIN]).await.unwrap();
+    db::save_track(&pool, common::uuid(1), &[BERLIN])
+        .await
+        .unwrap();
     let files = common::files(&pool).await;
-    files.save_original(1, Some(&zip)).await.unwrap();
-    files.save_original(2, Some(b"zip")).await.unwrap();
+    files
+        .save_original(common::uuid(1), Some(&zip))
+        .await
+        .unwrap();
+    files
+        .save_original(common::uuid(2), Some(b"zip"))
+        .await
+        .unwrap();
 
-    let (status, body) = get(&pool, "/api/activities/1").await;
+    let (status, body) = get(&pool, &format!("/api/activities/{}", common::uuid(1))).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["activity"]["name"], "Morning 100% loop");
     assert_eq!(body["summary"]["description"], "Windy along the river");
@@ -780,12 +790,12 @@ async fn activity_has_its_summary_and_samples() {
     assert_eq!(body["original_format"], "fit");
 
     // The second activity's file is not a ZIP, so it has no samples.
-    let (status, body) = get(&pool, "/api/activities/2").await;
+    let (status, body) = get(&pool, &format!("/api/activities/{}", common::uuid(2))).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["samples"], json!({}));
     assert_eq!(body["activity"]["bounds"], Value::Null);
 
-    let (status, _) = get(&pool, "/api/activities/3").await;
+    let (status, _) = get(&pool, &format!("/api/activities/{}", common::uuid(3))).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
@@ -803,7 +813,12 @@ async fn accounts_see_only_their_own_activities() {
         assert_eq!(status, StatusCode::OK);
         assert!(!body.to_string().contains("Run 1"), "{uri}");
     }
-    let (status, _) = get_with(&pool, "/api/activities/1", Some(&other_cookie)).await;
+    let (status, _) = get_with(
+        &pool,
+        &format!("/api/activities/{}", common::uuid(1)),
+        Some(&other_cookie),
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     let (_, theirs) = get_with(&pool, "/api/stats", Some(&other_cookie)).await;
     assert_eq!(theirs["activities"], 0);
@@ -826,7 +841,9 @@ async fn activity_statistics_include_activities_without_gps() {
         &[BERLIN, NEAR_BERLIN],
     )
     .await;
-    db::save_vo2_max(&pool, 1, Some(52.4)).await.unwrap();
+    db::save_vo2_max(&pool, common::uuid(1), Some(52.4))
+        .await
+        .unwrap();
     add_activity(
         &pool,
         2,
@@ -845,14 +862,14 @@ async fn activity_statistics_include_activities_without_gps() {
     assert_eq!(activities.len(), 2);
     let run = activities
         .iter()
-        .find(|activity| activity["id"] == 1)
+        .find(|activity| activity["id"] == common::uuid(1).to_string())
         .unwrap();
     assert_eq!(run["average_heart_rate"], 151.0);
     assert_eq!(run["vo2_max"], 52.4);
     assert_eq!(run["result"], Value::Null);
     let gym = activities
         .iter()
-        .find(|activity| activity["id"] == 2)
+        .find(|activity| activity["id"] == common::uuid(2).to_string())
         .unwrap();
     assert_eq!(gym["day"], "2026-04-02");
 
@@ -864,7 +881,7 @@ async fn activity_statistics_include_activities_without_gps() {
     assert_eq!(april["activities"].as_array().unwrap().len(), 1);
     let (_, strength) = get(&pool, "/api/statistics/activities?types=strength_training").await;
     assert_eq!(strength["activities"].as_array().unwrap().len(), 1);
-    assert_eq!(strength["activities"][0]["id"], 2);
+    assert_eq!(strength["activities"][0]["id"], common::uuid(2).to_string());
     let (_, gym) = get(&pool, "/api/statistics/activities?title=gym").await;
     assert_eq!(gym["activities"].as_array().unwrap().len(), 1);
     let (status, _) = get(
@@ -959,7 +976,10 @@ async fn downloads_the_original_file_and_gpx() {
     ]);
     common::files(&pool)
         .await
-        .save_original(1, Some(&common::zip_of(&[("1_ACTIVITY.fit", &fit)])))
+        .save_original(
+            common::uuid(1),
+            Some(&common::zip_of(&[("1_ACTIVITY.fit", &fit)])),
+        )
         .await
         .unwrap();
     let state = common::state(pool.clone(), "http://unused", None).await;
@@ -978,12 +998,17 @@ async fn downloads_the_original_file_and_gpx() {
         (status, disposition, bytes)
     };
 
-    let (status, disposition, bytes) = download("/api/activities/1/file").await;
+    let (status, disposition, bytes) =
+        download(&format!("/api/activities/{}/file", common::uuid(1))).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(disposition.unwrap(), r#"attachment; filename="1.fit""#);
     assert_eq!(bytes.as_ref(), fit.as_slice());
 
-    let (status, disposition, bytes) = download("/api/activities/1/file?format=gpx").await;
+    let (status, disposition, bytes) = download(&format!(
+        "/api/activities/{}/file?format=gpx",
+        common::uuid(1)
+    ))
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(disposition.unwrap(), r#"attachment; filename="1.gpx""#);
     let gpx = String::from_utf8(bytes.to_vec()).unwrap();
@@ -991,15 +1016,22 @@ async fn downloads_the_original_file_and_gpx() {
     assert_eq!(gpx.matches("<trkpt").count(), 2);
 
     assert_eq!(
-        download("/api/activities/1/file?format=kml").await.0,
+        download(&format!(
+            "/api/activities/{}/file?format=kml",
+            common::uuid(1)
+        ))
+        .await
+        .0,
         StatusCode::BAD_REQUEST
     );
     assert_eq!(
-        download("/api/activities/2/file").await.0,
+        download(&format!("/api/activities/{}/file", common::uuid(2)))
+            .await
+            .0,
         StatusCode::NOT_FOUND
     );
     let other = common::user_named(&pool, "other").await;
-    let request = Request::get("/api/activities/1/file")
+    let request = Request::get(format!("/api/activities/{}/file", common::uuid(1)))
         .header("cookie", common::cookie_for(&pool, other).await);
     let response = router(state.clone())
         .oneshot(request.body(Body::empty()).unwrap())
@@ -1027,7 +1059,7 @@ async fn one_activity_can_be_downloaded_again() {
     };
     assert_eq!(downloads().await, 1);
 
-    let resync = async |id: i64, cookie: String| {
+    let resync = async |id: uuid::Uuid, cookie: String| {
         let request = Request::post(format!("/api/activities/{id}/sync"))
             .header("cookie", cookie)
             .header("x-requested-with", "runmap");
@@ -1037,18 +1069,20 @@ async fn one_activity_can_be_downloaded_again() {
             .unwrap()
             .status()
     };
+    let user_id = common::user(&pool).await;
+    let id = db::ids_by_garmin_id(&pool, user_id, &[1]).await.unwrap()[&1];
     assert_eq!(
-        resync(1, common::cookie(&pool).await).await,
+        resync(id, common::cookie(&pool).await).await,
         StatusCode::NO_CONTENT
     );
     assert_eq!(downloads().await, 2);
     assert_eq!(
-        resync(99, common::cookie(&pool).await).await,
+        resync(common::uuid(99), common::cookie(&pool).await).await,
         StatusCode::NOT_FOUND
     );
     let other = common::user_named(&pool, "other").await;
     assert_eq!(
-        resync(1, common::cookie_for(&pool, other).await).await,
+        resync(id, common::cookie_for(&pool, other).await).await,
         StatusCode::CONFLICT
     );
 }
@@ -1074,15 +1108,15 @@ async fn activity_links_its_neighbors_and_has_its_zones() {
     .await
     .unwrap();
 
-    let (_, first) = get(&pool, "/api/activities/1").await;
+    let (_, first) = get(&pool, &format!("/api/activities/{}", common::uuid(1))).await;
     assert_eq!(first["previous_id"], Value::Null);
-    assert_eq!(first["next_id"], 2);
+    assert_eq!(first["next_id"], common::uuid(2).to_string());
     assert_eq!(
         first["heart_rate_zones"],
         json!([101.0, 121.0, 141.0, 161.0, 176.0, 191.0])
     );
-    let (_, second) = get(&pool, "/api/activities/2").await;
-    assert_eq!(second["previous_id"], 1);
+    let (_, second) = get(&pool, &format!("/api/activities/{}", common::uuid(2))).await;
+    assert_eq!(second["previous_id"], common::uuid(1).to_string());
     assert_eq!(second["next_id"], Value::Null);
     // A ride has no zones of its own here, so it gets the default ones.
     assert_eq!(second["heart_rate_zones"][0], 100.0);
@@ -1119,7 +1153,7 @@ async fn ordered_ids(pool: &Pool, query: &str) -> Vec<i64> {
         .as_array()
         .unwrap()
         .iter()
-        .map(|activity| activity["id"].as_i64().unwrap())
+        .map(|activity| activity["garmin_id"].as_i64().unwrap())
         .collect()
 }
 
@@ -1128,7 +1162,10 @@ async fn deleting_the_account_removes_its_data_and_files() {
     let pool = common::test_pool().await;
     add_two_activities(&pool).await;
     let files = common::files(&pool).await;
-    files.save_original(1, Some(b"zip")).await.unwrap();
+    files
+        .save_original(common::uuid(1), Some(b"zip"))
+        .await
+        .unwrap();
     let other = common::user_named(&pool, "other").await;
     let state = common::state(pool.clone(), "http://unused", None).await;
     let cookie = common::cookie(&pool).await;
@@ -1158,7 +1195,7 @@ async fn deleting_the_account_removes_its_data_and_files() {
         StatusCode::UNAUTHORIZED
     );
     assert_eq!(db::owner(&pool, 1).await.unwrap(), None);
-    assert_eq!(files.original(1).await.unwrap(), None);
+    assert_eq!(files.original(common::uuid(1)).await.unwrap(), None);
     // Other accounts stay.
     let (status, _) = get_with(
         &pool,
@@ -1182,7 +1219,7 @@ async fn photos_are_only_for_their_account() {
     add_two_activities(&pool).await;
     db::save_images(
         &pool,
-        1,
+        common::uuid(1),
         &[db::Image {
             id: "a".to_owned(),
             content_type: "image/png".to_owned(),
@@ -1192,12 +1229,13 @@ async fn photos_are_only_for_their_account() {
     .unwrap();
     common::files(&pool)
         .await
-        .save_image(1, "a", b"png")
+        .save_image(common::uuid(1), "a", b"png")
         .await
         .unwrap();
     let state = common::state(pool.clone(), "http://unused", None).await;
     let fetch = async |cookie: String| {
-        let request = Request::get("/api/activities/1/images/a").header("cookie", cookie);
+        let request = Request::get(format!("/api/activities/{}/images/a", common::uuid(1)))
+            .header("cookie", cookie);
         let response = router(state.clone())
             .oneshot(request.body(Body::empty()).unwrap())
             .await
@@ -1223,7 +1261,7 @@ async fn race_results_are_entered_by_hand() {
     let send = async |method: &str, id: i64, body: Value, cookie: String| {
         let request = Request::builder()
             .method(method)
-            .uri(format!("/api/activities/{id}/result"))
+            .uri(format!("/api/activities/{}/result", common::uuid(id)))
             .header("cookie", cookie)
             .header("x-requested-with", "runmap")
             .header("content-type", "application/json");
@@ -1245,7 +1283,7 @@ async fn race_results_are_entered_by_hand() {
         send("PUT", 1, result.clone(), cookie.clone()).await,
         StatusCode::NO_CONTENT
     );
-    let (_, detail) = get(&pool, "/api/activities/1").await;
+    let (_, detail) = get(&pool, &format!("/api/activities/{}", common::uuid(1))).await;
     assert_eq!(detail["result"]["event"], "Berlin Half");
     assert_eq!(detail["result"]["time_s"], 5400.0);
     let (_, statistics) = get(&pool, "/api/statistics/activities").await;
@@ -1276,7 +1314,9 @@ async fn race_results_are_entered_by_hand() {
     // Another account cannot remove it either.
     send("DELETE", 1, Value::Null, other_cookie).await;
     assert_eq!(
-        get(&pool, "/api/activities/1").await.1["result"]["time_s"],
+        get(&pool, &format!("/api/activities/{}", common::uuid(1)))
+            .await
+            .1["result"]["time_s"],
         5400.0
     );
 
@@ -1285,7 +1325,34 @@ async fn race_results_are_entered_by_hand() {
         StatusCode::NO_CONTENT
     );
     assert_eq!(
-        get(&pool, "/api/activities/1").await.1["result"],
+        get(&pool, &format!("/api/activities/{}", common::uuid(1)))
+            .await
+            .1["result"],
         Value::Null
     );
+}
+
+#[tokio::test]
+async fn activities_have_their_own_id_a_garmin_id_and_a_preview() {
+    let pool = common::test_pool().await;
+    add_two_activities(&pool).await;
+    add_activity(
+        &pool,
+        3,
+        json!({"activityName": "Gym", "distance": null}),
+        &[],
+    )
+    .await;
+
+    let (_, body) = get(&pool, "/api/activities?without_gps=true&sort=oldest").await;
+    let activities = body["activities"].as_array().unwrap();
+    let gym = activities.iter().find(|a| a["garmin_id"] == 3).unwrap();
+    assert_eq!(gym["id"], common::uuid(3).to_string());
+    assert_eq!(gym["preview"], Value::Null);
+    let run = activities.iter().find(|a| a["garmin_id"] == 1).unwrap();
+    assert_eq!(run["preview"], json!([[52.52, 13.40], [52.53, 13.41]]));
+
+    // The Garmin ID is no key: a request by it finds nothing.
+    let (status, _) = get(&pool, "/api/activities/1").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }

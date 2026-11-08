@@ -142,6 +142,26 @@ pub fn vo2_max(zip: &[u8]) -> Result<Option<f64>> {
     Ok(found)
 }
 
+/// How many points of a track the small picture of an activity has.
+const PREVIEW_POINTS: usize = 64;
+
+/// At most 64 points of a track, evenly spread and with the first and the last,
+/// as `[latitude, longitude]`.
+pub fn preview(points: &[Point]) -> Vec<[f64; 2]> {
+    let last = points.len().saturating_sub(1);
+    let count = points.len().min(PREVIEW_POINTS);
+    (0..count)
+        .map(|index| {
+            let point = if count < 2 {
+                points[0]
+            } else {
+                points[index * last / (count - 1)]
+            };
+            [point.lat, point.lon]
+        })
+        .collect()
+}
+
 /// A GPX 1.1 file of the samples with a position, with elevation, time, and
 /// heart rate and cadence in Garmin's extension, which most apps read.
 pub fn to_gpx(name: &str, activity_type: &str, samples: &[Sample]) -> String {

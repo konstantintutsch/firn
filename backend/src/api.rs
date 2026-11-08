@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
+use uuid::Uuid;
 
 use crate::auth::{self, Auth, CurrentUser};
 use crate::db::{self, ActivityTrack, Filter, Pool};
@@ -339,7 +340,7 @@ struct HeatmapQuery {
 #[into_params(parameter_in = Query)]
 pub struct FilterQuery {
     /// One activity.
-    id: Option<i64>,
+    id: Option<Uuid>,
     /// Words to find in the title, type, description, location or local start time.
     /// A length like `10km` or `45min` also finds activities within 5% of it.
     q: Option<String>,
@@ -496,7 +497,9 @@ struct SearchQuery {
 
 #[derive(Serialize, ToSchema)]
 struct ActivityItem {
-    id: i64,
+    id: Uuid,
+    /// Garmin's ID of the activity. Imported files have made-up, negative ones.
+    garmin_id: i64,
     name: String,
     activity_type: String,
     started_at: DateTime<Utc>,
@@ -507,6 +510,10 @@ struct ActivityItem {
     /// West, south, east and north edges of the track, in degrees.
     #[schema(value_type = Vec<f64>)]
     bounds: Option<[f64; 4]>,
+    /// About 64 points along the track as `[latitude, longitude]`, to draw a
+    /// small picture of the activity. `null` without a track.
+    #[schema(value_type = Option<Vec<Vec<f64>>>)]
+    preview: Option<Value>,
 }
 
 impl ActivityItem {
@@ -514,6 +521,8 @@ impl ActivityItem {
         ActivityItem {
             bounds,
             id: activity.id,
+            garmin_id: activity.garmin_id,
+            preview: activity.preview,
             name: activity.name,
             activity_type: activity.activity_type,
             started_at: activity.started_at,
@@ -573,8 +582,8 @@ async fn activities(
     };
     let found = db::search_activities(&state.pool, &filter, order, limit, offset).await?;
     let tracks = state.tracks(user.id).await?;
-    let wanted: HashSet<i64> = found.iter().map(|activity| activity.id).collect();
-    let bounds: HashMap<i64, Viewport> = tracks
+    let wanted: HashSet<Uuid> = found.iter().map(|activity| activity.id).collect();
+    let bounds: HashMap<Uuid, Viewport> = tracks
         .iter()
         .filter(|saved| wanted.contains(&saved.id))
         .map(|saved| (saved.id, saved.bounds))
@@ -677,9 +686,9 @@ struct ActivityDetail {
     /// The official result, if it was a race and one was entered.
     result: Option<db::RaceResult>,
     /// The account's activity that started just before this one.
-    previous_id: Option<i64>,
+    previous_id: Option<Uuid>,
     /// The account's activity that started just after this one.
-    next_id: Option<i64>,
+    next_id: Option<Uuid>,
 }
 
 /// Garmin lists zones per sport, like RUNNING or CYCLING, and DEFAULT for the rest.
@@ -715,7 +724,7 @@ fn heart_rate_zones(document: &Value, activity_type: &str) -> Option<Vec<f64>> {
 #[utoipa::path(
     get,
     path = "/api/activities/{id}",
-    params(("id" = i64, Path, description = "Garmin's activity ID")),
+    params(("id" = Uuid, Path, description = "The activity's ID")),
     responses(
         (status = 200, body = ActivityDetail),
         (status = 401, description = "Not signed in", body = ErrorBody),
@@ -725,7 +734,7 @@ fn heart_rate_zones(document: &Value, activity_type: &str) -> Option<Vec<f64>> {
 async fn activity(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Path(id): Path<i64>,
+    Path(id): Path<Uuid>,
 ) -> Result<Json<ActivityDetail>, ApiError> {
     let (activity, summary) = db::activity_with_summary(&state.pool, user.id, id)
         .await?
@@ -738,7 +747,7 @@ async fn activity(
             });
             let samples = track::parse_samples(&zip).unwrap_or_else(|error| {
                 // The file was read once already to save the track, so this should not happen.
-                tracing::warn!(id, "could not read the activity file: {error:#}");
+                tracing::warn!(%id, "could not read the activity file: {error:#}");
                 Vec::new()
             });
             (samples, format)
@@ -792,7 +801,7 @@ async fn activity(
 #[utoipa::path(
     post,
     path = "/api/activities/{id}/sync",
-    params(("id" = i64, Path, description = "Garmin's activity ID")),
+    params(("id" = Uuid, Path, description = "The activity's ID")),
     responses(
         (status = 204, description = "The activity is up to date"),
         (status = 401, description = "Not signed in", body = ErrorBody),
@@ -805,7 +814,7 @@ async fn activity(
 async fn resync_activity(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Path(id): Path<i64>,
+    Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<StatusCode, ApiError> {
     require_header(&headers)?;
@@ -839,7 +848,7 @@ async fn resync_activity(
 #[utoipa::path(
     put,
     path = "/api/activities/{id}/result",
-    params(("id" = i64, Path, description = "Garmin's activity ID")),
+    params(("id" = Uuid, Path, description = "The activity's ID")),
     request_body = db::RaceResult,
     responses(
         (status = 204, description = "Saved"),
@@ -852,7 +861,7 @@ async fn resync_activity(
 async fn save_result(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Path(id): Path<i64>,
+    Path(id): Path<Uuid>,
     headers: HeaderMap,
     Json(mut result): Json<db::RaceResult>,
 ) -> Result<StatusCode, ApiError> {
@@ -886,7 +895,7 @@ async fn save_result(
 #[utoipa::path(
     delete,
     path = "/api/activities/{id}/result",
-    params(("id" = i64, Path, description = "Garmin's activity ID")),
+    params(("id" = Uuid, Path, description = "The activity's ID")),
     responses(
         (status = 204, description = "Removed, or there was none"),
         (status = 401, description = "Not signed in", body = ErrorBody),
@@ -896,7 +905,7 @@ async fn save_result(
 async fn delete_result(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Path(id): Path<i64>,
+    Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<StatusCode, ApiError> {
     require_header(&headers)?;
@@ -916,7 +925,7 @@ struct FileQuery {
 #[utoipa::path(
     get,
     path = "/api/activities/{id}/file",
-    params(("id" = i64, Path, description = "Garmin's activity ID"), FileQuery),
+    params(("id" = Uuid, Path, description = "The activity's ID"), FileQuery),
     responses(
         (status = 200, description = "The file, as an attachment", content_type = "application/octet-stream"),
         (status = 400, description = "Unknown format", body = ErrorBody),
@@ -927,7 +936,7 @@ struct FileQuery {
 async fn activity_file(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Path(id): Path<i64>,
+    Path(id): Path<Uuid>,
     Query(query): Query<FileQuery>,
 ) -> Result<Response, ApiError> {
     let gpx = match query.format.as_deref() {
@@ -943,18 +952,23 @@ async fn activity_file(
         .original(id)
         .await?
         .ok_or(ApiError::NotFound("this activity has no file"))?;
+    let garmin_id = activity.garmin_id;
     let (file_name, content_type, data) = tokio::task::spawn_blocking(move || {
         if gpx {
             let samples = track::parse_samples(&zip)?;
             let gpx = track::to_gpx(&activity.name, &activity.activity_type, &samples);
-            Ok::<_, anyhow::Error>((format!("{id}.gpx"), "application/gpx+xml", gpx.into_bytes()))
+            Ok::<_, anyhow::Error>((
+                format!("{garmin_id}.gpx"),
+                "application/gpx+xml",
+                gpx.into_bytes(),
+            ))
         } else {
             let (name, data) = track::original_file(&zip)?;
             let extension = name
                 .rsplit_once('.')
                 .map_or("fit", |(_, extension)| extension);
             Ok((
-                format!("{id}.{extension}"),
+                format!("{garmin_id}.{extension}"),
                 "application/octet-stream",
                 data,
             ))
@@ -1097,7 +1111,7 @@ async fn import(
     get,
     path = "/api/activities/{id}/images/{image_id}",
     params(
-        ("id" = i64, Path, description = "Garmin's activity ID"),
+        ("id" = Uuid, Path, description = "The activity's ID"),
         ("image_id" = String, Path, description = "Garmin's image ID"),
     ),
     responses(
@@ -1109,7 +1123,7 @@ async fn import(
 async fn activity_image(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Path((id, image_id)): Path<(i64, String)>,
+    Path((id, image_id)): Path<(Uuid, String)>,
 ) -> Result<Response, ApiError> {
     let content_type = db::image_type(&state.pool, user.id, id, &image_id)
         .await?
