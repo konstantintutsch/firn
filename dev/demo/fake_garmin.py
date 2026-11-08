@@ -34,11 +34,10 @@ PLACES = {
         "timezone": 1,
         "elevation": 40,
         # How often each route is taken, so that the heat varies from street to street.
+        # Most runs start at home, two of them far more often than the others.
         "weights": {
-            "Tiergarten": 8, "Spree": 6, "Landwehrkanal": 5, "Tempelhofer Feld": 4,
-            "Volkspark Friedrichshain": 4, "Treptower Park": 3, "Mauerweg": 3, "Hasenheide": 3,
-            "Gleisdreieck": 3, "Prenzlauer Berg": 2, "Humboldthain": 2, "Schlachtensee": 1,
-            "Grunewald": 1,
+            "Home Staple 1": 45, "Home Staple 2": 35,
+            "Tiergarten": 3, "Spree": 2, "Landwehrkanal": 2,
         },
     },
     "Hamburg": {"timezone": 1, "elevation": 25},
@@ -85,9 +84,10 @@ def meters(a, b):
     return math.hypot(dx, dy)
 
 
-def walk(loop, distance, rng):
+def walk(loop, distance, rng, from_start=False):
     """Positions every meter along `loop`, round and round, for `distance` meters.
 
+    Runs from home and rides begin at the first point, other runs anywhere on the loop.
     The positions are slightly off the street, like a watch records them: a
     constant offset per run plus a slow wobble.
     """
@@ -95,7 +95,7 @@ def walk(loop, distance, rng):
     wobble = [0.0, 0.0]
     reverse = rng.random() < 0.5
     loop = list(reversed(loop)) if reverse else loop
-    start = rng.randrange(len(loop))
+    start = 0 if from_start else rng.randrange(len(loop))
     loop = loop[start:] + loop[:start]
     position = 0.0
     index = 0
@@ -272,7 +272,7 @@ def make_activities(today):
         else:
             activity_type, _, speed, km = pick(rng, GPS_TYPES)
             routes = list(place["routes"])
-            weights = [place.get("weights", {}).get(name, 1) for name in routes]
+            weights = [place.get("weights", {}).get(name, 3 if name.startswith("Home") else 1) for name in routes]
             route = rng.choices(routes, weights)[0]
             if activity_type in ("trail_running", "hiking") and city == "Berlin":
                 route = "Grunewald"
@@ -281,7 +281,8 @@ def make_activities(today):
         speed *= 0.92 + 0.12 * progress + rng.uniform(-0.05, 0.05)
         distance = rng.uniform(*km) * 1000
         name = f"{city} {typename(activity_type)}"
-        samples = track(route_points[(city, route)], distance, speed, started, place["elevation"], activity_type, progress, rng)
+        samples = track(route_points[(city, route)], distance, speed, started, place["elevation"], activity_type, progress, rng,
+                        route.startswith("Home") or route in place["rides"])
         summary = base_summary(next_id, activity_type, name, local, started, samples[-1]["elapsed"])
         summary.update(track_summary(samples, activity_type, progress, rng))
         summary["locationName"] = city
@@ -329,7 +330,7 @@ def base_summary(activity_id, activity_type, name, local, started, duration):
     }
 
 
-def track(loop, distance, speed, started, base_elevation, activity_type, progress, rng):
+def track(loop, distance, speed, started, base_elevation, activity_type, progress, rng, from_start=False):
     foot = activity_type in ("running", "trail_running", "walking", "hiking")
     hilly = 4 if activity_type in ("trail_running", "hiking") else 1
     rest_hr = 52 - 6 * progress
@@ -339,7 +340,7 @@ def track(loop, distance, speed, started, base_elevation, activity_type, progres
     last = 0.0
     phase = rng.uniform(0, math.tau)
     current_speed = speed
-    for (lat, lon), position in walk(loop, distance, rng):
+    for (lat, lon), position in walk(loop, distance, rng, from_start):
         # About one sample per second, as watches record.
         if position - last < current_speed and samples:
             continue

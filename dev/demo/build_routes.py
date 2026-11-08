@@ -21,6 +21,9 @@ SERVICES = {
     "bike": "https://routing.openstreetmap.de/routed-bike/route/v1/driving",
 }
 
+# Where most runs start, as (latitude, longitude).
+HOME = (52.5010, 13.4180)
+
 
 def loop(*points):
     """Through the waypoints and back to the first."""
@@ -91,11 +94,11 @@ PLACES = {
         # Long rides out of town and back. Runs never take them.
         "rides": {
             "Potsdam": out_and_back(
-                (52.5145, 13.3501), (52.4880, 13.2700), (52.4500, 13.2000), (52.4200, 13.1300),
+                HOME, (52.4880, 13.2700), (52.4500, 13.2000), (52.4200, 13.1300),
                 (52.4000, 13.0600), (52.3950, 13.0450),
             ),
             "Müggelsee": out_and_back(
-                (52.4900, 13.4700), (52.4600, 13.5500), (52.4450, 13.6300), (52.4350, 13.6600),
+                HOME, (52.4600, 13.5500), (52.4450, 13.6300), (52.4350, 13.6600),
             ),
         },
     },
@@ -133,32 +136,33 @@ PLACES = {
 }
 
 
-# Places to start from, as (name, latitude, longitude). Loops of random shape
-# around them fill the street grid, so that the heatmap has a network to show.
-HUBS = [
-    ("Mitte", 52.5200, 13.4050), ("Kreuzberg", 52.4990, 13.4030),
-    ("Prenzlauer Berg", 52.5380, 13.4140), ("Friedrichshain", 52.5130, 13.4540),
-    ("Charlottenburg", 52.5160, 13.3040), ("Neukölln", 52.4810, 13.4380),
-    ("Moabit", 52.5300, 13.3430), ("Schöneberg", 52.4850, 13.3550),
-]
-LOOPS_PER_HUB = 6
+# Most runs start at the front door, like they do for most people. Loops of
+# random shape that all begin and end there make the heat fall off with the
+# distance from home, and the street grid around it show.
+HOME_LOOPS = 30
 
 
-def random_loop(hub, rng):
-    """Three or four waypoints in a ring around the hub, in order around it."""
-    _, lat, lon = hub
-    radius = rng.uniform(1200, 2800)
-    count = rng.choice([3, 4])
+def home_loop(rng):
+    """Home, then two or three waypoints around it, and back. Mostly short ones."""
+    radius = 700 + 3300 * rng.random() ** 2
+    count = rng.choice([2, 3])
     start = rng.uniform(0, math.tau)
-    points = []
+    points = [HOME]
     for index in range(count):
-        angle = start + math.tau * (index + rng.uniform(-0.2, 0.2)) / count
+        angle = start + math.tau * (index + 0.5 + rng.uniform(-0.2, 0.2)) / (count + 1)
         distance = radius * rng.uniform(0.7, 1.2)
         points.append((
-            round(lat + distance * math.sin(angle) / 111_320, 5),
-            round(lon + distance * math.cos(angle) / (111_320 * math.cos(math.radians(lat))), 5),
+            round(HOME[0] + distance * math.sin(angle) / 111_320, 5),
+            round(HOME[1] + distance * math.cos(angle) / (111_320 * math.cos(math.radians(HOME[0]))), 5),
         ))
     return loop(*points)
+
+
+# The one or two runs that happen all the time.
+HOME_STAPLES = {
+    "Home Staple 1": loop(HOME, (52.4960, 13.4470), (52.4890, 13.4720)),
+    "Home Staple 2": loop(HOME, (52.4960, 13.4350), (52.4930, 13.4150)),
+}
 
 
 def meters(a, b):
@@ -211,11 +215,11 @@ def route(profile, waypoints):
 def main():
     rng = random.Random(3)
     generated = set()
-    for hub in HUBS:
-        for number in range(1, LOOPS_PER_HUB + 1):
-            name = f"{hub[0]} {number}"
-            PLACES["Berlin"]["routes"][name] = random_loop(hub, rng)
-            generated.add(name)
+    PLACES["Berlin"]["routes"].update(HOME_STAPLES)
+    for number in range(1, HOME_LOOPS + 1):
+        name = f"Home {number}"
+        PLACES["Berlin"]["routes"][name] = home_loop(rng)
+        generated.add(name)
     result = {}
     for city, place in PLACES.items():
         result[city] = {"routes": {}, "rides": {}}
