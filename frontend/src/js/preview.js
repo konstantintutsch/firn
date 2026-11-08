@@ -13,6 +13,8 @@ const WIDTH = 96;
 const HEIGHT = 72;
 const PADDING = 10;
 const MAX_ZOOM = 16;
+/** Pictures have three times the pixels of their size, so that they stay sharp on dense screens. */
+const PIXEL_RATIO = 3;
 /** A picture that takes longer than this is skipped, so that one failure does not stall the rest. */
 const RENDER_TIMEOUT_MS = 8000;
 /** Starts pictures a little before their entries come into view. */
@@ -125,6 +127,7 @@ function ready() {
     interactive: false,
     attributionControl: false,
     fadeDuration: 0,
+    pixelRatio: PIXEL_RATIO,
     renderWorldCopies: false,
     canvasContextAttributes: { preserveDrawingBuffer: true },
   });
@@ -161,7 +164,7 @@ async function render(points) {
   const bounds = line.reduce((box, point) => box.extend(point), new maplibregl.LngLatBounds(line[0], line[0]));
   map.fitBounds(bounds, { padding: PADDING, animate: false, maxZoom: MAX_ZOOM });
   await drawn();
-  return map.getCanvas().toDataURL("image/jpeg", 0.85);
+  return map.getCanvas().toDataURL("image/jpeg", 0.9);
 }
 
 // A new theme needs new pictures, in the style that fits.
