@@ -85,6 +85,7 @@ async fn main() -> Result<()> {
     db::migrate(&pool).await?;
     let files = FileStore::new(&cli.data_dir);
     db::move_files_to_store(&pool, &files).await?;
+    db::backfill_vo2_max(&pool, &files).await?;
 
     let secret_box = SecretBox::new(&secret_env("APP_SECRET").unwrap_or_default())?;
     let extra_roots = match &cli.oidc_ca_cert {

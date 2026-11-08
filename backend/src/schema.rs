@@ -19,6 +19,7 @@ diesel::table! {
         details -> Nullable<Jsonb>,
         workouts -> Nullable<Jsonb>,
         images_synced_at -> Nullable<Timestamptz>,
+        vo2_max_checked_at -> Nullable<Timestamptz>,
     }
 }
 

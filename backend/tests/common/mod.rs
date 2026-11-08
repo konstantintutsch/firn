@@ -196,6 +196,24 @@ pub fn fit_of_records(records: &[FitRecord]) -> Vec<u8> {
     fit_file(data)
 }
 
+/// Encodes a FIT file with one max_met_data message per `(category, vo2_max)`, where
+/// the category is 0 for running and 1 for cycling, and VO2 max is in tenths.
+pub fn fit_of_vo2_max(estimates: &[(u8, u16)]) -> Vec<u8> {
+    const ENUM: u8 = 0x00;
+    const UINT16: u8 = 0x84;
+    const MAX_MET_DATA_MESSAGE: u16 = 229;
+
+    let mut data = vec![0x40, 0, 0];
+    data.extend(MAX_MET_DATA_MESSAGE.to_le_bytes());
+    data.extend([2, 2, 2, UINT16, 8, 1, ENUM]);
+    for (category, vo2_max) in estimates {
+        data.push(0);
+        data.extend(vo2_max.to_le_bytes());
+        data.push(*category);
+    }
+    fit_file(data)
+}
+
 fn fit_file(data: Vec<u8>) -> Vec<u8> {
     let mut file = vec![14, 0x20];
     file.extend(2132u16.to_le_bytes());

@@ -1,7 +1,7 @@
 mod common;
 
-use common::{FitRecord, fit_of, fit_of_records, semicircles, zip_of};
-use runmap::track::{Point, original_file, parse_archive, parse_samples, to_gpx};
+use common::{FitRecord, fit_of, fit_of_records, fit_of_vo2_max, semicircles, zip_of};
+use runmap::track::{Point, original_file, parse_archive, parse_samples, to_gpx, vo2_max};
 
 const GPX: &[u8] = br#"<?xml version="1.0"?>
     <gpx xmlns="http://www.topografix.com/GPX/1/1"><trk>
@@ -191,4 +191,20 @@ fn finds_the_original_file_in_the_archive() {
     assert_eq!(name, "123_activity.fit");
     assert_eq!(content, fit);
     assert!(original_file(&zip_of(&[("notes.txt", b"hi")])).is_err());
+}
+
+#[test]
+fn reads_running_and_cycling_vo2_max_from_fit() {
+    let fit = fit_of_vo2_max(&[(0, 524), (1, 481)]);
+    let found = vo2_max(&zip_of(&[("a.fit", &fit)])).unwrap();
+    assert_eq!(found.running, Some(52.4));
+    assert_eq!(found.cycling, Some(48.1));
+}
+
+#[test]
+fn fit_and_gpx_without_vo2_max_have_none() {
+    let fit = vo2_max(&zip_of(&[("a.fit", &fit_of(&[]))])).unwrap();
+    assert_eq!((fit.running, fit.cycling), (None, None));
+    let gpx = vo2_max(&zip_of(&[("a.gpx", GPX)])).unwrap();
+    assert_eq!((gpx.running, gpx.cycling), (None, None));
 }

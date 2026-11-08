@@ -110,6 +110,45 @@ pub fn original_file(zip: &[u8]) -> Result<(String, Vec<u8>)> {
     bail!("no FIT, GPX or TCX file in the archive")
 }
 
+/// The VO2 max that a device recorded in an activity's FIT file.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Vo2Max {
+    pub running: Option<f64>,
+    pub cycling: Option<f64>,
+}
+
+/// The VO2 max in the FIT file of a Garmin download. Other formats have none.
+pub fn vo2_max(zip: &[u8]) -> Result<Vo2Max> {
+    let (name, content) = original_file(zip)?;
+    if !name.ends_with(".fit") {
+        return Ok(Vo2Max::default());
+    }
+    let mut found = Vo2Max::default();
+    for record in fitparser::from_bytes(&content).context("malformed FIT")? {
+        if record.kind() != MesgNum::MaxMetData {
+            continue;
+        }
+        let (mut value, mut cycling) = (None, false);
+        for field in record.fields() {
+            match field.name() {
+                "vo2_max" => value = number(field.value()),
+                "max_met_category" => cycling = field.value().to_string() == "cycling",
+                _ => {}
+            }
+        }
+        // Devices write 0 where they have no estimate yet.
+        let Some(value) = value.filter(|value| (5.0..=100.0).contains(value)) else {
+            continue;
+        };
+        if cycling {
+            found.cycling = Some(value);
+        } else {
+            found.running = Some(value);
+        }
+    }
+    Ok(found)
+}
+
 /// A GPX 1.1 file of the samples with a position, with elevation, time, and
 /// heart rate and cadence in Garmin's extension, which most apps read.
 pub fn to_gpx(name: &str, activity_type: &str, samples: &[Sample]) -> String {
