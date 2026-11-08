@@ -192,16 +192,6 @@ pub const KINDS: &[Kind] = &[
         ],
     },
     Kind {
-        name: "hydration",
-        period: Period::Range,
-        path: "/usersummary-service/stats/hydration/daily/{start}/{end}",
-        dates: Dates::Path,
-        metrics: &[
-            scaled("hydration_l", &["values.valueInML", "valueInML"], 0.001),
-            scaled("hydration_goal_l", &["values.goalInML", "goalInML"], 0.001),
-        ],
-    },
-    Kind {
         name: "weight",
         period: Period::Range,
         path: "/weight-service/weight/range/{start}/{end}",

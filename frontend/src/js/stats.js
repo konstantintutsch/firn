@@ -120,7 +120,6 @@ const HEALTH_CHARTS = [
     format: unit(1, "brpm"),
     metrics: [["respiration", "Awake"]],
   },
-  { title: "Hydration", subtitle: "Per day", kind: "columns", format: unit(1, "l"), metrics: [["hydration_l", "Water"]] },
   {
     title: "Fitness age",
     kind: "line",

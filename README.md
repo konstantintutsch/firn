@@ -165,7 +165,7 @@ Runmap copies everything the Garmin Personal API offers:
   file, its workouts and its photos. Only activities with GPS go on the map.
 - Health data from the first activity on, and at least one year back: daily
   summaries, sleep, HRV, heart rate, stress, Body Battery, steps, intensity
-  minutes, floors, SpO2, respiration, hydration, weight and body composition,
+  minutes, floors, SpO2, respiration, weight and body composition,
   fitness age, food logs, menstrual cycle, profile settings and heart rate zones.
 
 Each Garmin response is stored as it came, in `garmin_documents`. The statistics

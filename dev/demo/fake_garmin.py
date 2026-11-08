@@ -621,7 +621,6 @@ def make_health(today):
             "sleepScore": round(min(98, max(40, rng.gauss(78 + 4 * progress, 8)))),
             "hrv": round(rng.gauss(48 + 10 * progress, 5)),
             "weight": round((78.5 - 3 * progress + rng.gauss(0, 0.4)) * 1000),
-            "hydration": round(rng.gauss(2200, 400)),
         }
     return days
 
@@ -713,11 +712,6 @@ def answer(path, query):
     if path.startswith("/usersummary-service/stats/steps/daily/"):
         return 200, [
             {"calendarDate": day["calendarDate"], "totalSteps": day["totalSteps"], "stepGoal": day["dailyStepGoal"]}
-            for day in days_between(HEALTH, parts[4], parts[5])
-        ]
-    if path.startswith("/usersummary-service/stats/hydration/daily/"):
-        return 200, [
-            {"calendarDate": day["calendarDate"], "values": {"valueInML": day["hydration"], "goalInML": 2500}}
             for day in days_between(HEALTH, parts[4], parts[5])
         ]
     if path.startswith("/weight-service/weight/range/"):

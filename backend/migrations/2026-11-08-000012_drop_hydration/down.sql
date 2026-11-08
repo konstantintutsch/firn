@@ -1,0 +1,1 @@
+-- Nothing to undo: the hydration data was removed. A sync does not fetch it again.

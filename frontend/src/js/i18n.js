@@ -434,8 +434,6 @@ const GERMAN = {
   Respiration: "Atmung",
   "Breaths per minute while awake": "Atemzüge pro Minute im Wachzustand",
   brpm: "Atemzüge/min",
-  Hydration: "Flüssigkeitszufuhr",
-  Water: "Wasser",
   "Fitness age": "Fitnessalter",
   Age: "Alter",
   years: "Jahre",
