@@ -6,111 +6,28 @@
 //! iPhone and an Apple Watch both record steps and the like, so each day takes
 //! the values of the one source that has the most, instead of adding them up twice.
 
+mod mappings;
+mod record;
+mod workout;
+
+pub use record::Vo2Max;
+pub use workout::{Workout, activity_type};
+
+use mappings::{Aggregate, BASAL_CALORIES, HRV_AVERAGE_DAYS, MAPPINGS};
+use record::{Record, attribute};
+use workout::{read_statistics, read_workout};
+
 use std::collections::{BTreeMap, HashMap};
 use std::io::BufRead;
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime};
+use chrono::{Duration, NaiveDate};
 use quick_xml::Reader;
-use quick_xml::events::{BytesStart, Event};
+use quick_xml::events::Event;
 
 /// The kind of a health document that holds a day of values from Apple Health,
 /// as `{"metrics": {"steps": 9000.0}}`.
 pub const DOCUMENT_KIND: &str = "apple_health";
-
-#[derive(Clone, Copy)]
-enum Aggregate {
-    /// Adds the values of a day, like steps.
-    Sum,
-    Mean,
-    Min,
-    Max,
-}
-
-struct Mapping {
-    /// The record type, without `HKQuantityTypeIdentifier`.
-    record: &'static str,
-    metric: &'static str,
-    aggregate: Aggregate,
-    /// Multiplies the value, for example to turn kilometers into meters.
-    scale: f64,
-}
-
-const fn map(
-    record: &'static str,
-    metric: &'static str,
-    aggregate: Aggregate,
-    scale: f64,
-) -> Mapping {
-    Mapping {
-        record,
-        metric,
-        aggregate,
-        scale,
-    }
-}
-
-/// Days in the average of the HRV: the day itself and the ones before.
-const HRV_AVERAGE_DAYS: i64 = 7;
-
-/// The part of the basal energy that only adds up to the day's total calories.
-const BASAL_CALORIES: &str = "basal_calories";
-
-const MAPPINGS: &[Mapping] = &[
-    map("StepCount", "steps", Aggregate::Sum, 1.0),
-    map(
-        "DistanceWalkingRunning",
-        "distance_m",
-        Aggregate::Sum,
-        1000.0,
-    ),
-    map("ActiveEnergyBurned", "active_calories", Aggregate::Sum, 1.0),
-    map("BasalEnergyBurned", BASAL_CALORIES, Aggregate::Sum, 1.0),
-    map("FlightsClimbed", "floors", Aggregate::Sum, 1.0),
-    map(
-        "RestingHeartRate",
-        "resting_heart_rate",
-        Aggregate::Mean,
-        1.0,
-    ),
-    map("HeartRate", "min_heart_rate", Aggregate::Min, 1.0),
-    map("HeartRate", "max_heart_rate", Aggregate::Max, 1.0),
-    map("HeartRateVariabilitySDNN", "hrv", Aggregate::Mean, 1.0),
-    map("RespiratoryRate", "respiration", Aggregate::Mean, 1.0),
-    map("OxygenSaturation", "spo2", Aggregate::Mean, 1.0),
-    map("OxygenSaturation", "lowest_spo2", Aggregate::Min, 1.0),
-    map("BodyMass", "weight_kg", Aggregate::Mean, 1.0),
-    map(
-        "BodyFatPercentage",
-        "body_fat_percent",
-        Aggregate::Mean,
-        1.0,
-    ),
-];
-
-/// One workout of the export.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Workout {
-    /// Apple's type without `HKWorkoutActivityType`, like `Running`.
-    pub activity_type: String,
-    pub start: DateTime<FixedOffset>,
-    pub end: DateTime<FixedOffset>,
-    pub duration_s: f64,
-    pub distance_m: Option<f64>,
-    pub energy_kcal: Option<f64>,
-    pub average_heart_rate: Option<f64>,
-    pub max_heart_rate: Option<f64>,
-    /// The path of the GPX file of the route inside the export, like `/workout-routes/route.gpx`.
-    pub route: Option<String>,
-}
-
-/// One VO2 max that the Health app measured, usually after a workout.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Vo2Max {
-    pub time: DateTime<FixedOffset>,
-    /// In mL per minute and kg.
-    pub value: f64,
-}
 
 #[derive(Debug, Default)]
 pub struct Export {
@@ -152,7 +69,6 @@ impl Default for Total {
 
 /// Hours asleep in a night, by stage: unspecified, core, deep, REM, and awake.
 type Night = [f64; 5];
-
 /// Reads the export. Workouts are only collected if `workouts` is set.
 pub fn parse(reader: impl BufRead, workouts: bool) -> Result<Export> {
     let mut xml = Reader::from_reader(reader);
@@ -316,245 +232,6 @@ pub fn parse(reader: impl BufRead, workouts: bool) -> Result<Export> {
         days,
         workouts: found,
     })
-}
-
-fn attribute(element: &BytesStart, name: &[u8]) -> Option<String> {
-    element
-        .attributes()
-        .flatten()
-        .find(|attribute| attribute.key.as_ref() == name)
-        .map(|attribute| String::from_utf8_lossy(&attribute.value).into_owned())
-}
-
-/// A record with the attributes that the daily values need.
-struct Record {
-    kind: String,
-    unit: String,
-    value: String,
-    start: String,
-    end: String,
-    source: String,
-}
-
-impl Record {
-    fn read(element: &BytesStart) -> Option<Record> {
-        let mut record = Record {
-            kind: String::new(),
-            unit: String::new(),
-            value: String::new(),
-            start: String::new(),
-            end: String::new(),
-            source: String::new(),
-        };
-        for attribute in element.attributes().flatten() {
-            let slot = match attribute.key.as_ref() {
-                b"type" => &mut record.kind,
-                b"unit" => &mut record.unit,
-                b"value" => &mut record.value,
-                b"startDate" => &mut record.start,
-                b"endDate" => &mut record.end,
-                b"sourceName" => &mut record.source,
-                _ => continue,
-            };
-            *slot = String::from_utf8_lossy(&attribute.value).into_owned();
-        }
-        (!record.kind.is_empty() && !record.start.is_empty()).then_some(record)
-    }
-
-    /// The VO2 max of this record, if it is one.
-    fn vo2_max(&self) -> Option<Vo2Max> {
-        if self.kind != "HKQuantityTypeIdentifierVO2Max" {
-            return None;
-        }
-        let value = self
-            .value
-            .parse::<f64>()
-            .ok()
-            .filter(|v| v.is_finite() && *v > 0.0)?;
-        let time = DateTime::parse_from_str(&self.start, "%Y-%m-%d %H:%M:%S %z").ok()?;
-        Some(Vo2Max { time, value })
-    }
-
-    fn add_to(
-        &self,
-        source: usize,
-        totals: &mut HashMap<(NaiveDate, usize, usize), Total>,
-        nights: &mut HashMap<(NaiveDate, usize), Night>,
-    ) {
-        if self.kind == "HKCategoryTypeIdentifierSleepAnalysis" {
-            self.add_sleep(source, nights);
-            return;
-        }
-        let Some(kind) = self.kind.strip_prefix("HKQuantityTypeIdentifier") else {
-            return;
-        };
-        let Some(mut value) = self.value.parse::<f64>().ok().filter(|v| v.is_finite()) else {
-            return;
-        };
-        // Percentages are fractions of one, like 0.97 for 97 %.
-        if self.unit == "%" && value <= 1.0 {
-            value *= 100.0;
-        }
-        // Distances and energy come in the units that the phone is set to.
-        value = match self.unit.as_str() {
-            "mi" => value * 1.609_344,
-            "cal" => value / 1000.0,
-            "kJ" => value / 4.184,
-            "lb" => value * 0.453_592_37,
-            "degF" => (value - 32.0) / 1.8,
-            _ => value,
-        };
-        let Some(day) = self
-            .start
-            .get(..10)
-            .and_then(|day| day.parse::<NaiveDate>().ok())
-        else {
-            return;
-        };
-        for (index, mapping) in MAPPINGS.iter().enumerate() {
-            if mapping.record == kind {
-                totals.entry((day, index, source)).or_default().add(value);
-            }
-        }
-    }
-
-    fn add_sleep(&self, source: usize, nights: &mut HashMap<(NaiveDate, usize), Night>) {
-        let (Some(start), Some(end)) = (local_time(&self.start), local_time(&self.end)) else {
-            return;
-        };
-        let stage = match self
-            .value
-            .strip_prefix("HKCategoryValueSleepAnalysis")
-            .unwrap_or_default()
-        {
-            "AsleepUnspecified" | "Asleep" => 0,
-            "AsleepCore" => 1,
-            "AsleepDeep" => 2,
-            "AsleepREM" => 3,
-            "Awake" => 4,
-            // Time in bed says nothing about sleep.
-            _ => return,
-        };
-        let hours = (end - start).num_seconds().max(0) as f64 / 3600.0;
-        // A night belongs to the day it ends on, which twelve hours after its start still is.
-        let night = (start + Duration::hours(12)).date();
-        nights.entry((night, source)).or_default()[stage] += hours;
-    }
-}
-
-/// The wall clock time of a date like `2026-04-11 07:12:11 +0200`, without its offset.
-fn local_time(text: &str) -> Option<NaiveDateTime> {
-    NaiveDateTime::parse_from_str(text.get(..19)?, "%Y-%m-%d %H:%M:%S").ok()
-}
-
-fn read_workout(element: &BytesStart) -> Option<Workout> {
-    let mut activity_type = String::new();
-    let mut start = None;
-    let mut end = None;
-    let mut duration = None;
-    let mut duration_unit = String::new();
-    let mut distance = None;
-    let mut distance_unit = String::new();
-    let mut energy = None;
-    for attribute in element.attributes().flatten() {
-        let value = String::from_utf8_lossy(&attribute.value).into_owned();
-        match attribute.key.as_ref() {
-            b"workoutActivityType" => {
-                activity_type = value
-                    .strip_prefix("HKWorkoutActivityType")
-                    .unwrap_or(&value)
-                    .to_owned();
-            }
-            b"startDate" => start = DateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S %z").ok(),
-            b"endDate" => end = DateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S %z").ok(),
-            b"duration" => duration = value.parse::<f64>().ok(),
-            b"durationUnit" => duration_unit = value,
-            b"totalDistance" => distance = value.parse::<f64>().ok(),
-            b"totalDistanceUnit" => distance_unit = value,
-            b"totalEnergyBurned" => energy = value.parse::<f64>().ok(),
-            _ => {}
-        }
-    }
-    let seconds = match duration_unit.as_str() {
-        "sec" | "s" => 1.0,
-        "hr" => 3600.0,
-        _ => 60.0,
-    };
-    Some(Workout {
-        activity_type,
-        start: start?,
-        end: end?,
-        duration_s: duration? * seconds,
-        distance_m: distance.map(|distance| distance_in_meters(distance, &distance_unit)),
-        energy_kcal: energy,
-        average_heart_rate: None,
-        max_heart_rate: None,
-        route: None,
-    })
-}
-
-fn distance_in_meters(distance: f64, unit: &str) -> f64 {
-    match unit {
-        "mi" => distance * 1609.344,
-        "m" => distance,
-        _ => distance * 1000.0,
-    }
-}
-
-/// Takes what a workout's own statistics say, where the workout itself does not.
-fn read_statistics(element: &BytesStart, workout: &mut Workout) {
-    let number = |name: &[u8]| attribute(element, name).and_then(|value| value.parse::<f64>().ok());
-    let unit = attribute(element, b"unit").unwrap_or_default();
-    match attribute(element, b"type")
-        .as_deref()
-        .and_then(|kind| kind.strip_prefix("HKQuantityTypeIdentifier"))
-    {
-        Some("HeartRate") => {
-            workout.average_heart_rate = number(b"average");
-            workout.max_heart_rate = number(b"maximum");
-        }
-        Some("ActiveEnergyBurned") if workout.energy_kcal.is_none() => {
-            workout.energy_kcal = number(b"sum");
-        }
-        Some("DistanceWalkingRunning" | "DistanceCycling") if workout.distance_m.is_none() => {
-            workout.distance_m = number(b"sum").map(|sum| distance_in_meters(sum, &unit));
-        }
-        _ => {}
-    }
-}
-
-/// Garmin's type key for an Apple workout type, and a name to give the activity.
-pub fn activity_type(apple: &str) -> (String, String) {
-    let (key, name) = match apple {
-        "Running" => ("running", "Running"),
-        "Walking" => ("walking", "Walking"),
-        "Hiking" => ("hiking", "Hiking"),
-        "Cycling" => ("cycling", "Cycling"),
-        "TraditionalStrengthTraining" | "FunctionalStrengthTraining" => {
-            ("strength_training", "Strength training")
-        }
-        _ => {
-            // `CoreTraining` becomes `core_training`.
-            let mut key = String::new();
-            for (index, letter) in apple.chars().enumerate() {
-                if letter.is_uppercase() && index > 0 {
-                    key.push('_');
-                }
-                key.extend(letter.to_lowercase());
-            }
-            let key = if key.is_empty() {
-                "other".to_owned()
-            } else {
-                key
-            };
-            let mut name = key.replace('_', " ");
-            if let Some(first) = name.get_mut(..1) {
-                first.make_ascii_uppercase();
-            }
-            return (key, name);
-        }
-    };
-    (key.to_owned(), name.to_owned())
 }
 
 #[cfg(test)]
