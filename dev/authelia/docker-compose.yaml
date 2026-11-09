@@ -3,7 +3,7 @@
 services:
   authelia:
     image: authelia/authelia:4.39
-    container_name: runmap-authelia
+    container_name: firn-authelia
     environment:
       # Lets the configuration read the generated key with the secret template.
       X_AUTHELIA_CONFIG_FILTERS: template
@@ -24,7 +24,7 @@ services:
   backend:
     environment:
       OIDC_ISSUER: https://authelia.localhost:9091
-      OIDC_CLIENT_ID: runmap
+      OIDC_CLIENT_ID: firn
       OIDC_CLIENT_SECRET: test-only-client-secret
       OIDC_CA_CERT: /secrets/ca.public.crt
       PUBLIC_URL: http://localhost:8080

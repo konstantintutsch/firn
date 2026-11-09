@@ -3,7 +3,7 @@ mod common;
 use common::{
     FitRecord, fit_of, fit_of_devices, fit_of_records, fit_of_vo2_max, semicircles, zip_of,
 };
-use runmap::track::{Point, devices, original_file, parse_archive, parse_samples, to_gpx, vo2_max};
+use firn::track::{Point, devices, original_file, parse_archive, parse_samples, to_gpx, vo2_max};
 
 const GPX: &[u8] = br#"<?xml version="1.0"?>
     <gpx xmlns="http://www.topografix.com/GPX/1/1"><trk>

@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-  {%- set title = "Runmap settings" %}
+  {%- set title = "Firn settings" %}
   {% include "head.njk" %}
   <body class="page">
     <header class="page-header">
@@ -18,7 +18,7 @@
           <p class="muted">
             <span data-i18n>Create one on</span>
             <a href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noreferrer">Garmin Connect</a>.
-            <span data-i18n>Runmap stores it encrypted and never shows it again.</span>
+            <span data-i18n>Firn stores it encrypted and never shows it again.</span>
           </p>
           <p id="key-status" class="muted"></p>
           <div class="panel-actions">
@@ -30,7 +30,7 @@
       </section>
       <section class="card">
         <h2 data-i18n>Your data</h2>
-        <p class="muted" data-i18n>An export holds all activities with their files and photos, your routes and the health data. Importing it restores them, here or in another Runmap.</p>
+        <p class="muted" data-i18n>An export holds all activities with their files and photos, your routes and the health data. Importing it restores them, here or in another Firn.</p>
         <p class="muted" data-i18n>Import also takes a ZIP of FIT, GPX or TCX files from other apps and devices, and the export of Apple Health.</p>
         <div class="panel-actions">
           <a class="panel-button" href="/api/export" download data-i18n>Export</a>
@@ -41,7 +41,7 @@
             <h3 id="import-title" data-i18n>Import</h3>
             <fieldset>
               <legend data-i18n>What do you import?</legend>
-              <label class="check-field"><input type="radio" name="source" value="files" checked><span data-i18n>A Runmap export, or FIT, GPX and TCX files</span></label>
+              <label class="check-field"><input type="radio" name="source" value="files" checked><span data-i18n>A Firn export, or FIT, GPX and TCX files</span></label>
               <label class="check-field"><input type="radio" name="source" value="apple"><span data-i18n>An Apple Health export</span></label>
             </fieldset>
             <fieldset id="import-apple" hidden>

@@ -1,6 +1,6 @@
 """A stand-in for the Garmin Personal API that serves made-up data.
 
-Runmap syncs from it like from Garmin, so the demo shows every page without
+Firn syncs from it like from Garmin, so the demo shows every page without
 anyone's real activities. Everything comes from a fixed seed, so the data is
 the same on every start, apart from moving along with today's date.
 

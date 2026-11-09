@@ -45,7 +45,7 @@ struct CachedTracks {
 #[derive(OpenApi)]
 #[openapi(
     info(
-        title = "runmap",
+        title = "firn",
         description = "Heatmap of activities saved from Garmin Connect"
     ),
     paths(
@@ -1080,7 +1080,7 @@ async fn export(
     // The open file stays readable after it is removed, and nothing is left behind.
     let _ = tokio::fs::remove_file(&path).await;
     let file = opened?;
-    let name = format!("runmap-{}.zip", Utc::now().format("%Y-%m-%d"));
+    let name = format!("firn-{}.zip", Utc::now().format("%Y-%m-%d"));
     Ok((
         [
             (header::CONTENT_TYPE, "application/zip".to_owned()),
@@ -1108,7 +1108,7 @@ struct ImportQuery {
     apple_health: Option<transfer::AppleHealthScope>,
 }
 
-/// Imports a ZIP: a Runmap export, or FIT, GPX and TCX files from other apps and
+/// Imports a ZIP: a Firn export, or FIT, GPX and TCX files from other apps and
 /// devices, also in ZIPs of their own. Importing the same file again updates it.
 /// Files from elsewhere get a negative ID, since they have none from Garmin.
 ///

@@ -168,7 +168,7 @@ mod tests {
 
     #[tokio::test]
     async fn saves_reads_and_removes_files() {
-        let root = std::env::temp_dir().join(format!("runmap-files-{}", secret::random_token()));
+        let root = std::env::temp_dir().join(format!("firn-files-{}", secret::random_token()));
         let store = FileStore::new(&root);
         let id = Uuid::new_v4();
         assert_eq!(store.original(id).await.unwrap(), None);
@@ -199,7 +199,7 @@ mod tests {
 
     #[tokio::test]
     async fn renames_a_folder_named_by_the_garmin_id() {
-        let root = std::env::temp_dir().join(format!("runmap-files-{}", secret::random_token()));
+        let root = std::env::temp_dir().join(format!("firn-files-{}", secret::random_token()));
         let store = FileStore::new(&root);
         let id = Uuid::new_v4();
         let old = root.join("activities").join("42");

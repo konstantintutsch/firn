@@ -226,7 +226,7 @@ const MAX_RETRY_AFTER: Duration = Duration::from_secs(60);
 impl GarminClient {
     pub fn new(base_url: &str, api_key: &str) -> Result<Self, GarminError> {
         let http = Client::builder()
-            .user_agent(concat!("runmap/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("firn/", env!("CARGO_PKG_VERSION")))
             .timeout(TIMEOUT)
             .build()?;
         Ok(Self {

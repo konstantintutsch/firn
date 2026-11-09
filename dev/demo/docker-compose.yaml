@@ -1,19 +1,19 @@
-# A separate Runmap with made-up data, for screenshots and trying changes out.
+# A separate Firn with made-up data, for screenshots and trying changes out.
 # It has its own database and never touches the data of `just up`. Start it
 # with `just demo`, at http://localhost:8090.
-name: runmap-demo
+name: firn-demo
 
 services:
   db:
     image: postgres:18-alpine
     environment:
-      POSTGRES_USER: runmap
+      POSTGRES_USER: firn
       POSTGRES_PASSWORD: demo
-      POSTGRES_DB: runmap
+      POSTGRES_DB: firn
     tmpfs:
       - /var/lib/postgresql
     healthcheck:
-      test: [CMD-SHELL, pg_isready -U runmap -d runmap]
+      test: [CMD-SHELL, pg_isready -U firn -d firn]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -37,7 +37,7 @@ services:
       context: ../../backend
       target: runtime
     environment:
-      DATABASE_URL: postgres://runmap:demo@db/runmap
+      DATABASE_URL: postgres://firn:demo@db/firn
       APP_SECRET: a-public-secret-that-only-the-demo-uses
       GARMIN_BASE_URL: http://fake-garmin:8000
       DOWNLOAD_PAUSE_MS: 0
@@ -45,7 +45,7 @@ services:
     volumes:
       - data:/data
     healthcheck:
-      test: [CMD, runmap, healthcheck]
+      test: [CMD, firn, healthcheck]
       interval: 10s
       timeout: 6s
       retries: 6

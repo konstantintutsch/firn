@@ -6,10 +6,10 @@ use chrono::NaiveDate;
 use common::{API_KEY, fit_of, semicircles, zip_of};
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
-use runmap::db::{self, Pool};
-use runmap::garmin::GarminError;
-use runmap::schema::{activities, garmin_documents, track_points};
-use runmap::sync::{HealthRange, Report, sync_activities, sync_health};
+use firn::db::{self, Pool};
+use firn::garmin::GarminError;
+use firn::schema::{activities, garmin_documents, track_points};
+use firn::sync::{HealthRange, Report, sync_activities, sync_health};
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -178,7 +178,7 @@ async fn activity_of_another_account_is_left_unchanged() {
     run_sync(&pool, &server).await.unwrap();
 
     let other = common::user_named(&pool, "other").await;
-    let renamed = runmap::garmin::Activity {
+    let renamed = firn::garmin::Activity {
         id: 1,
         name: "Renamed".to_owned(),
         activity_type: "cycling".to_owned(),
@@ -823,7 +823,7 @@ async fn image_that_garmin_refuses_is_skipped_for_good() {
 
 #[tokio::test]
 async fn files_from_the_database_move_to_the_file_store() {
-    use runmap::schema::activity_images;
+    use firn::schema::activity_images;
 
     let (pool, server) = setup().await;
     mount_list(&server, &[vec![activity(1, "running", true)]]).await;

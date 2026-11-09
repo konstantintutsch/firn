@@ -4,10 +4,10 @@ use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use firn::api::{AppState, router};
+use firn::db::{self, Pool};
+use firn::track::Point;
 use http_body_util::BodyExt;
-use runmap::api::{AppState, router};
-use runmap::db::{self, Pool};
-use runmap::track::Point;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 use wiremock::matchers::{method, path, query_param};
@@ -45,7 +45,7 @@ async fn add_run(pool: &Pool, id: i64, points: &[Point]) {
         "activityType": {"typeKey": "running"},
         "distance": 1000.0,
     });
-    let activity = runmap::garmin::Activity {
+    let activity = firn::garmin::Activity {
         id,
         name: format!("Run {id}"),
         activity_type: "running".into(),
@@ -287,7 +287,7 @@ async fn add_activity(pool: &Pool, id: i64, summary: Value, points: &[Point]) {
     full.as_object_mut()
         .unwrap()
         .extend(summary.as_object().unwrap().clone());
-    let activity = runmap::garmin::Activity {
+    let activity = firn::garmin::Activity {
         id,
         name: full["activityName"].as_str().unwrap().to_owned(),
         activity_type: full["activityType"]["typeKey"].as_str().unwrap().to_owned(),
@@ -488,7 +488,7 @@ async fn request_sync(state: &AppState, with_header: bool) -> (StatusCode, Value
     let mut request =
         Request::post("/api/sync").header("cookie", common::cookie(state.pool()).await);
     if with_header {
-        request = request.header("x-requested-with", "runmap");
+        request = request.header("x-requested-with", "firn");
     }
     let response = router(state.clone())
         .oneshot(request.body(Body::empty()).unwrap())
@@ -664,7 +664,7 @@ async fn failed_sync_reports_the_error_without_the_key() {
 async fn cancel_sync(state: &AppState) -> StatusCode {
     let request = Request::delete("/api/sync")
         .header("cookie", common::cookie(state.pool()).await)
-        .header("x-requested-with", "runmap");
+        .header("x-requested-with", "firn");
     router(state.clone())
         .oneshot(request.body(Body::empty()).unwrap())
         .await
@@ -849,7 +849,7 @@ async fn activities_list_their_weather_devices_and_training_effect() {
     )
     .await
     .unwrap();
-    let watch = runmap::track::Device {
+    let watch = firn::track::Device {
         creator: true,
         manufacturer: Some("garmin".to_owned()),
         product: Some("fenix7".to_owned()),
@@ -1110,7 +1110,7 @@ async fn one_activity_can_be_downloaded_again() {
     let resync = async |id: uuid::Uuid, cookie: String| {
         let request = Request::post(format!("/api/activities/{id}/sync"))
             .header("cookie", cookie)
-            .header("x-requested-with", "runmap");
+            .header("x-requested-with", "firn");
         router(state.clone())
             .oneshot(request.body(Body::empty()).unwrap())
             .await
@@ -1221,7 +1221,7 @@ async fn deleting_the_account_removes_its_data_and_files() {
     let delete = |cookie: &str, header: bool| {
         let mut request = Request::delete("/api/me").header("cookie", cookie);
         if header {
-            request = request.header("x-requested-with", "runmap");
+            request = request.header("x-requested-with", "firn");
         }
         router(state.clone()).oneshot(request.body(Body::empty()).unwrap())
     };
@@ -1311,7 +1311,7 @@ async fn race_results_are_entered_by_hand() {
             .method(method)
             .uri(format!("/api/activities/{}/result", common::uuid(id)))
             .header("cookie", cookie)
-            .header("x-requested-with", "runmap")
+            .header("x-requested-with", "firn")
             .header("content-type", "application/json");
         router(state.clone())
             .oneshot(request.body(Body::from(body.to_string())).unwrap())
@@ -1433,7 +1433,7 @@ async fn training_blocks_filter_activities_to_the_weeks_before_a_race() {
     for (id, meters) in [(2, 42_195.0), (4, 10_000.0)] {
         let request = Request::put(format!("/api/activities/{}/result", common::uuid(id)))
             .header("content-type", "application/json")
-            .header("x-requested-with", "runmap")
+            .header("x-requested-with", "firn")
             .header("cookie", &cookie)
             .body(Body::from(
                 json!({"distance_m": meters, "time_s": 3000.0}).to_string(),

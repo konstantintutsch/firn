@@ -2,9 +2,9 @@ mod common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use firn::api::{AppState, router};
+use firn::db::{self, Pool};
 use http_body_util::BodyExt;
-use runmap::api::{AppState, router};
-use runmap::db::{self, Pool};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 use wiremock::matchers::{method, path};
@@ -22,7 +22,7 @@ async fn send(
 ) -> (StatusCode, Vec<u8>) {
     let request = request
         .header("cookie", common::cookie(state.pool()).await)
-        .header("x-requested-with", "runmap");
+        .header("x-requested-with", "firn");
     let response = router(state.clone())
         .oneshot(request.body(body).unwrap())
         .await
@@ -47,7 +47,7 @@ async fn activity_ids(pool: &Pool) -> Vec<i64> {
 async fn ids_to_garmin(pool: &Pool, ids: &[uuid::Uuid]) -> Vec<i64> {
     use diesel::prelude::*;
     use diesel_async::RunQueryDsl;
-    use runmap::schema::activities;
+    use firn::schema::activities;
     let mut garmin_ids = Vec::new();
     for id in ids {
         garmin_ids.push(
@@ -142,7 +142,7 @@ async fn synced_state() -> AppState {
 }
 
 #[tokio::test]
-async fn an_export_restores_everything_in_another_runmap() {
+async fn an_export_restores_everything_in_another_firn() {
     let source = synced_state().await;
     let id = common::activity_id(source.pool(), 7).await;
     let result = json!({"distance_m": 1000.0, "time_s": 240.0, "event": null, "results_url": null, "target_time_s": 230.0});
@@ -214,7 +214,7 @@ async fn an_export_restores_everything_in_another_runmap() {
     let other = common::user_named(&pool, "other").await;
     let request = Request::post("/api/import")
         .header("cookie", common::cookie_for(&pool, other).await)
-        .header("x-requested-with", "runmap");
+        .header("x-requested-with", "firn");
     let response = router(target.clone())
         .oneshot(request.body(Body::from(zip)).unwrap())
         .await
@@ -496,7 +496,7 @@ async fn an_export_carries_the_health_data_of_apple_health() {
 async fn vo2_max_rows(pool: &Pool) -> Vec<(i32, f64, Option<uuid::Uuid>)> {
     use diesel::prelude::*;
     use diesel_async::RunQueryDsl;
-    use runmap::schema::daily_metrics;
+    use firn::schema::daily_metrics;
     let user = common::user(pool).await;
     daily_metrics::table
         .filter(daily_metrics::user_id.eq(user))
@@ -572,7 +572,7 @@ async fn keeps_every_vo2_max_of_a_day_and_links_it_to_its_workout() {
 
     // Removing the workout leaves the value, without its link.
     let user = common::user(&pool).await;
-    runmap::db::delete_activities(&pool, user, &[run])
+    firn::db::delete_activities(&pool, user, &[run])
         .await
         .unwrap();
     assert_eq!(

@@ -48,9 +48,9 @@ npm *args:
 
 # Open a SQL shell on the database
 psql:
-    docker compose exec db psql -U runmap runmap
+    docker compose exec db psql -U firn firn
 
-# Start the app with a local Authelia at https://authelia.localhost:9091. Sign in as alice or bob, password runmap
+# Start the app with a local Authelia at https://authelia.localhost:9091. Sign in as alice or bob, password firn
 authelia: authelia-secrets
     docker compose -f docker-compose.yaml -f dev/authelia/docker-compose.yaml up --build --detach --wait
 
@@ -64,12 +64,12 @@ authelia-secrets:
     mkdir -p "$secrets"
     authelia="docker run --rm --user $(id -u):$(id -g) --volume $PWD/$secrets:/secrets authelia/authelia:4.39 authelia crypto"
     # Writes ca.public.crt and ca.private.pem.
-    $authelia certificate rsa generate --ca --common-name "Runmap test CA" --directory /secrets
+    $authelia certificate rsa generate --ca --common-name "Firn test CA" --directory /secrets
     $authelia certificate rsa generate --common-name authelia.localhost --sans authelia.localhost \
         --path.ca /secrets --directory /secrets --file.certificate tls.crt --file.private-key tls.key
     $authelia pair rsa generate --directory /secrets --file.private-key jwks.key --file.public-key jwks.pub
 
-# Start a separate Runmap with made-up data at http://localhost:8090, for screenshots and trying changes
+# Start a separate Firn with made-up data at http://localhost:8090, for screenshots and trying changes
 demo:
     docker compose -f dev/demo/docker-compose.yaml up --build --detach --wait
     dev/demo/seed.sh
@@ -80,7 +80,7 @@ demo-down:
 
 # Take the README screenshots from the demo, never from your own data, and stop the demo
 screenshots: demo
-    docker run --rm --network runmap-demo_default \
+    docker run --rm --network firn-demo_default \
         --volume "$PWD/docs/screenshots:/out" \
         --volume "$PWD/dev/demo/screenshots.mjs:/work/screenshots.mjs:ro" \
         --workdir /work mcr.microsoft.com/playwright:v1.55.0-noble \

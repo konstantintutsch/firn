@@ -1,4 +1,4 @@
-# Runmap
+# Firn
 
 A heatmap of all your Garmin activities on a global map, with statistics on
 your training, sleep and health. Self-hosted, for you and the people you share
@@ -36,7 +36,7 @@ a server with.
   without GPS, their files, details and photos, and all health data. Syncs can
   run on a schedule, continue where they stopped and be cancelled.
 - **Your data stays yours**: export everything as one ZIP and import it into
-  another Runmap. Import FIT, GPX and TCX files from other apps and devices too.
+  another Firn. Import FIT, GPX and TCX files from other apps and devices too.
 - **Accounts** through OpenID Connect. Each person adds their own Garmin key and
   sees only their own data.
 - English and German, metric and imperial units, light and dark themes, phone
@@ -86,7 +86,7 @@ like Authentik, Keycloak, Authelia or Google.
 5. Select **Sync** to save your data. Select it again at any time to add new data,
    or set `SYNC_INTERVAL_HOURS`.
 
-To serve Runmap at another address, set `PUBLIC_URL` to it and `WEB_BIND` to
+To serve Firn at another address, set `PUBLIC_URL` to it and `WEB_BIND` to
 `0.0.0.0`, and register `${PUBLIC_URL}/api/auth/callback` at the provider. Use
 HTTPS, for example through a reverse proxy: sign-in cookies are only marked
 secure if `PUBLIC_URL` starts with `https://`.
@@ -98,7 +98,7 @@ secure if `PUBLIC_URL` starts with `https://`.
 
 `just authelia` starts the app with a local [Authelia](https://www.authelia.com)
 at <https://authelia.localhost:9091>, already set up as the provider. Sign in as
-`alice` or `bob`, both with the password `runmap`. `.env` still needs
+`alice` or `bob`, both with the password `firn`. `.env` still needs
 `APP_SECRET`.
 
 The first run creates a test CA and certificate in `dev/authelia/secrets`. The
@@ -107,7 +107,7 @@ browser warns about the certificate: accept it, or trust
 `authelia.localhost` on their own. Other browsers may need
 `127.0.0.1 authelia.localhost` in `/etc/hosts`.
 
-Only use this to try Runmap out: the configuration's secrets are public.
+Only use this to try Firn out: the configuration's secrets are public.
 
 ## Configuration
 
@@ -116,7 +116,7 @@ Set these in `.env`.
 | Variable | Default | What it does |
 |---|---|---|
 | `APP_SECRET` | | Encrypts the Garmin keys. At least 32 characters, for example from `openssl rand -base64 32`. Changing it makes saved keys unreadable. |
-| `PUBLIC_URL` | `http://localhost:8080` | The address people open Runmap at. |
+| `PUBLIC_URL` | `http://localhost:8080` | The address people open Firn at. |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | | The OpenID Connect client. Leave the secret empty for a public client. |
 | `OIDC_CA_CERT` | | A PEM file with certificates to trust for the provider, like a local test CA. |
 | `SYNC_INTERVAL_HOURS` | `0` | Syncs every account with a key every this many hours. `0` turns it off. |
@@ -127,13 +127,13 @@ Set these in `.env`.
 | `LOG_JSON` | `false` | Logs JSON lines instead of text. |
 | `RUST_LOG` | `info` | How much the backend logs, like `debug` for every request. |
 | `WEB_BIND`, `WEB_PORT` | `127.0.0.1`, `8080` | Where `just up` serves the app. |
-| `POSTGRES_PASSWORD` | `runmap` | The database password. |
+| `POSTGRES_PASSWORD` | `firn` | The database password. |
 | `GARMIN_PERSONAL_API_KEY` | | Only from before accounts: the first account to sign in takes it over. |
 
 ## Running it on a server
 
 The **Images** workflow in `.gitea/workflows/images.yaml` checks the code, then
-builds the images `<owner>/runmap/backend` and `<owner>/runmap/frontend` on
+builds the images `<owner>/firn/backend` and `<owner>/firn/frontend` on
 Gitea Actions and pushes them to the Gitea container registry. Add the secret
 `REGISTRY_TOKEN`, an access token with the `write:package` scope. The workflow
 file lists the other settings.
@@ -159,7 +159,7 @@ holds `GARMIN_PERSONAL_API_KEY`, that account also takes over the key.
 
 ## What a sync saves
 
-Runmap copies everything the Garmin Personal API offers:
+Firn copies everything the Garmin Personal API offers:
 
 - Every activity, with or without GPS: the summary, the details, the original
   file, its workouts and its photos. Only activities with GPS go on the map.
@@ -182,10 +182,10 @@ Garmin keeps updating them. Server errors and short rate limits are retried.
 
 **Settings → Export** downloads one ZIP with every activity, its file, details
 and photos, all routes and all health data. **Import** restores such an export, here or
-in another Runmap.
+in another Firn.
 
 Import also takes a ZIP of FIT, GPX or TCX files, also inside ZIPs of their own
-like Garmin's downloads. Runmap reads the date, distance, time, elevation and
+like Garmin's downloads. Firn reads the date, distance, time, elevation and
 heart rate from each file. Such activities get a negative ID, since Garmin does
 not know them, and importing the same file again updates it instead of adding
 it twice. Files from elsewhere do not say their time zone, so their times are in
@@ -208,14 +208,14 @@ activities again. Over the API, pass `replace=true` to `POST /api/import`, and `
 
 ## Garmin access
 
-Runmap uses the [Garmin Connect Personal API](https://developer.garmin.com/gc-developer-program/personal/personal-api),
+Firn uses the [Garmin Connect Personal API](https://developer.garmin.com/gc-developer-program/personal/personal-api),
 which is meant for personal use. Keys expire after the period you chose when
 creating them. The app tells you when a key stops working: create a new one and
 add it under **Settings**.
 
 ## Data and privacy
 
-- A Garmin key gives access to your Garmin data. Runmap stores it encrypted with
+- A Garmin key gives access to your Garmin data. Firn stores it encrypted with
   `APP_SECRET`, and never returns it. Keep `.env` private: without `APP_SECRET`,
   a copy of the database does not reveal the keys. Changing `APP_SECRET` makes
   saved keys unreadable, so everyone has to add theirs again.
@@ -223,7 +223,7 @@ add it under **Settings**.
 - Sessions last 30 days. The database stores only a hash of each session token.
 - The map shows where you go, including near your home. All data requires a
   session, and each account sees only its own data.
-- **Settings → Delete account** deletes all of an account's data in Runmap. The
+- **Settings → Delete account** deletes all of an account's data in Firn. The
   data on Garmin Connect stays.
 - Map tiles come from [OpenFreeMap](https://openfreemap.org), which sees the
   areas you view.
@@ -238,11 +238,11 @@ add it under **Settings**.
 | `just dev` | Starts the app and rebuilds it on file changes. |
 | `just test` | Runs the backend tests in a throwaway database. |
 | `just lint`, `just fmt` | Checks and formats the code. |
-| `just demo`, `just demo-down` | Starts and stops a separate Runmap with made-up data at <http://localhost:8090>. |
+| `just demo`, `just demo-down` | Starts and stops a separate Firn with made-up data at <http://localhost:8090>. |
 | `just screenshots` | Takes the screenshots above from the demo. |
 
 The demo has its own database and never touches your data. A small Python
 server in `dev/demo/fake_garmin.py` stands in for Garmin and serves two years of
 generated activities, tracks, photos and health data, the same on every start.
-Open the demo with the cookie `runmap_session=demo-session-token`, which
+Open the demo with the cookie `firn_session=demo-session-token`, which
 `dev/demo/seed.sh` creates.

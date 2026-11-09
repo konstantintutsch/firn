@@ -3,7 +3,7 @@
 // falls back to the saved copy offline. Never saves API answers, which hold
 // personal data and need a session.
 
-const CACHE = "runmap-shell";
+const CACHE = "firn-shell";
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));

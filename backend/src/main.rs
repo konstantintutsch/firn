@@ -4,12 +4,12 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use runmap::api::{self, AppState, GarminSettings};
-use runmap::auth::{Auth, OidcSettings};
-use runmap::db;
-use runmap::files::FileStore;
-use runmap::garmin::DEFAULT_BASE_URL;
-use runmap::secret::SecretBox;
+use firn::api::{self, AppState, GarminSettings};
+use firn::auth::{Auth, OidcSettings};
+use firn::db;
+use firn::files::FileStore;
+use firn::garmin::DEFAULT_BASE_URL;
+use firn::secret::SecretBox;
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
@@ -27,7 +27,7 @@ struct Cli {
     /// The address people open the app at, where the provider sends them back to.
     #[arg(long, env = "PUBLIC_URL", default_value = "http://localhost:8080")]
     public_url: String,
-    /// The OpenID Connect issuer, like `https://auth.example.com/application/o/runmap/`.
+    /// The OpenID Connect issuer, like `https://auth.example.com/application/o/firn/`.
     #[arg(long, env = "OIDC_ISSUER")]
     oidc_issuer: Option<String>,
     #[arg(long, env = "OIDC_CLIENT_ID")]
@@ -35,7 +35,7 @@ struct Cli {
     /// A PEM file with certificates to trust for the provider, like a local test CA.
     #[arg(long, env = "OIDC_CA_CERT")]
     oidc_ca_cert: Option<PathBuf>,
-    /// Where the Garmin Personal API is. Only changed to try Runmap with made-up data.
+    /// Where the Garmin Personal API is. Only changed to try Firn with made-up data.
     #[arg(long, env = "GARMIN_BASE_URL", default_value = DEFAULT_BASE_URL)]
     garmin_base_url: String,
     /// Pause between Garmin requests in milliseconds, to stay gentle on Garmin's servers.
@@ -65,7 +65,7 @@ fn secret_env(name: &str) -> Option<String> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // `runmap healthcheck` asks the running backend, for the container's health
+    // `firn healthcheck` asks the running backend, for the container's health
     // check, since the image has no curl.
     if std::env::args().nth(1).as_deref() == Some("healthcheck") {
         return healthcheck().await;

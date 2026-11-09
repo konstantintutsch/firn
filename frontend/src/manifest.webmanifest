@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Runmap",
-  "short_name": "Runmap",
+  "name": "Firn",
+  "short_name": "Firn",
   "description": "A heatmap of your Garmin activities, with statistics on training, sleep and health.",
   "start_url": "/",
   "scope": "/",

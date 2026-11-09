@@ -286,7 +286,7 @@ pub fn to_gpx(name: &str, activity_type: &str, samples: &[Sample]) -> String {
     let mut gpx = String::from(concat!(
         r#"<?xml version="1.0" encoding="UTF-8"?>"#,
         "\n",
-        r#"<gpx version="1.1" creator="Runmap" xmlns="http://www.topografix.com/GPX/1/1" "#,
+        r#"<gpx version="1.1" creator="Firn" xmlns="http://www.topografix.com/GPX/1/1" "#,
         r#"xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">"#,
         "\n",
     ));

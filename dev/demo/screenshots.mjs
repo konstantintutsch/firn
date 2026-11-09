@@ -13,7 +13,7 @@ const browser = await chromium.launch({
 
 async function page(theme, viewport, deviceScaleFactor = 2) {
   const context = await browser.newContext({ viewport, deviceScaleFactor, colorScheme: theme });
-  await context.addCookies([{ name: "runmap_session", value: "demo-session-token", url: BASE }]);
+  await context.addCookies([{ name: "firn_session", value: "demo-session-token", url: BASE }]);
   await context.addInitScript(() => {
     localStorage.setItem("language", "en");
     localStorage.removeItem("filters");

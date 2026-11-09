@@ -27,8 +27,8 @@ use crate::db::{self, User};
 use crate::garmin::{GarminClient, GarminError};
 use crate::secret::{self, SecretBox};
 
-pub const SESSION_COOKIE: &str = "runmap_session";
-const LOGIN_COOKIE: &str = "runmap_login";
+pub const SESSION_COOKIE: &str = "firn_session";
+const LOGIN_COOKIE: &str = "firn_login";
 const SESSION_DAYS: i64 = 30;
 /// How long a person has to sign in at the provider.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(600);
@@ -37,12 +37,12 @@ const MAX_PENDING_LOGINS: usize = 1000;
 const TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct OidcSettings {
-    /// Like `https://auth.example.com/application/o/runmap/`.
+    /// Like `https://auth.example.com/application/o/firn/`.
     pub issuer: String,
     pub client_id: String,
     /// `None` for a public client, which only proves itself with PKCE.
     pub client_secret: Option<String>,
-    /// The address of the app, like `https://runmap.example.com`.
+    /// The address of the app, like `https://firn.example.com`.
     pub public_url: String,
     /// Certificates to trust besides the system's, for a provider with its own CA.
     pub extra_roots: Vec<reqwest::Certificate>,
@@ -91,7 +91,7 @@ impl Auth {
             .map(|oidc| oidc.extra_roots.clone())
             .unwrap_or_default();
         let http = Client::builder()
-            .user_agent(concat!("runmap/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("firn/", env!("CARGO_PKG_VERSION")))
             .timeout(TIMEOUT)
             .tls_certs_merge(roots)
             .build()

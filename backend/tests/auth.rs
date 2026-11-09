@@ -4,16 +4,16 @@ use axum::body::Body;
 use axum::http::{Request, Response, StatusCode};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use firn::api::{AppState, router};
+use firn::auth::OidcSettings;
+use firn::db;
 use http_body_util::BodyExt;
-use runmap::api::{AppState, router};
-use runmap::auth::OidcSettings;
-use runmap::db;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 use wiremock::matchers::{body_string_contains, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-const CLIENT_ID: &str = "runmap";
+const CLIENT_ID: &str = "firn";
 const TOKEN: &str = "/personalapitoken-service/personal-api/personal-api-key/token";
 
 async fn send(state: &AppState, request: Request<Body>) -> Response<Body> {
@@ -125,7 +125,7 @@ async fn app(provider: &Provider, garmin: &str) -> AppState {
             issuer: provider.issuer.clone(),
             client_id: CLIENT_ID.to_owned(),
             client_secret: Some("secret".to_owned()),
-            public_url: "https://runmap.example".to_owned(),
+            public_url: "https://firn.example".to_owned(),
             extra_roots: Vec::new(),
         }),
     )
@@ -145,7 +145,7 @@ async fn start_login(state: &AppState) -> (String, String, String) {
     assert_eq!(query_value(&location, "code_challenge_method"), "S256");
     assert_eq!(
         query_value(&location, "redirect_uri"),
-        "https://runmap.example/api/auth/callback"
+        "https://firn.example/api/auth/callback"
     );
     let set_cookie = header_value(&response, "set-cookie");
     assert!(set_cookie.contains("HttpOnly"));
@@ -217,7 +217,7 @@ async fn reads_the_profile_from_user_info_if_the_token_has_none() {
 async fn me_with(state: &AppState, callback: &Response<Body>) -> Response<Body> {
     let session = set_cookies(callback)
         .into_iter()
-        .find(|cookie| cookie.starts_with("runmap_session=") && cookie.len() > 20)
+        .find(|cookie| cookie.starts_with("firn_session=") && cookie.len() > 20)
         .unwrap();
     send(
         state,
@@ -241,7 +241,7 @@ async fn refuses_a_token_with_another_nonce() {
     assert!(
         !set_cookies(&response)
             .iter()
-            .any(|cookie| cookie.starts_with("runmap_session="))
+            .any(|cookie| cookie.starts_with("firn_session="))
     );
 }
 
@@ -265,7 +265,7 @@ async fn refuses_a_callback_from_another_browser() {
     let (login_state, nonce, _) = start_login(&state).await;
     provider.answer_token(provider.claims(&nonce)).await;
 
-    let response = callback(&state, &login_state, "runmap_login=other").await;
+    let response = callback(&state, &login_state, "firn_login=other").await;
     assert_eq!(header_value(&response, "location"), "/?login=failed");
     // The state was not used up, so the right browser can still finish.
     assert!(
@@ -327,7 +327,7 @@ async fn data_needs_a_session() {
         let response = send(
             &state,
             Request::get(uri)
-                .header("cookie", "runmap_session=made-up")
+                .header("cookie", "firn_session=made-up")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -354,7 +354,7 @@ async fn logout_ends_the_session() {
 
     let logout = Request::post("/api/auth/logout")
         .header("cookie", &cookie)
-        .header("x-requested-with", "runmap")
+        .header("x-requested-with", "firn")
         .body(Body::empty())
         .unwrap();
     assert_eq!(send(&state, logout).await.status(), StatusCode::NO_CONTENT);
@@ -367,7 +367,7 @@ async fn logout_ends_the_session() {
 fn put_key(cookie: &str, key: &str) -> Request<Body> {
     Request::put("/api/me/garmin-key")
         .header("cookie", cookie)
-        .header("x-requested-with", "runmap")
+        .header("x-requested-with", "firn")
         .header("content-type", "application/json")
         .body(Body::from(json!({"api_key": key}).to_string()))
         .unwrap()
@@ -462,22 +462,22 @@ async fn first_account_claims_activities_from_before_accounts() {
 async fn expired_sessions_stop_working_and_are_removed() {
     use diesel::prelude::*;
     use diesel_async::RunQueryDsl;
-    use runmap::schema::sessions;
+    use firn::schema::sessions;
 
     let pool = common::test_pool().await;
     let user_id = common::user(&pool).await;
-    let token = runmap::secret::random_token();
+    let token = firn::secret::random_token();
     db::create_session(
         &pool,
         user_id,
-        &runmap::secret::sha256(&token),
+        &firn::secret::sha256(&token),
         chrono::Utc::now() - chrono::Duration::minutes(1),
     )
     .await
     .unwrap();
     let state = common::state(pool.clone(), "http://unused", None).await;
     let me = Request::get("/api/me")
-        .header("cookie", format!("runmap_session={token}"))
+        .header("cookie", format!("firn_session={token}"))
         .body(Body::empty())
         .unwrap();
     assert_eq!(send(&state, me).await.status(), StatusCode::UNAUTHORIZED);

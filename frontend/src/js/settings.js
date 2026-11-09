@@ -79,7 +79,7 @@ function setUpImport() {
 
     const request = new XMLHttpRequest();
     request.open("POST", importUrl());
-    request.setRequestHeader("X-Requested-With", "runmap");
+    request.setRequestHeader("X-Requested-With", "firn");
     request.setRequestHeader("Content-Type", "application/zip");
     request.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable) progress.value = event.loaded / event.total;

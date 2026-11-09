@@ -306,7 +306,7 @@ pub async fn import_route(
     let samples = tokio::task::spawn_blocking(move || track::parse_gpx_route(&body))
         .await
         .map_err(anyhow::Error::from)?
-        .map_err(|_| ApiError::BadRequest("this is not a GPX file Runmap can read"))?;
+        .map_err(|_| ApiError::BadRequest("this is not a GPX file Firn can read"))?;
     let points = route_points(&samples)?;
     let route = save(&state, user.id, &name, None, points, None).await?;
     Ok((StatusCode::CREATED, Json(route)))

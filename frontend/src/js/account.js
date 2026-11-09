@@ -69,7 +69,7 @@ function setUpThemePicker() {
 export function send(url, options = {}) {
   return fetch(url, {
     ...options,
-    headers: { "X-Requested-With": "runmap", ...options.headers },
+    headers: { "X-Requested-With": "firn", ...options.headers },
   });
 }
 
@@ -211,7 +211,7 @@ export function setUpSettings() {
 
   document.querySelector("#delete-account").addEventListener("click", async () => {
     const warning = t(
-      "Delete your account? All activities, files, photos and health data in Runmap are deleted for good. Your data on Garmin Connect stays.",
+      "Delete your account? All activities, files, photos and health data in Firn are deleted for good. Your data on Garmin Connect stays.",
     );
     if (!confirm(warning)) return;
     try {

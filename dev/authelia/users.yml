@@ -1,4 +1,4 @@
-# Test accounts. Both have the password `runmap`.
+# Test accounts. Both have the password `firn`.
 users:
   alice:
     displayname: Alice

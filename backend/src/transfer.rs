@@ -2,7 +2,7 @@
 //! FIT, GPX and TCX files from other apps and devices.
 //!
 //! An export holds:
-//! - `runmap-export.json`, which marks it, with the format version,
+//! - `firn-export.json`, which marks it, with the format version,
 //! - `activities/<id>/activity.json` with the activity's ID, the summary,
 //!   details, workouts and the list of images,
 //! - `activities/<id>/original.zip`, the file as Garmin sent it,
@@ -38,7 +38,10 @@ use crate::secret;
 use crate::track::{self, Point, Sample};
 use crate::wellness::KINDS;
 
-const MARKER: &str = "runmap-export.json";
+const MARKER: &str = "firn-export.json";
+/// Exports made before the project was renamed carry this marker and format.
+const LEGACY_MARKER: &str = "runmap-export.json";
+const LEGACY_FORMAT: &str = "runmap-export";
 /// How long after a workout ends its VO2 max can still be measured and count for it.
 const VO2_MAX_AFTER_WORKOUT_MINUTES: i64 = 30;
 const FORMAT_VERSION: u32 = 1;
@@ -99,7 +102,7 @@ pub fn export(
     serde_json::to_writer_pretty(
         &mut zip,
         &Marker {
-            format: "runmap-export".to_owned(),
+            format: "firn-export".to_owned(),
             version: FORMAT_VERSION,
             exported_at: chrono::Utc::now(),
         },
@@ -207,7 +210,7 @@ struct Kept {
     metrics: HashSet<(String, NaiveDate)>,
 }
 
-/// Imports a Runmap export, or a ZIP with FIT, GPX or TCX files, which may also
+/// Imports a Firn export, or a ZIP with FIT, GPX or TCX files, which may also
 /// be inside ZIPs of their own, like in Garmin's download of an activity.
 ///
 /// With `apple_health`, the ZIP is the export of the Apple Health app instead.
@@ -234,8 +237,11 @@ pub fn import(
     };
     let mut report = if let Some(scope) = apple_health {
         context.import_apple_health(&mut archive, scope)?
-    } else if archive.index_for_name(MARKER).is_some() {
-        context.import_export(&mut archive)?
+    } else if let Some(marker) = [MARKER, LEGACY_MARKER]
+        .into_iter()
+        .find(|name| archive.index_for_name(name).is_some())
+    {
+        context.import_export(&mut archive, marker)?
     } else {
         context.import_files(&mut archive)?
     };
@@ -323,11 +329,13 @@ impl Import<'_> {
         Ok(())
     }
 
-    fn import_export(&self, archive: &mut ZipArchive<File>) -> Result<ImportReport> {
-        let marker: Marker = serde_json::from_slice(&read_entry(archive, MARKER)?)
-            .context("unreadable runmap-export.json")?;
-        if marker.format != "runmap-export" || marker.version > FORMAT_VERSION {
-            bail!("this export is from a newer version of Runmap");
+    fn import_export(&self, archive: &mut ZipArchive<File>, name: &str) -> Result<ImportReport> {
+        let marker: Marker = serde_json::from_slice(&read_entry(archive, name)?)
+            .context("unreadable export marker")?;
+        if !(marker.format == "firn-export" || marker.format == LEGACY_FORMAT)
+            || marker.version > FORMAT_VERSION
+        {
+            bail!("this export is from a newer version of Firn");
         }
         let activity_files: Vec<String> = archive
             .file_names()

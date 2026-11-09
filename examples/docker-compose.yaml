@@ -1,37 +1,37 @@
-# Runmap from prebuilt images, for a server with a reverse proxy that serves
+# Firn from prebuilt images, for a server with a reverse proxy that serves
 # HTTPS and forwards to 127.0.0.1:8080. Put .env next to this file, from
 # .env.example, and run `docker compose up -d`.
 
-name: runmap
+name: firn
 
 services:
   db:
     image: postgres:18-alpine
-    container_name: runmap-db
+    container_name: firn-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: runmap
+      POSTGRES_USER: firn
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - db:/var/lib/postgresql
     healthcheck:
-      test: [CMD-SHELL, pg_isready -U runmap]
+      test: [CMD-SHELL, pg_isready -U firn]
       interval: 5s
       retries: 30
 
   # The frontend forwards /api to a service of exactly this name.
   backend:
-    image: ${RUNMAP_IMAGES:?Set RUNMAP_IMAGES in .env}/backend:${RUNMAP_VERSION:-latest}
-    container_name: runmap-backend
+    image: ${FIRN_IMAGES:?Set FIRN_IMAGES in .env}/backend:${FIRN_VERSION:-latest}
+    container_name: firn-backend
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgres://runmap:${POSTGRES_PASSWORD}@db/runmap
+      DATABASE_URL: postgres://firn:${POSTGRES_PASSWORD}@db/firn
     volumes:
       # Original files and photos of the activities.
       - data:/data
     healthcheck:
-      test: [CMD, runmap, healthcheck]
+      test: [CMD, firn, healthcheck]
       interval: 10s
       timeout: 6s
       retries: 6
@@ -41,8 +41,8 @@ services:
         condition: service_healthy
 
   frontend:
-    image: ${RUNMAP_IMAGES}/frontend:${RUNMAP_VERSION:-latest}
-    container_name: runmap-frontend
+    image: ${FIRN_IMAGES}/frontend:${FIRN_VERSION:-latest}
+    container_name: firn-frontend
     restart: unless-stopped
     ports:
       - 127.0.0.1:8080:8080

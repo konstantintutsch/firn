@@ -12,7 +12,7 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo build --release --locked \
-    && cp target/release/runmap /usr/local/bin/runmap
+    && cp target/release/firn /usr/local/bin/firn
 
 # Newer than the build's Debian, which is fine: its C library reads older binaries.
 FROM debian:trixie-slim AS runtime
@@ -20,10 +20,10 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     # A fixed ID, so that the files in an existing volume stay readable.
-    && useradd --system --uid 999 runmap \
-    && mkdir /data && chown runmap /data
-COPY --from=build /usr/local/bin/runmap /usr/local/bin/runmap
-USER runmap
+    && useradd --system --uid 999 firn \
+    && mkdir /data && chown firn /data
+COPY --from=build /usr/local/bin/firn /usr/local/bin/firn
+USER firn
 # Original files and photos. A new volume takes over the owner from here.
 VOLUME /data
-ENTRYPOINT ["runmap"]
+ENTRYPOINT ["firn"]

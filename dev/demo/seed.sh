@@ -7,7 +7,7 @@ compose="docker compose -f docker-compose.yaml"
 token=demo-session-token
 url=http://localhost:8090
 
-$compose exec -T db psql -q -U runmap runmap <<SQL
+$compose exec -T db psql -q -U firn firn <<SQL
 INSERT INTO users (oidc_issuer, oidc_subject, email, name)
 VALUES ('https://demo.invalid', 'demo', 'alex@example.com', 'Alex Example')
 ON CONFLICT DO NOTHING;
@@ -17,7 +17,7 @@ ON CONFLICT DO NOTHING;
 SQL
 
 request() {
-  curl --fail --silent --show-error --cookie "runmap_session=$token" --header "X-Requested-With: runmap" "$@"
+  curl --fail --silent --show-error --cookie "firn_session=$token" --header "X-Requested-With: firn" "$@"
 }
 request --request PUT --header "Content-Type: application/json" --data '{"api_key":"demo"}' "$url/api/me/garmin-key" >/dev/null
 request --request POST "$url/api/sync" >/dev/null
@@ -41,4 +41,4 @@ for activity in json.load(sys.stdin)["activities"]:
 ' | while IFS="$(printf '\t')" read -r id result; do
   request --request PUT --header "Content-Type: application/json" --data "$result" "$url/api/activities/$id/result"
 done
-echo "Open $url and set the cookie runmap_session=$token, or use the screenshots recipe."
+echo "Open $url and set the cookie firn_session=$token, or use the screenshots recipe."

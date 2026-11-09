@@ -2,12 +2,12 @@
 
 use chrono::{Duration as Days, Utc};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
-use runmap::api::{AppState, GarminSettings};
-use runmap::auth::{Auth, OidcSettings, SESSION_COOKIE};
-use runmap::db::{self, Pool};
-use runmap::files::FileStore;
-use runmap::garmin::GarminClient;
-use runmap::secret::{self, SecretBox};
+use firn::api::{AppState, GarminSettings};
+use firn::auth::{Auth, OidcSettings, SESSION_COOKIE};
+use firn::db::{self, Pool};
+use firn::files::FileStore;
+use firn::garmin::GarminClient;
+use firn::secret::{self, SecretBox};
 use std::io::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -21,7 +21,7 @@ pub fn uuid(garmin_id: i64) -> uuid::Uuid {
 }
 
 /// Saves an activity under `uuid(activity.id)`, for the test account.
-pub async fn add_activity(pool: &Pool, activity: runmap::garmin::Activity) -> uuid::Uuid {
+pub async fn add_activity(pool: &Pool, activity: firn::garmin::Activity) -> uuid::Uuid {
     let id = uuid(activity.id);
     db::upsert_activities_with_ids(pool, user(pool).await, &[(&activity, Some(id))])
         .await
@@ -74,7 +74,7 @@ pub async fn files(pool: &Pool) -> FileStore {
         .get_result(&mut pool.get().await.unwrap())
         .await
         .unwrap();
-    FileStore::new(std::env::temp_dir().join("runmap-tests").join(name))
+    FileStore::new(std::env::temp_dir().join("firn-tests").join(name))
 }
 
 pub const API_KEY: &str = "test-key";

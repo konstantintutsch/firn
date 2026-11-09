@@ -1,5 +1,5 @@
 -- Random IDs, so that a route's link says nothing about how many others exist and
--- an exported route keeps its ID when it is imported into another Runmap.
+-- an exported route keeps its ID when it is imported into another Firn.
 ALTER TABLE routes ALTER COLUMN id DROP DEFAULT;
 ALTER TABLE routes ALTER COLUMN id TYPE UUID USING gen_random_uuid();
 ALTER TABLE routes ALTER COLUMN id SET DEFAULT gen_random_uuid();

@@ -3,10 +3,10 @@ mod common;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use diesel_async::RunQueryDsl;
+use firn::api::router;
+use firn::db::{self, Pool};
+use firn::track::Point;
 use http_body_util::BodyExt;
-use runmap::api::router;
-use runmap::db::{self, Pool};
-use runmap::track::Point;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -43,7 +43,7 @@ async fn call(
         request = request.header("cookie", cookie);
     }
     if header {
-        request = request.header("x-requested-with", "runmap");
+        request = request.header("x-requested-with", "firn");
     }
     let response = router(common::state(pool.clone(), "http://unused", None).await)
         .oneshot(
@@ -98,7 +98,7 @@ async fn get(pool: &Pool, uri: &str) -> Reply {
 }
 
 async fn add_run_with_file(pool: &Pool, id: i64, gpx: Option<&str>) {
-    let activity = runmap::garmin::Activity {
+    let activity = firn::garmin::Activity {
         id,
         name: "Morning loop".into(),
         activity_type: "running".into(),

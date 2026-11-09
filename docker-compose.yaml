@@ -1,19 +1,19 @@
-name: runmap
+name: firn
 
-x-database-url: &database-url postgres://runmap:${POSTGRES_PASSWORD:-runmap}@db/runmap
+x-database-url: &database-url postgres://firn:${POSTGRES_PASSWORD:-firn}@db/firn
 
 services:
   db:
     image: postgres:18-alpine
-    container_name: runmap-db
+    container_name: firn-db
     environment:
-      POSTGRES_USER: runmap
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runmap}
-      POSTGRES_DB: runmap
+      POSTGRES_USER: firn
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-firn}
+      POSTGRES_DB: firn
     volumes:
       - db:/var/lib/postgresql
     healthcheck:
-      test: [CMD-SHELL, pg_isready -U runmap -d runmap]
+      test: [CMD-SHELL, pg_isready -U firn -d firn]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -22,7 +22,7 @@ services:
     build:
       context: backend
       target: runtime
-    container_name: runmap-backend
+    container_name: firn-backend
     env_file:
       - path: .env
         required: false
@@ -31,7 +31,7 @@ services:
     volumes:
       - data:/data
     healthcheck:
-      test: [CMD, runmap, healthcheck]
+      test: [CMD, firn, healthcheck]
       interval: 10s
       timeout: 6s
       retries: 6
@@ -47,7 +47,7 @@ services:
 
   frontend:
     build: frontend
-    container_name: runmap-frontend
+    container_name: firn-frontend
     ports:
       # Localhost by default. Set WEB_BIND to 0.0.0.0 to serve other machines,
       # ideally behind a reverse proxy with HTTPS.
@@ -81,7 +81,7 @@ services:
   test-db:
     profiles: [dev]
     image: postgres:18-alpine
-    container_name: runmap-test-db
+    container_name: firn-test-db
     environment:
       POSTGRES_PASSWORD: test
     tmpfs:

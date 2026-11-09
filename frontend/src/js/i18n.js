@@ -20,10 +20,10 @@ export const language = preferred?.toLowerCase().startsWith("de") ? "de" : "en";
 
 const GERMAN = {
   // Pages and navigation
-  "Runmap statistics": "Runmap-Statistik",
-  "Runmap activities": "Runmap-Aktivitäten",
-  "Runmap settings": "Runmap-Einstellungen",
-  "Runmap routes": "Runmap-Routen",
+  "Firn statistics": "Firn-Statistik",
+  "Firn activities": "Firn-Aktivitäten",
+  "Firn settings": "Firn-Einstellungen",
+  "Firn routes": "Firn-Routen",
   Map: "Karte",
   Activities: "Aktivitäten",
   Routes: "Routen",
@@ -44,8 +44,8 @@ const GERMAN = {
   "Dark mode": "Dunkel",
   "Garmin Personal API key": "Persönlicher Garmin-API-Schlüssel",
   "Create one on": "Erstelle einen bei",
-  "Runmap stores it encrypted and never shows it again.":
-    "Runmap speichert ihn verschlüsselt und zeigt ihn nie wieder an.",
+  "Firn stores it encrypted and never shows it again.":
+    "Firn speichert ihn verschlüsselt und zeigt ihn nie wieder an.",
   "Save key": "Schlüssel speichern",
   "Remove key": "Schlüssel entfernen",
   "Signed in": "Angemeldet",
@@ -114,8 +114,8 @@ const GERMAN = {
   Language: "Sprache",
   Account: "Konto",
   "Delete account": "Konto löschen",
-  "Delete your account? All activities, files, photos and health data in Runmap are deleted for good. Your data on Garmin Connect stays.":
-    "Konto löschen? Alle Aktivitäten, Dateien, Fotos und Gesundheitsdaten in Runmap werden endgültig gelöscht. Deine Daten bei Garmin Connect bleiben.",
+  "Delete your account? All activities, files, photos and health data in Firn are deleted for good. Your data on Garmin Connect stays.":
+    "Konto löschen? Alle Aktivitäten, Dateien, Fotos und Gesundheitsdaten in Firn werden endgültig gelöscht. Deine Daten bei Garmin Connect bleiben.",
   "Could not delete the account.": "Das Konto konnte nicht gelöscht werden.",
   "A sync is running.": "Eine Synchronisierung läuft.",
   "Last sync: {time}": "Letzte Synchronisierung: {time}",
@@ -146,8 +146,8 @@ const GERMAN = {
   Close: "Schließen",
   "Photo {number} of {count}": "Foto {number} von {count}",
   "Your data": "Deine Daten",
-  "An export holds all activities with their files and photos, your routes and the health data. Importing it restores them, here or in another Runmap.":
-    "Ein Export enthält alle Aktivitäten mit ihren Dateien und Fotos, deine Routen sowie die Gesundheitsdaten. Ein Import stellt sie wieder her, hier oder in einer anderen Runmap.",
+  "An export holds all activities with their files and photos, your routes and the health data. Importing it restores them, here or in another Firn.":
+    "Ein Export enthält alle Aktivitäten mit ihren Dateien und Fotos, deine Routen sowie die Gesundheitsdaten. Ein Import stellt sie wieder her, hier oder in einem anderen Firn.",
   "Import also takes a ZIP of FIT, GPX or TCX files from other apps and devices, and the export of Apple Health.":
     "Der Import nimmt auch ein ZIP mit FIT-, GPX- oder TCX-Dateien von anderen Apps und Geräten sowie den Export von Apple Health.",
   Export: "Exportieren",
@@ -165,7 +165,7 @@ const GERMAN = {
   "Remove everything in this account that is not in the import? This cannot be undone. A later sync from Garmin saves it again.":
     "Alles in diesem Konto entfernen, was nicht im Import ist? Das lässt sich nicht rückgängig machen. Eine spätere Synchronisierung mit Garmin speichert es wieder.",
   "What do you import?": "Was importierst du?",
-  "A Runmap export, or FIT, GPX and TCX files": "Einen Runmap-Export oder FIT-, GPX- und TCX-Dateien",
+  "A Firn export, or FIT, GPX and TCX files": "Einen Firn-Export oder FIT-, GPX- und TCX-Dateien",
   "An Apple Health export": "Einen Apple-Health-Export",
   "From Apple Health": "Aus Apple Health",
   "Only health data, like steps, sleep and heart rate": "Nur Gesundheitsdaten, wie Schritte, Schlaf und Herzfrequenz",
@@ -226,7 +226,7 @@ const GERMAN = {
   "no such activity": "Diese Aktivität gibt es nicht.",
   "this activity has no track": "Diese Aktivität hat keinen Track.",
   "the track has fewer than two points": "Der Track hat weniger als zwei Punkte.",
-  "this is not a GPX file Runmap can read": "Runmap kann diese GPX-Datei nicht lesen.",
+  "this is not a GPX file Firn can read": "Firn kann diese GPX-Datei nicht lesen.",
   "the name is empty": "Der Name ist leer.",
   "the name is too long": "Der Name ist zu lang.",
   "the description is too long": "Die Beschreibung ist zu lang.",
