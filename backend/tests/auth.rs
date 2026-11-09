@@ -90,7 +90,7 @@ impl Provider {
     async fn answer_token(&self, claims: Value) {
         Mock::given(method("POST"))
             .and(path("/token"))
-            .and(header("authorization", "Basic cnVubWFwOnNlY3JldA=="))
+            .and(header("authorization", "Basic ZmlybjpzZWNyZXQ="))
             .and(body_string_contains("code=the-code"))
             .and(body_string_contains("code_verifier="))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
