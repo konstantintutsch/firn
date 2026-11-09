@@ -137,7 +137,6 @@ pub async fn state_with_oidc(
         files,
         GarminSettings {
             base_url: base_url.to_owned(),
-            api_key: None,
             download_pause: Duration::ZERO,
             retry_delay: Duration::ZERO,
             health_history_days: 2,

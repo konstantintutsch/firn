@@ -410,7 +410,7 @@ async fn finish_login(
         name = name.or(info.name).or(info.preferred_username);
     }
 
-    let (user, is_first) = db::sign_in_user(
+    let (user, _) = db::sign_in_user(
         &state.pool,
         &discovery.issuer,
         &claims.sub,
@@ -419,13 +419,6 @@ async fn finish_login(
     )
     .await?;
     tracing::info!(user_id = user.id, "signed in");
-    // Keeps a setup from before accounts working without entering the key again.
-    if is_first
-        && user.garmin_api_key.is_none()
-        && let Some(key) = &state.garmin.api_key
-    {
-        db::set_garmin_key(&state.pool, user.id, Some(&auth.secret_box.seal(key)?)).await?;
-    }
 
     let token = secret::random_token();
     let expires = Utc::now() + chrono::Duration::days(SESSION_DAYS);

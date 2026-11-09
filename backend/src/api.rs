@@ -88,8 +88,6 @@ pub struct ApiDoc;
 
 pub struct GarminSettings {
     pub base_url: String,
-    /// The key from before accounts existed, which the first account takes over.
-    pub api_key: Option<String>,
     pub download_pause: Duration,
     /// The wait before retrying a failed Garmin request.
     pub retry_delay: Duration,

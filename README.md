@@ -110,8 +110,8 @@ while for a long history. An interrupted move continues on the next start.
 
 ### Upgrading from a version without accounts
 
-The first account to sign in takes over all saved activities. If `.env` still
-holds `GARMIN_PERSONAL_API_KEY`, that account also takes over the key.
+The first account to sign in takes over all saved activities. Add the Garmin key
+again under **Settings**; `GARMIN_PERSONAL_API_KEY` is no longer read.
 
 ## Configuration
 
@@ -132,7 +132,6 @@ Set these in `.env`.
 | `RUST_LOG` | `info` | How much the backend logs, like `debug` for every request. |
 | `WEB_BIND`, `WEB_PORT` | `127.0.0.1`, `8080` | Where `just up` serves the app. |
 | `POSTGRES_PASSWORD` | `firn` | The database password. |
-| `GARMIN_PERSONAL_API_KEY` | | Only from before accounts: the first account to sign in takes it over. |
 
 ## What a sync saves
 
