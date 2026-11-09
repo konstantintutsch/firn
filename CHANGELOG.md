@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0 - 2026-11-09
+
+Runmap is now Firn.
+
+### Changed
+
+- Rename the project from Runmap to Firn: crate, binary, containers, images, database name and user, cookies, request header, OIDC client ID and export format. Exports made as runmap-export still import. Existing deployments need the database, its user and the Docker volumes renamed, and everyone signs in again.
+- Read the Garmin Connect Personal API key only from Settings. The `GARMIN_PERSONAL_API_KEY` variable is no longer read.
+- Getting started describes running Firn on a server. The local setup moved to development.
+- Docker images are no longer tagged with their hash, and `latest` is tagged only for stable versions.
+
+### Added
+
+- License and contributing guidelines.
+
 ## 0.1.0 - 2026-11-08
 
 First release.
