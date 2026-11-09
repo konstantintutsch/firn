@@ -1,0 +1,53 @@
+use axum::Json;
+use axum::extract::{Query, State};
+use serde::Serialize;
+use utoipa::ToSchema;
+
+use super::heatmap::to_degree_bounds;
+use super::{ApiError, AppState, ErrorBody, FilterQuery};
+use crate::auth::CurrentUser;
+use crate::db::{self};
+use crate::heatmap::Viewport;
+
+#[derive(Serialize, ToSchema)]
+pub(super) struct Stats {
+    activities: i64,
+    distance_m: f64,
+    /// West, south, east and north edges around all matching tracks, in degrees.
+    #[schema(value_type = Option<Vec<f64>>)]
+    bounds: Option<[f64; 4]>,
+}
+
+/// Totals across the matching activities with GPS.
+#[utoipa::path(
+    get,
+    path = "/api/stats",
+    params(FilterQuery),
+    responses(
+        (status = 200, body = Stats),
+        (status = 401, description = "Not signed in", body = ErrorBody),
+    )
+)]
+pub(super) async fn stats(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Query(filter): Query<FilterQuery>,
+) -> Result<Json<Stats>, ApiError> {
+    let filter = filter.into_filter(&state.pool, user.id).await?;
+    let totals = db::totals(&state.pool, &filter).await?;
+    let matching = db::matching_ids(&state.pool, &filter).await?;
+    let tracks = state.tracks(user.id).await?;
+    let bounds = tracks
+        .iter()
+        .filter(|activity| matching.contains(&activity.id))
+        .map(|activity| activity.bounds)
+        .reduce(|all, bounds| Viewport {
+            min: [all.min[0].min(bounds.min[0]), all.min[1].min(bounds.min[1])],
+            max: [all.max[0].max(bounds.max[0]), all.max[1].max(bounds.max[1])],
+        });
+    Ok(Json(Stats {
+        activities: totals.activities,
+        distance_m: totals.distance_m,
+        bounds: bounds.map(to_degree_bounds),
+    }))
+}
