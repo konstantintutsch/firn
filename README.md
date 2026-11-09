@@ -70,6 +70,19 @@ a server with.
   </tr>
 </table>
 
+## Before you run it
+
+**Keep it off the public internet.** I recommend running Firn behind a VPN, for
+example [WireGuard](https://www.wireguard.com), and not exposing it to the
+internet. It holds your health and training data, and the map shows where you
+live and where you go.
+
+**It is vibe coded.** I write this project with the help of AI, and I review
+that code less thoroughly than I review production software. I do value data
+integrity and want to keep it: I use Firn myself and rely on it to back up my
+health and training data. Still, keep your own backups of the database and the
+`data` volume, and of your Garmin data, which stays on Garmin Connect.
+
 ## Getting started
 
 Runs on a server with Docker, behind a reverse proxy that serves HTTPS. Needs an
