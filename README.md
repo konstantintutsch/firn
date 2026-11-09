@@ -72,42 +72,46 @@ a server with.
 
 ## Getting started
 
-Requires Docker, [just](https://just.systems) and an OpenID Connect provider,
-like Authentik, Keycloak, Authelia or Google.
+Runs on a server with Docker, behind a reverse proxy that serves HTTPS. Needs an
+OpenID Connect provider, like Authentik, Keycloak, Authelia or Google.
 
-1. Create an OpenID Connect client at your provider, with the redirect URI
-   `http://localhost:8080/api/auth/callback`.
-2. Copy `.env.example` to `.env`. Fill in `APP_SECRET`, `OIDC_ISSUER`,
-   `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`.
-3. Run `just up`, open <http://localhost:8080> and sign in.
-4. Create a Personal API key on
+1. Build the images. The **Images** workflow in `.gitea/workflows/images.yaml`
+   checks the code, then builds `<owner>/firn/backend` and
+   `<owner>/firn/frontend` on Gitea Actions and pushes them to the Gitea
+   container registry. Add the secret `REGISTRY_TOKEN`, an access token with the
+   `write:package` scope, and push a tag like `v0.1.0`. The workflow file lists
+   the other settings.
+2. Create an OpenID Connect client at your provider, with the redirect URI
+   `https://firn.example.com/api/auth/callback`, for the address you serve Firn at.
+3. Copy `examples/docker-compose.yaml` and `examples/.env.example` to the server
+   as `docker-compose.yaml` and `.env`. Fill in `.env`: `FIRN_IMAGES`,
+   `POSTGRES_PASSWORD`, `APP_SECRET`, `PUBLIC_URL` and the `OIDC_` variables.
+4. Run `docker compose up -d`. Point the reverse proxy at `127.0.0.1:8080`.
+   Sign-in cookies are only marked secure if `PUBLIC_URL` starts with
+   `https://`.
+5. Open `PUBLIC_URL` and sign in.
+6. Create a Personal API key on
    [Garmin Connect](https://connect.garmin.com/app/settings/personalApiToken)
    and add it under **Settings**.
-5. Select **Sync** to save your data. Select it again at any time to add new data,
+7. Select **Sync** to save your data. Select it again at any time to add new data,
    or set `SYNC_INTERVAL_HOURS`.
 
-To serve Firn at another address, set `PUBLIC_URL` to it and `WEB_BIND` to
-`0.0.0.0`, and register `${PUBLIC_URL}/api/auth/callback` at the provider. Use
-HTTPS, for example through a reverse proxy: sign-in cookies are only marked
-secure if `PUBLIC_URL` starts with `https://`.
+The API documentation is at `/api/docs`.
 
-`just` lists all commands. The API documentation is at
-<http://localhost:8080/api/docs>.
+### Upgrading
 
-### Trying it with a local Authelia
+Pull the new images and run `docker compose up -d`. The backend migrates the
+database when it starts. Back up the database and the `data` volume first:
+there is no way back to an older version after a migration.
 
-`just authelia` starts the app with a local [Authelia](https://www.authelia.com)
-at <https://authelia.localhost:9091>, already set up as the provider. Sign in as
-`alice` or `bob`, both with the password `firn`. `.env` still needs
-`APP_SECRET`.
+Versions before the file store kept original files and photos in the database.
+The first start of a newer version moves them to `DATA_DIR`, which can take a
+while for a long history. An interrupted move continues on the next start.
 
-The first run creates a test CA and certificate in `dev/authelia/secrets`. The
-browser warns about the certificate: accept it, or trust
-`dev/authelia/secrets/ca.public.crt`. Chrome and Firefox find
-`authelia.localhost` on their own. Other browsers may need
-`127.0.0.1 authelia.localhost` in `/etc/hosts`.
+### Upgrading from a version without accounts
 
-Only use this to try Firn out: the configuration's secrets are public.
+The first account to sign in takes over all saved activities. If `.env` still
+holds `GARMIN_PERSONAL_API_KEY`, that account also takes over the key.
 
 ## Configuration
 
@@ -129,33 +133,6 @@ Set these in `.env`.
 | `WEB_BIND`, `WEB_PORT` | `127.0.0.1`, `8080` | Where `just up` serves the app. |
 | `POSTGRES_PASSWORD` | `firn` | The database password. |
 | `GARMIN_PERSONAL_API_KEY` | | Only from before accounts: the first account to sign in takes it over. |
-
-## Running it on a server
-
-The **Images** workflow in `.gitea/workflows/images.yaml` checks the code, then
-builds the images `<owner>/firn/backend` and `<owner>/firn/frontend` on
-Gitea Actions and pushes them to the Gitea container registry. Add the secret
-`REGISTRY_TOKEN`, an access token with the `write:package` scope. The workflow
-file lists the other settings.
-
-`examples/docker-compose.yaml` runs those images behind your reverse proxy. Copy it
-with `examples/.env.example` as `.env`, fill that in and run
-`docker compose up -d`.
-
-### Upgrading
-
-Pull the new images and run `docker compose up -d`. The backend migrates the
-database when it starts. Back up the database and the `data` volume first:
-there is no way back to an older version after a migration.
-
-Versions before the file store kept original files and photos in the database.
-The first start of a newer version moves them to `DATA_DIR`, which can take a
-while for a long history. An interrupted move continues on the next start.
-
-### Upgrading from a version without accounts
-
-The first account to sign in takes over all saved activities. If `.env` still
-holds `GARMIN_PERSONAL_API_KEY`, that account also takes over the key.
 
 ## What a sync saves
 
@@ -232,6 +209,19 @@ add it under **Settings**.
 
 ## Development
 
+Requires Docker, [just](https://just.systems) and an OpenID Connect provider.
+`just` lists all commands.
+
+1. Create an OpenID Connect client at your provider, with the redirect URI
+   `http://localhost:8080/api/auth/callback`.
+2. Copy `.env.example` to `.env`. Fill in `APP_SECRET`, `OIDC_ISSUER`,
+   `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`.
+3. Run `just up` and open <http://localhost:8080>. The API documentation is at
+   <http://localhost:8080/api/docs>.
+
+To serve it at another address, set `PUBLIC_URL` to it and `WEB_BIND` to
+`0.0.0.0`, and register `${PUBLIC_URL}/api/auth/callback` at the provider.
+
 | Command | What it does |
 |---|---|
 | `just up`, `just down` | Starts and stops the app at <http://localhost:8080>. |
@@ -246,3 +236,18 @@ server in `dev/demo/fake_garmin.py` stands in for Garmin and serves two years of
 generated activities, tracks, photos and health data, the same on every start.
 Open the demo with the cookie `firn_session=demo-session-token`, which
 `dev/demo/seed.sh` creates.
+
+### Trying it with a local Authelia
+
+`just authelia` starts the app with a local [Authelia](https://www.authelia.com)
+at <https://authelia.localhost:9091>, already set up as the provider. Sign in as
+`alice` or `bob`, both with the password `firn`. `.env` still needs
+`APP_SECRET`.
+
+The first run creates a test CA and certificate in `dev/authelia/secrets`. The
+browser warns about the certificate: accept it, or trust
+`dev/authelia/secrets/ca.public.crt`. Chrome and Firefox find
+`authelia.localhost` on their own. Other browsers may need
+`127.0.0.1 authelia.localhost` in `/etc/hosts`.
+
+Only use this to try Firn out: the configuration's secrets are public.
