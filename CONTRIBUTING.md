@@ -43,12 +43,15 @@ Write them according to [Conventional Commits](https://www.conventionalcommits.o
 like `fix: keep the splits of an imported file`. Mark a breaking change with `!`
 and a `BREAKING CHANGE:` line.
 
-## AI-written code
+## Review and AI-written code
 
-You may use AI, as I do. Say so in the pull request. I review every change
-before I merge it, whoever or whatever wrote it, and I may ask you to explain or
-rework parts. Read, run and understand what you submit. Data integrity comes
-first, so be extra careful with imports, exports, sync and migrations.
+I review every contribution before I merge it, and I check code from other
+people more thoroughly than the AI-written code I write for this project
+myself. Expect questions, and requests to explain or rework parts.
+
+You may use AI, as I do. Say so in the pull request. Read, run and understand
+what you submit. Data integrity comes first, so be extra careful with imports,
+exports, sync and migrations.
 
 ## License
 
