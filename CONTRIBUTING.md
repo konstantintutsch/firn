@@ -45,9 +45,10 @@ and a `BREAKING CHANGE:` line.
 
 ## AI-written code
 
-You may use AI, as I do. You are responsible for the code you submit: read it,
-run it and understand it. Data integrity comes first, so be extra careful with
-imports, exports, sync and migrations.
+You may use AI, as I do. Say so in the pull request. I review every change
+before I merge it, whoever or whatever wrote it, and I may ask you to explain or
+rework parts. Read, run and understand what you submit. Data integrity comes
+first, so be extra careful with imports, exports, sync and migrations.
 
 ## License
 
