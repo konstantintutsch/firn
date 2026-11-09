@@ -3,8 +3,8 @@ users:
   alice:
     displayname: Alice
     email: alice@example.com
-    password: $argon2id$v=19$m=65536,t=3,p=4$CfUly7Z/vlj6NaWUULCe4A$/ec55bOb4OPMbUIoRq83prS+6ESF17nblHid65gCaTw
+    password: $argon2id$v=19$m=65536,t=3,p=4$QjOgI+8STYKoDefNJClSnw$ifsxbLW/snOe8cm67Zu9Adzc+jQDviwKxu9cPSoy+vY
   bob:
     displayname: Bob
     email: bob@example.com
-    password: $argon2id$v=19$m=65536,t=3,p=4$CfUly7Z/vlj6NaWUULCe4A$/ec55bOb4OPMbUIoRq83prS+6ESF17nblHid65gCaTw
+    password: $argon2id$v=19$m=65536,t=3,p=4$QjOgI+8STYKoDefNJClSnw$ifsxbLW/snOe8cm67Zu9Adzc+jQDviwKxu9cPSoy+vY
