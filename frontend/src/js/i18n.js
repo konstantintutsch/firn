@@ -38,7 +38,7 @@ const GERMAN = {
   "Sign in": "Anmelden",
   "Sign out": "Abmelden",
   Appearance: "Darstellung",
-  About: "Über",
+  "About Firn": "Über Firn",
   "Source code": "Quellcode",
   Theme: "Design",
   System: "System",
