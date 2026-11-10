@@ -1,8 +1,7 @@
 # Firn
 
-A heatmap of all your Garmin activities on a global map, with statistics on
-your training, sleep and health. Self-hosted, for you and the people you share
-a server with.
+A self-hosted heatmap of your Garmin activities, with statistics on your
+training, sleep and health.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/map-dark.jpg">
@@ -58,16 +57,14 @@ a server with.
   </tr>
 </table>
 
-## Before you run it
+## Notes
 
-**Keep it off the public internet.** Run Firn behind a VPN, for example
-[WireGuard](https://www.wireguard.com). It holds your health and training data,
-and the map shows where you live and where you go.
-
-**It is vibe coded.** I write this project with the help of AI and review that
-code less thoroughly than production software. I rely on Firn myself and value
-data integrity, but keep your own backups of the database, the `data` volume and
-your Garmin data.
+- **Keep it off the public internet.** Use a VPN like
+  [WireGuard](https://www.wireguard.com). Firn holds your health data, and the
+  map shows where you live.
+- **Most of the code was written with AI.** I did not review the base before
+  building on it, and I am now improving its quality. Keep backups of the
+  database and the `data` volume.
 
 ## Getting started
 
