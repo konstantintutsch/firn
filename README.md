@@ -71,22 +71,18 @@ training, sleep and health.
 Needs a server with Docker, a reverse proxy that serves HTTPS, and an OpenID
 Connect provider like Authentik, Keycloak, Authelia or Google.
 
-1. Get the images. The **Images** workflow in `.github/workflows/images.yaml`
-   builds `ghcr.io/konstantintutsch/firn/backend` and
-   `ghcr.io/konstantintutsch/firn/frontend` and pushes them to the GitHub
-   container registry.
-2. Create an OpenID Connect client at your provider, with the redirect URI
+1. Create an OpenID Connect client at your provider, with the redirect URI
    `https://firn.example.com/api/auth/callback`, for the address you serve Firn at.
-3. Copy `examples/docker-compose.yaml` and `examples/.env.example` to the server
+2. Copy `examples/docker-compose.yaml` and `examples/.env.example` to the server
    as `docker-compose.yaml` and `.env`. Fill in `.env`: `FIRN_IMAGES`,
    `POSTGRES_PASSWORD`, `APP_SECRET`, `PUBLIC_URL` and the `OIDC_` variables.
-4. Run `docker compose up -d`. Point the reverse proxy at `127.0.0.1:8080`.
+3. Run `docker compose up -d`. Point the reverse proxy at `127.0.0.1:8080`.
    Cookies are only marked secure if `PUBLIC_URL` starts with `https://`.
-5. Open `PUBLIC_URL` and sign in.
-6. Create a Personal API key on
+4. Open `PUBLIC_URL` and sign in.
+5. Create a Personal API key on
    [Garmin Connect](https://connect.garmin.com/app/settings/personalApiToken)
    and add it under **Settings**.
-7. Select **Sync**. Select it again at any time to add new data, or set
+6. Select **Sync**. Select it again at any time to add new data, or set
    `SYNC_INTERVAL_HOURS`.
 
 The API documentation is at `/api/docs`.
