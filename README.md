@@ -1,6 +1,6 @@
 # Firn
 
-A self-hosted heatmap of your Garmin activities, with statistics on your
+A self-hosted heatmap of your endurance training activities, with statistics on your
 training, sleep and health.
 
 <picture>
