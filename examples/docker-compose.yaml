@@ -27,8 +27,6 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgres://firn:${POSTGRES_PASSWORD}@db/firn
-      # Set to true in .env to serve the API documentation at /api/docs.
-      API_DOCS: ${API_DOCS:-false}
     volumes:
       # Original files and photos of the activities.
       - data:/data
