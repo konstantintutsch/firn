@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.1 - 2026-11-10
+
+Firn now lives on GitHub.
+
+### Changed
+
+- Move the repository to GitHub. Docker images are built by GitHub Actions and published to the GitHub container registry as `ghcr.io/konstantintutsch/firn`. Update the image names in your deployment.
+- Turn off the API documentation in the example configuration.
+- Read `API_DOCS` only from the env file.
+- Make translations optional for contributors.
+- Shorten the README and getting started.
+
+### Added
+
+- Show the version and a link to the repository in Settings.
+
+### Fixed
+
+- Keep navigation labels inside the bar on narrow screens.
+- Make the Authelia test password hashes in the development setup match `firn`.
+- Make the About section in Settings readable.
+
 ## 0.2.0 - 2026-11-09
 
 Runmap is now Firn.
