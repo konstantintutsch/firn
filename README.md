@@ -85,7 +85,8 @@ Connect provider like Authentik, Keycloak, Authelia or Google.
 6. Select **Sync**. Select it again at any time to add new data, or set
    `SYNC_INTERVAL_HOURS`.
 
-The API documentation is at `/api/docs`.
+The API documentation is at `/api/docs`. The example turns it off. Set
+`API_DOCS=true` in `.env` to serve it.
 
 ### Upgrading
 
