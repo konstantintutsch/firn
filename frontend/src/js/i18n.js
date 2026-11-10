@@ -38,6 +38,8 @@ const GERMAN = {
   "Sign in": "Anmelden",
   "Sign out": "Abmelden",
   Appearance: "Darstellung",
+  About: "Über",
+  "Source code": "Quellcode",
   Theme: "Design",
   System: "System",
   "Light mode": "Hell",
