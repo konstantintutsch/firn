@@ -1,6 +1,6 @@
 # Firn
 
-A self-hosted heatmap of your Garmin activities, with statistics on your
+A self-hosted heatmap of your endurance training activities, with statistics on your
 training, sleep and health.
 
 <picture>
@@ -29,33 +29,39 @@ training, sleep and health.
 - English and German, metric and imperial units, light and dark themes, phone
   layouts and an installable app that opens offline.
 
-<table>
-  <tr>
-    <td>
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/activity-dark.jpg">
-        <img alt="An activity with photos, an elevation profile and the track colored by heart rate" src="docs/screenshots/activity-light.jpg">
-      </picture>
-    </td>
-    <td>
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/statistics-dark.jpg">
-        <img alt="Statistics with streaks, a calendar, personal records and a year over year comparison" src="docs/screenshots/statistics-light.jpg">
-      </picture>
-    </td>
-  </tr>
-  <tr>
-    <td>
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/activities-dark.jpg">
-        <img alt="The list of activities, grouped by month" src="docs/screenshots/activities-light.jpg">
-      </picture>
-    </td>
-    <td align="center">
-      <img alt="The heatmap on a phone" src="docs/screenshots/mobile-light.jpg" width="240">
-    </td>
-  </tr>
-</table>
+## Screenshots
+
+### Activity
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/activity-dark.jpg">
+  <img alt="An activity with photos, an elevation profile and the track colored by heart rate" src="docs/screenshots/activity-light.jpg">
+</picture>
+
+### Training statistics
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/training-dark.jpg">
+  <img alt="Training statistics with a calendar, personal records, a year over year comparison and distance per month" src="docs/screenshots/training-light.jpg">
+</picture>
+
+### Health statistics
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/health-dark.jpg">
+  <img alt="Health statistics with sleep, HRV, resting heart rate, stress and Body Battery" src="docs/screenshots/health-light.jpg">
+</picture>
+
+### Activities
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/activities-dark.jpg">
+  <img alt="The list of activities, grouped by month" src="docs/screenshots/activities-light.jpg">
+</picture>
+
+### Phone
+
+<img alt="The heatmap on a phone" src="docs/screenshots/mobile-light.jpg" width="320">
 
 ## Notes
 

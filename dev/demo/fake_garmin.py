@@ -622,6 +622,11 @@ def make_health(today):
             "hrv": round(rng.gauss(48 + 10 * progress, 5)),
             "weight": round((78.5 - 3 * progress + rng.gauss(0, 0.4)) * 1000),
         }
+    # Garmin's weekly average is the mean of the last seven nights, not a copy of the night.
+    ordered = [days[key] for key in sorted(days)]
+    for index, day in enumerate(ordered):
+        window = ordered[max(0, index - 6):index + 1]
+        day["hrvWeekly"] = round(sum(entry["hrv"] for entry in window) / len(window))
     return days
 
 
@@ -648,7 +653,7 @@ def hrv_record(day):
     return {
         "calendarDate": day["calendarDate"],
         "lastNightAvg": day["hrv"],
-        "weeklyAvg": day["hrv"] - 1,
+        "weeklyAvg": day["hrvWeekly"],
         "lastNight5MinHigh": day["hrv"] + 18,
         "baseline": {"balancedLow": 42, "balancedUpper": 60},
     }

@@ -21,11 +21,16 @@ async function page(theme, viewport, deviceScaleFactor = 2) {
   return context.newPage();
 }
 
-async function shoot(name, url, { theme, viewport = { width: 1440, height: 900 }, wait = 4000, before } = {}) {
+async function shoot(name, url, { theme, viewport = { width: 1440, height: 900 }, wait = 4000, before, section } = {}) {
   const tab = await page(theme, viewport);
   await tab.goto(`${BASE}${url}`);
   await tab.waitForTimeout(wait);
   await before?.(tab);
+  // Scrolled to the top of a section, so its charts fill the image and the nav floats over them as in the app.
+  if (section) {
+    await tab.locator(section).evaluate((element) => window.scrollTo(0, element.offsetTop));
+    await tab.waitForTimeout(500);
+  }
   // JPEG keeps the map photos small enough for the repository.
   await tab.screenshot({ path: `${OUT}/${name}-${theme}.jpg`, type: "jpeg", quality: 85 });
   await tab.context().close();
@@ -57,10 +62,9 @@ for (const theme of ["light", "dark"]) {
       await tab.waitForTimeout(1500);
     },
   });
-  await shoot("statistics", "/stats/?days=365", {
-    theme,
-    viewport: { width: 1280, height: 1100 },
-  });
+  for (const [name, section] of [["training", "#activity-section"], ["health", "#health-section"]]) {
+    await shoot(name, "/stats/?days=365", { theme, viewport: { width: 1280, height: 900 }, section });
+  }
   await shoot("activities", "/activities/", { theme, viewport: { width: 1280, height: 900 } });
 }
 await shoot("mobile", "/#11/52.5/13.39", {
