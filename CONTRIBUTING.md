@@ -31,8 +31,9 @@ just test
 - Change the database only through a migration: `just migration <name>`, then
   `just schema`. Never edit a migration that is released, add a new one.
   Migrations need a working `down.sql`.
-- User-facing text is English in the code. Add the German translation in
-  `frontend/src/js/i18n.js`.
+- User-facing text is English in the code. You do not need to translate it:
+  a missing translation falls back to English, and I add the German text in
+  `frontend/src/js/i18n.js` when I merge.
 - Update the README if you change how Firn is set up or configured.
 - Do not commit personal data, secrets, or real activity files. The demo shows
   made-up data only.
