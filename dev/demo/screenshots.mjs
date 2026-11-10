@@ -21,13 +21,27 @@ async function page(theme, viewport, deviceScaleFactor = 2) {
   return context.newPage();
 }
 
-async function shoot(name, url, { theme, viewport = { width: 1440, height: 900 }, wait = 4000, before } = {}) {
+async function shoot(name, url, { theme, viewport = { width: 1440, height: 900 }, wait = 4000, before, section, height } = {}) {
   const tab = await page(theme, viewport);
   await tab.goto(`${BASE}${url}`);
   await tab.waitForTimeout(wait);
   await before?.(tab);
   // JPEG keeps the map photos small enough for the repository.
-  await tab.screenshot({ path: `${OUT}/${name}-${theme}.jpg`, type: "jpeg", quality: 85 });
+  const path = `${OUT}/${name}-${theme}.jpg`;
+  if (section) {
+    // The top of one section, cut after a row of cards, without the floating nav, so the charts fill the image and stay readable.
+    await tab.evaluate(() => document.querySelector(".nav").style.display = "none");
+    const box = await tab.locator(section).boundingBox();
+    await tab.screenshot({
+      path,
+      type: "jpeg",
+      quality: 85,
+      fullPage: true,
+      clip: { x: box.x, y: box.y, width: box.width, height: Math.min(box.height, height) },
+    });
+  } else {
+    await tab.screenshot({ path, type: "jpeg", quality: 85 });
+  }
   await tab.context().close();
   console.log(`${name}-${theme}.jpg`);
 }
@@ -57,10 +71,9 @@ for (const theme of ["light", "dark"]) {
       await tab.waitForTimeout(1500);
     },
   });
-  await shoot("statistics", "/stats/?days=365", {
-    theme,
-    viewport: { width: 1280, height: 1100 },
-  });
+  for (const [name, section, height] of [["training", "#activity-section", 835], ["health", "#health-section", 820]]) {
+    await shoot(name, "/stats/?days=365", { theme, viewport: { width: 1280, height: 900 }, section, height });
+  }
   await shoot("activities", "/activities/", { theme, viewport: { width: 1280, height: 900 } });
 }
 await shoot("mobile", "/#11/52.5/13.39", {
