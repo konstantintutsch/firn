@@ -1085,6 +1085,27 @@ a {
   transition: background-color 0.2s, color 0.2s, transform 0.2s;
 }
 
+/* Five items with long German labels do not fit side by side on a narrow phone. */
+@media (max-width: 480px) {
+  .nav {
+    width: calc(100vw - 16px);
+    box-sizing: border-box;
+  }
+
+  .nav-item {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 6px 2px;
+    font-size: 11px;
+  }
+
+  .nav-item span:not(.nav-highlight) {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
 .nav-item .icon {
   width: 22px;
   height: 22px;
