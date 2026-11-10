@@ -1,20 +1,13 @@
 # Checks the code, then builds the backend and frontend images, and pushes them
-# to the container registry of this Gitea instance as <owner>/<repository>/<component>.
+# to the GitHub container registry as ghcr.io/<owner>/<repository>/<component>.
 # Pull requests only check and build, to see that the images work.
 #
-# Set up:
-# - Secret REGISTRY_TOKEN: an access token with the write:package scope.
-# - Variable REGISTRY_USER (optional): who owns the token. Defaults to whoever
-#   started the run.
-# - Variable REGISTRY (optional): another registry, like ghcr.io. Defaults to
-#   this Gitea instance.
+# Set up: nothing. The workflow pushes with the GITHUB_TOKEN of the run.
 # - Variable PLATFORMS (optional): like linux/amd64,linux/arm64. Defaults to
 #   linux/amd64. Other platforms build under emulation, which is slow for Rust.
 #
 # Tags: the branch, the short commit, and 1.2.3, 1.2, 1 and latest for a tag
 # v1.2.3. A prerelease tag like v1.2.3-rc.1 only gets 1.2.3-rc.1 and never latest.
-#
-# Gitea also offers the github context used below, which keeps actionlint working.
 
 name: Images
 
@@ -29,9 +22,21 @@ jobs:
   # The same checks as `just lint` and `just test`, against a throwaway database.
   backend:
     runs-on: ubuntu-latest
-    # A Node image, since the runner starts actions like checkout with the job
-    # container's node. Rust comes from rustup, in the version of the Dockerfile.
-    container: node:24-bookworm
+    permissions:
+      contents: read
+    # The version of docker-compose.yaml.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       TEST_DATABASE_URL: postgres://postgres:test@localhost/postgres
     defaults:
@@ -39,34 +44,30 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
+      # Rust in the version of the Dockerfile.
       - name: Install Rust
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-            | sh -s -- -y --profile minimal --default-toolchain 1.99 --component rustfmt,clippy
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      # In the job container, since the runner does not connect the job to a
-      # service container. The version of docker-compose.yaml, from PostgreSQL's
-      # own repository.
-      - name: Start PostgreSQL
-        run: |
-          apt-get update
-          apt-get install --yes --no-install-recommends postgresql-common
-          /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
-          apt-get install --yes --no-install-recommends postgresql-18
-          pg_ctlcluster 18 main start
-          su postgres --command "psql --command \"ALTER USER postgres PASSWORD 'test'\""
+        run: rustup toolchain install 1.99 --profile minimal --component rustfmt,clippy --no-self-update --default
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- --deny warnings
       - run: cargo test --locked
 
   frontend:
     runs-on: ubuntu-latest
-    container: node:24-alpine
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
       - run: npm run build
@@ -74,6 +75,9 @@ jobs:
   image:
     needs: [backend, frontend]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -88,14 +92,10 @@ jobs:
       - name: Name the image
         id: name
         env:
-          REGISTRY: ${{ vars.REGISTRY }}
-          SERVER_URL: ${{ github.server_url }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          registry="${REGISTRY:-${SERVER_URL#*://}}"
           # Registries only accept lowercase names.
-          echo "registry=${registry%/}" >> "$GITHUB_OUTPUT"
-          echo "image=${registry%/}/${REPOSITORY,,}/${{ matrix.component }}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${REPOSITORY,,}/${{ matrix.component }}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/metadata-action@v5
         id: meta
@@ -113,19 +113,14 @@ jobs:
       - uses: docker/setup-qemu-action@v3
         if: vars.PLATFORMS != '' && vars.PLATFORMS != 'linux/amd64'
 
-      # On the network of the Docker daemon, so that BuildKit uses its resolver.
-      # Otherwise a daemon in Docker (dind) hands BuildKit public DNS servers,
-      # which do not know a registry on a local network.
       - uses: docker/setup-buildx-action@v3
-        with:
-          driver-opts: network=host
 
       - uses: docker/login-action@v3
         if: github.event_name != 'pull_request'
         with:
-          registry: ${{ steps.name.outputs.registry }}
-          username: ${{ vars.REGISTRY_USER || github.actor }}
-          password: ${{ secrets.REGISTRY_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: docker/build-push-action@v6
         with:

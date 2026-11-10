@@ -88,12 +88,10 @@ health and training data. Still, keep your own backups of the database and the
 Runs on a server with Docker, behind a reverse proxy that serves HTTPS. Needs an
 OpenID Connect provider, like Authentik, Keycloak, Authelia or Google.
 
-1. Build the images. The **Images** workflow in `.gitea/workflows/images.yaml`
-   checks the code, then builds `<owner>/firn/backend` and
-   `<owner>/firn/frontend` on Gitea Actions and pushes them to the Gitea
-   container registry. Add the secret `REGISTRY_TOKEN`, an access token with the
-   `write:package` scope, and push a tag like `v0.1.0`. The workflow file lists
-   the other settings.
+1. Get the images. The **Images** workflow in `.github/workflows/images.yaml`
+   checks the code, then builds `ghcr.io/konstantintutsch/firn/backend` and
+   `ghcr.io/konstantintutsch/firn/frontend` on GitHub Actions and pushes them to
+   the GitHub container registry.
 2. Create an OpenID Connect client at your provider, with the redirect URI
    `https://firn.example.com/api/auth/callback`, for the address you serve Firn at.
 3. Copy `examples/docker-compose.yaml` and `examples/.env.example` to the server
