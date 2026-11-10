@@ -10,6 +10,8 @@ training, sleep and health.
 
 <sub>All screenshots show made-up data from the demo, see [Development](#development).</sub>
 
+Are you interested in why I build this project, what motivates me to run it and in what direction I want to take it? This [blog post](https://konstantintutsch.com/blog/introducing-firn/) may answer your questions!
+
 ## Features
 
 - **Heatmap** of every activity with GPS, with search and filters. Filters and
