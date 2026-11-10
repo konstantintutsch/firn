@@ -91,8 +91,7 @@ OpenID Connect provider, like Authentik, Keycloak, Authelia or Google.
 1. Get the images. The **Images** workflow in `.github/workflows/images.yaml`
    checks the code, then builds `ghcr.io/konstantintutsch/firn/backend` and
    `ghcr.io/konstantintutsch/firn/frontend` on GitHub Actions and pushes them to
-   the GitHub container registry. Push a tag like `v0.1.0` to publish a release.
-   The workflow file lists the other settings.
+   the GitHub container registry.
 2. Create an OpenID Connect client at your provider, with the redirect URI
    `https://firn.example.com/api/auth/callback`, for the address you serve Firn at.
 3. Copy `examples/docker-compose.yaml` and `examples/.env.example` to the server
