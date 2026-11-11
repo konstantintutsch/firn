@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::api::{ApiError, AppState, ErrorBody, require_header};
 use crate::auth::CurrentUser;
-use crate::db::{self, NewRoute, RouteSummary};
+use crate::database::{self, NewRoute, RouteSummary};
 use crate::track::{self, Point, Sample};
 use geometry::{RoutePoint, route_points};
 
@@ -108,7 +108,7 @@ async fn save(
         preview: &serde_json::to_value(&prepared.preview).map_err(anyhow::Error::from)?,
         activity_id,
     };
-    Ok(db::insert_route(&state.pool, &route).await?)
+    Ok(database::insert_route(&state.pool, &route).await?)
 }
 
 /// The account's saved routes, newest first.
@@ -125,7 +125,7 @@ pub async fn list_routes(
     CurrentUser(user): CurrentUser,
 ) -> Result<Json<RouteList>, ApiError> {
     Ok(Json(RouteList {
-        routes: db::list_routes(&state.pool, user.id).await?,
+        routes: database::list_routes(&state.pool, user.id).await?,
     }))
 }
 
@@ -153,7 +153,7 @@ pub async fn create_route(
     require_header(&headers)?;
     let name = checked_name(request.name)?;
     let description = checked_description(request.description)?;
-    let (activity, _) = db::activity_with_summary(&state.pool, user.id, request.activity_id)
+    let (activity, _) = database::activity_with_summary(&state.pool, user.id, request.activity_id)
         .await?
         .ok_or(ApiError::NotFound("no such activity"))?;
     let zip = state
@@ -233,7 +233,7 @@ pub async fn route(
     CurrentUser(user): CurrentUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<RouteDetail>, ApiError> {
-    let (route, points) = db::route(&state.pool, user.id, id)
+    let (route, points) = database::route(&state.pool, user.id, id)
         .await?
         .ok_or(ApiError::NotFound("no such route"))?;
     let points = serde_json::from_value(points).map_err(anyhow::Error::from)?;
@@ -266,7 +266,7 @@ pub async fn update_route(
     require_header(&headers)?;
     let name = checked_name(Some(change.name))?.ok_or(ApiError::BadRequest("the name is empty"))?;
     let description = checked_description(change.description)?;
-    if db::update_route(&state.pool, user.id, id, &name, description.as_deref()).await? {
+    if database::update_route(&state.pool, user.id, id, &name, description.as_deref()).await? {
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(ApiError::NotFound("no such route"))
@@ -293,7 +293,7 @@ pub async fn delete_route(
     headers: HeaderMap,
 ) -> Result<StatusCode, ApiError> {
     require_header(&headers)?;
-    db::delete_route(&state.pool, user.id, id).await?;
+    database::delete_route(&state.pool, user.id, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -313,7 +313,7 @@ pub async fn route_file(
     CurrentUser(user): CurrentUser,
     Path(id): Path<Uuid>,
 ) -> Result<Response, ApiError> {
-    let (route, points) = db::route(&state.pool, user.id, id)
+    let (route, points) = database::route(&state.pool, user.id, id)
         .await?
         .ok_or(ApiError::NotFound("no such route"))?;
     let points: Vec<RoutePoint> = serde_json::from_value(points).map_err(anyhow::Error::from)?;

@@ -1,11 +1,10 @@
+//! Training blocks: the weeks that lead up to each race.
+
 use anyhow::Result;
-use chrono::{DateTime, NaiveDate, Utc};
-use diesel::prelude::*;
-use diesel_async::RunQueryDsl;
+use chrono::NaiveDate;
 use uuid::Uuid;
 
-use super::Pool;
-use crate::schema::{activities, race_results};
+use crate::database::{self, Pool};
 
 /// A training block: the weeks from one race to the next that is at least as long.
 /// Shorter races in between do not end it.
@@ -55,41 +54,7 @@ pub fn training_blocks(races: &[RaceDay]) -> Vec<TrainingBlock> {
 
 /// The account's training blocks, newest first.
 pub async fn training_blocks_of(pool: &Pool, user_id: i64) -> Result<Vec<TrainingBlock>> {
-    #[derive(Queryable)]
-    struct Row {
-        id: Uuid,
-        name: String,
-        event: Option<String>,
-        started_at: DateTime<Utc>,
-        distance_m: f64,
-        started_local: Option<String>,
-    }
-    let rows: Vec<Row> = race_results::table
-        .inner_join(activities::table)
-        .filter(activities::user_id.eq(user_id))
-        .order((activities::started_at, activities::id))
-        .select((
-            activities::id,
-            activities::name,
-            race_results::event,
-            activities::started_at,
-            race_results::distance_m,
-            activities::started_local,
-        ))
-        .load(&mut pool.get().await?)
-        .await?;
-    let races: Vec<RaceDay> = rows
-        .into_iter()
-        .map(|row| RaceDay {
-            id: row.id,
-            name: row.event.unwrap_or(row.name),
-            day: row
-                .started_local
-                .and_then(|local| local.get(..10)?.parse().ok())
-                .unwrap_or_else(|| row.started_at.date_naive()),
-            distance_m: row.distance_m,
-        })
-        .collect();
+    let races = database::race_days(pool, user_id).await?;
     let mut blocks = training_blocks(&races);
     blocks.reverse();
     Ok(blocks)

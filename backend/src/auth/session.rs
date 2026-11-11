@@ -5,7 +5,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 
 use crate::api::{ApiError, AppState};
-use crate::db::{self, User};
+use crate::database::{self, User};
 use crate::secret::{self};
 
 pub const SESSION_COOKIE: &str = "firn_session";
@@ -19,7 +19,7 @@ impl FromRequestParts<AppState> for CurrentUser {
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
         let token = cookie(&parts.headers, SESSION_COOKIE).ok_or(ApiError::Unauthorized)?;
-        db::session_user(&state.pool, &secret::sha256(token))
+        database::session_user(&state.pool, &secret::sha256(token))
             .await?
             .map(CurrentUser)
             .ok_or(ApiError::Unauthorized)

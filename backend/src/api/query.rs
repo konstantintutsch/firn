@@ -3,7 +3,8 @@ use serde::Deserialize;
 use utoipa::IntoParams;
 use uuid::Uuid;
 
-use crate::db::{self, Filter, Pool};
+use crate::database::{Filter, Pool};
+use crate::training_blocks;
 
 /// Limits which activities count. Empty parameters are ignored and all others must match.
 #[derive(Deserialize, IntoParams)]
@@ -36,7 +37,7 @@ impl FilterQuery {
     pub async fn into_filter(self, pool: &Pool, user_id: i64) -> anyhow::Result<Filter> {
         let query = self;
         let block = match query.block {
-            Some(id) => db::training_blocks_of(pool, user_id)
+            Some(id) => training_blocks::training_blocks_of(pool, user_id)
                 .await?
                 .into_iter()
                 .find(|block| block.id == id),

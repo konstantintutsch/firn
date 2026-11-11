@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 
 use super::{ApiError, AppState, ErrorBody, require_header};
 use crate::auth::CurrentUser;
-use crate::db::{self};
+use crate::database;
 use crate::garmin::{GarminClient, GarminError};
 use crate::sync::{HealthRange, Report, sync_all};
 
@@ -80,7 +80,7 @@ pub(super) async fn sync_status(
     if let Some(status) = state.sync.lock().unwrap().get(&user.id) {
         return Ok(Json(status.clone()));
     }
-    let saved = db::last_sync(&state.pool, user.id)
+    let saved = database::last_sync(&state.pool, user.id)
         .await?
         // A status saved by an older version may not fit, which is no reason to fail.
         .and_then(|saved| serde_json::from_value(saved).ok());
@@ -139,7 +139,7 @@ pub(super) async fn start_sync(
 }
 
 /// Starts a sync of the account in the background, unless one is running.
-fn start_sync_of(state: &AppState, user: &db::User) -> Result<SyncStatus, ApiError> {
+fn start_sync_of(state: &AppState, user: &database::User) -> Result<SyncStatus, ApiError> {
     let Some(sealed) = &user.garmin_api_key else {
         return Err(ApiError::Conflict(
             "No Garmin API key is saved. Add one in the settings",
@@ -171,7 +171,7 @@ pub async fn sync_periodically(state: AppState, interval: Duration) {
     ticks.tick().await;
     loop {
         ticks.tick().await;
-        let users = match db::users_with_keys(&state.pool).await {
+        let users = match database::users_with_keys(&state.pool).await {
             Ok(users) => users,
             Err(error) => {
                 tracing::error!("{error:#}");
@@ -258,7 +258,7 @@ async fn run_sync(state: AppState, user_id: i64, api_key: String) {
         status.finished_at = Some(Utc::now());
         serde_json::to_value(&*status).expect("the status is plain data")
     };
-    if let Err(error) = db::save_last_sync(&state.pool, user_id, &saved).await {
+    if let Err(error) = database::save_last_sync(&state.pool, user_id, &saved).await {
         tracing::error!("{error:#}");
     }
 }

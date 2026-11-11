@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::api::{ApiError, AppState, ErrorBody, require_header};
-use crate::db::{self};
+use crate::database;
 use crate::garmin::{GarminClient, GarminError};
 
 use super::{CurrentUser, SESSION_COOKIE};
@@ -33,10 +33,10 @@ pub async fn delete_me(
     require_header(&headers)?;
     state.cancel_sync(user.id);
     // The files first: once the rows are gone, nothing says which files were the account's.
-    for id in db::activity_ids(&state.pool, user.id).await? {
+    for id in database::activity_ids(&state.pool, user.id).await? {
         state.files.remove_activity(id).await?;
     }
-    db::delete_user(&state.pool, user.id).await?;
+    database::delete_user(&state.pool, user.id).await?;
     state.forget_tracks(user.id);
     tracing::info!(user_id = user.id, "deleted an account");
     let mut response = StatusCode::NO_CONTENT.into_response();
@@ -111,7 +111,7 @@ pub async fn set_garmin_key(
         }
         Err(error) => return Err(ApiError::BadGateway(error.to_string())),
     }
-    db::set_garmin_key(
+    database::set_garmin_key(
         &state.pool,
         user.id,
         Some(&state.auth.secret_box.seal(key)?),
@@ -136,7 +136,7 @@ pub async fn delete_garmin_key(
     headers: HeaderMap,
 ) -> Result<StatusCode, ApiError> {
     require_header(&headers)?;
-    db::set_garmin_key(&state.pool, user.id, None).await?;
+    database::set_garmin_key(&state.pool, user.id, None).await?;
     // Without the key, a running sync should not keep using it.
     state.cancel_sync(user.id);
     Ok(StatusCode::NO_CONTENT)

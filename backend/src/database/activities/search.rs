@@ -8,7 +8,8 @@ use diesel_async::RunQueryDsl;
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::{Filter, Pool};
+use super::Filter;
+use crate::database::Pool;
 use crate::schema::{activities, track_points};
 
 /// The activities that match, for the heatmap to pick from its tracks.

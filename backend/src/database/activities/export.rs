@@ -6,7 +6,7 @@ use diesel_async::RunQueryDsl;
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::Pool;
+use crate::database::Pool;
 use crate::schema::{activities, activity_images};
 
 /// Everything about activities that an export holds, apart from files.

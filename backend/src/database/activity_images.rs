@@ -76,3 +76,29 @@ pub async fn image_type(
         .await
         .optional()?)
 }
+
+/// Some of the images that older versions kept in the database, by activity and image ID.
+pub async fn stored_images(
+    pool: &Pool,
+    limit: i64,
+) -> Result<Vec<(Uuid, String, Option<Vec<u8>>)>> {
+    Ok(activity_images::table
+        .filter(activity_images::data.is_not_null())
+        .select((
+            activity_images::activity_id,
+            activity_images::image_id,
+            activity_images::data,
+        ))
+        .limit(limit)
+        .load(&mut pool.get().await?)
+        .await?)
+}
+
+/// Removes an image's data from the database.
+pub async fn clear_stored_image(pool: &Pool, id: Uuid, image_id: &str) -> Result<()> {
+    diesel::update(activity_images::table.find((id, image_id)))
+        .set(activity_images::data.eq(None::<Vec<u8>>))
+        .execute(&mut pool.get().await?)
+        .await?;
+    Ok(())
+}

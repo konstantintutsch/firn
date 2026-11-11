@@ -4,7 +4,7 @@ use chrono::{Duration as Days, Utc};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use firn::api::{AppState, GarminSettings};
 use firn::auth::{Auth, OidcSettings, SESSION_COOKIE};
-use firn::db::{self, Pool};
+use firn::database::{self, Pool};
 use firn::files::FileStore;
 use firn::garmin::GarminClient;
 use firn::secret::{self, SecretBox};
@@ -23,7 +23,7 @@ pub fn uuid(garmin_id: i64) -> uuid::Uuid {
 /// Saves an activity under `uuid(activity.id)`, for the test account.
 pub async fn add_activity(pool: &Pool, activity: firn::garmin::Activity) -> uuid::Uuid {
     let id = uuid(activity.id);
-    db::upsert_activities_with_ids(pool, user(pool).await, &[(&activity, Some(id))])
+    database::upsert_activities_with_ids(pool, user(pool).await, &[(&activity, Some(id))])
         .await
         .unwrap();
     id
@@ -32,7 +32,7 @@ pub async fn add_activity(pool: &Pool, activity: firn::garmin::Activity) -> uuid
 /// The ID of the test account's activity with this Garmin ID, which a sync or an import chose.
 pub async fn activity_id(pool: &Pool, garmin_id: i64) -> uuid::Uuid {
     let user_id = user(pool).await;
-    db::ids_by_garmin_id(pool, user_id, &[garmin_id])
+    database::ids_by_garmin_id(pool, user_id, &[garmin_id])
         .await
         .unwrap()[&garmin_id]
 }
@@ -58,8 +58,8 @@ pub async fn test_pool() -> Pool {
         .await
         .unwrap();
     let (base, _) = admin_url.rsplit_once('/').unwrap();
-    let pool = db::connect(&format!("{base}/{name}")).unwrap();
-    db::migrate(&pool).await.unwrap();
+    let pool = database::connect(&format!("{base}/{name}")).unwrap();
+    database::migrate(&pool).await.unwrap();
     pool
 }
 
@@ -91,7 +91,7 @@ pub async fn user(pool: &Pool) -> i64 {
 }
 
 pub async fn user_named(pool: &Pool, subject: &str) -> i64 {
-    let (user, _) = db::sign_in_user(pool, ISSUER, subject, None, Some(subject))
+    let (user, _) = database::sign_in_user(pool, ISSUER, subject, None, Some(subject))
         .await
         .unwrap();
     user.id
@@ -100,7 +100,7 @@ pub async fn user_named(pool: &Pool, subject: &str) -> i64 {
 /// A `Cookie` header with a new session of the account.
 pub async fn cookie_for(pool: &Pool, user_id: i64) -> String {
     let token = secret::random_token();
-    db::create_session(
+    database::create_session(
         pool,
         user_id,
         &secret::sha256(&token),
@@ -128,7 +128,7 @@ pub async fn state_with_oidc(
 ) -> AppState {
     let user_id = user(&pool).await;
     let sealed = api_key.map(|key| secret_box().seal(key).unwrap());
-    db::set_garmin_key(&pool, user_id, sealed.as_deref())
+    database::set_garmin_key(&pool, user_id, sealed.as_deref())
         .await
         .unwrap();
     let files = files(&pool).await;

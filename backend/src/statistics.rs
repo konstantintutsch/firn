@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::api::{ApiError, AppState, ErrorBody, FilterQuery};
 use crate::auth::CurrentUser;
-use crate::db;
+use crate::database;
 
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
@@ -54,7 +54,7 @@ pub struct ActivityStatistic {
     anaerobic_training_effect: Option<f64>,
     training_load: Option<f64>,
     /// The official result, for races that have one entered.
-    result: Option<db::RaceResult>,
+    result: Option<database::RaceResult>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -83,14 +83,14 @@ pub async fn activity_statistics(
     CurrentUser(user): CurrentUser,
     Query(filter): Query<FilterQuery>,
 ) -> Result<Json<ActivityStatistics>, ApiError> {
-    let filter = db::Filter {
+    let filter = database::Filter {
         without_gps: true,
         ..filter.into_filter(&state.pool, user.id).await?
     };
     check_range(filter.from, filter.to)?;
-    let records = db::activity_records(&state.pool, &filter).await?;
+    let records = database::activity_records(&state.pool, &filter).await?;
     let ids: Vec<Uuid> = records.iter().map(|record| record.id).collect();
-    let mut results = db::race_results(&state.pool, &ids).await?;
+    let mut results = database::race_results(&state.pool, &ids).await?;
     Ok(Json(ActivityStatistics {
         activities: records
             .into_iter()
@@ -151,7 +151,8 @@ pub async fn health_statistics(
     let lead_in = range
         .from
         .and_then(|from| from.checked_sub_days(Days::new(RESTING_AVERAGE_DAYS - 1)));
-    let rows = db::daily_metrics(&state.pool, user.id, lead_in.or(range.from), range.to).await?;
+    let rows =
+        database::daily_metrics(&state.pool, user.id, lead_in.or(range.from), range.to).await?;
     let mut metrics: BTreeMap<String, Vec<(NaiveDate, f64)>> = BTreeMap::new();
     for (metric, day, value) in rows {
         metrics.entry(metric).or_default().push((day, value));

@@ -2,7 +2,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 
 use super::AppState;
-use crate::db::{self};
+use crate::database;
 
 /// Whether the backend runs and reaches its database, for container health checks.
 #[utoipa::path(
@@ -14,7 +14,7 @@ use crate::db::{self};
     )
 )]
 pub(super) async fn health(State(state): State<AppState>) -> StatusCode {
-    match db::ping(&state.pool).await {
+    match database::ping(&state.pool).await {
         Ok(()) => StatusCode::NO_CONTENT,
         Err(error) => {
             tracing::warn!("health check failed: {error:#}");

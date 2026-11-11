@@ -10,7 +10,7 @@ use super::activities::ActivityItem;
 use super::heatmap::COORDINATE_SCALE;
 use super::{ApiError, AppState, ErrorBody, require_header};
 use crate::auth::CurrentUser;
-use crate::db::{self};
+use crate::database;
 use crate::garmin::{GarminClient, GarminError};
 use crate::sync::{self};
 use crate::track::{self, Sample};
@@ -102,7 +102,7 @@ pub(super) struct ActivityDetail {
     /// `fit`, `gpx` or `tcx`: the kind of file the device recorded, or `None` without one.
     original_format: Option<String>,
     /// The official result, if it was a race and one was entered.
-    result: Option<db::RaceResult>,
+    result: Option<database::RaceResult>,
     /// The account's activity that started just before this one.
     previous_id: Option<Uuid>,
     /// The account's activity that started just after this one.
@@ -154,7 +154,7 @@ pub(super) async fn activity(
     CurrentUser(user): CurrentUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ActivityDetail>, ApiError> {
-    let (activity, summary) = db::activity_with_summary(&state.pool, user.id, id)
+    let (activity, summary) = database::activity_with_summary(&state.pool, user.id, id)
         .await?
         .ok_or(ApiError::NotFound("no such activity"))?;
     let (samples, original_format) = match state.files.original(id).await? {
@@ -188,17 +188,19 @@ pub(super) async fn activity(
             })
         },
     );
-    let images = db::image_ids(&state.pool, id)
+    let images = database::image_ids(&state.pool, id)
         .await?
         .into_iter()
         .map(|image_id| format!("/api/activities/{id}/images/{image_id}"))
         .collect();
-    let heart_rate_zones = db::document(&state.pool, user.id, "heart_rate_zones", "")
+    let heart_rate_zones = database::document(&state.pool, user.id, "heart_rate_zones", "")
         .await?
         .and_then(|document| heart_rate_zones(&document, &activity.activity_type));
     let (previous_id, next_id) =
-        db::neighbors(&state.pool, user.id, id, activity.started_at).await?;
-    let result = db::race_results(&state.pool, &[id]).await?.remove(&id);
+        database::neighbors(&state.pool, user.id, id, activity.started_at).await?;
+    let result = database::race_results(&state.pool, &[id])
+        .await?
+        .remove(&id);
     Ok(Json(ActivityDetail {
         activity: ActivityItem::new(activity, bounds, result.clone()),
         summary,

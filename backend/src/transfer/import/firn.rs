@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use zip::ZipArchive;
 
 use super::{Import, ImportReport};
-use crate::db::{self};
+use crate::database;
 use crate::garmin::{Activity, image_type};
 use crate::routes;
 use crate::transfer::entries::{optional_entry, read_entry};
@@ -81,7 +81,7 @@ impl Import<'_> {
         archive: &mut ZipArchive<File>,
         name: &str,
     ) -> Result<bool> {
-        let mut route: db::RouteRecord = serde_json::from_slice(&read_entry(archive, name)?)?;
+        let mut route: database::RouteRecord = serde_json::from_slice(&read_entry(archive, name)?)?;
         let points: Vec<(f64, f64, Option<f64>)> = serde_json::from_value(route.points)?;
         let prepared = routes::prepare(points).map_err(|error| anyhow::anyhow!("{error:?}"))?;
         route.points = serde_json::to_value(&prepared.points)?;
@@ -89,9 +89,12 @@ impl Import<'_> {
         route.elevation_gain_m = prepared.elevation_gain_m;
         let preview = serde_json::to_value(&prepared.preview)?;
         let id = route.id;
-        let saved =
-            self.handle
-                .block_on(db::import_route(self.pool, self.user_id, &route, &preview))?;
+        let saved = self.handle.block_on(database::import_route(
+            self.pool,
+            self.user_id,
+            &route,
+            &preview,
+        ))?;
         if saved {
             self.kept.borrow_mut().routes.insert(id);
         }
@@ -114,18 +117,18 @@ impl Import<'_> {
         self.save_track(&activity, id, original.as_deref())?;
         if let Some(details) = &exported.details {
             self.handle
-                .block_on(db::save_details(self.pool, id, details))?;
+                .block_on(database::save_details(self.pool, id, details))?;
         }
         if let Some(workouts) = &exported.workouts {
             self.handle
-                .block_on(db::save_workouts(self.pool, id, workouts))?;
+                .block_on(database::save_workouts(self.pool, id, workouts))?;
         }
         let mut images = Vec::new();
         let mut saved = Vec::new();
         for (index, image) in exported.images.into_iter().enumerate() {
             if let Some(data) = optional_entry(archive, &format!("{dir}/images/{index}"))? {
                 images.push((image.id.clone(), data));
-                saved.push(db::Image {
+                saved.push(database::Image {
                     id: image.id,
                     // The archive may come from anywhere, so it does not choose freely.
                     content_type: image_type(Some(&image.content_type)).to_owned(),
@@ -138,10 +141,14 @@ impl Import<'_> {
             .collect();
         self.handle.block_on(self.files.save_images(id, &images))?;
         self.handle
-            .block_on(db::save_images(self.pool, id, &saved))?;
+            .block_on(database::save_images(self.pool, id, &saved))?;
         if let Some(result) = &exported.result {
-            self.handle
-                .block_on(db::save_race_result(self.pool, self.user_id, id, result))?;
+            self.handle.block_on(database::save_race_result(
+                self.pool,
+                self.user_id,
+                id,
+                result,
+            ))?;
         }
         Ok(true)
     }

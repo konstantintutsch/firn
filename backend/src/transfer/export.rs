@@ -9,7 +9,7 @@ use super::format::{
     ExportedActivity, ExportedDocument, ExportedImage, FORMAT_VERSION, MARKER, Marker,
 };
 use super::{ACTIVITIES_PER_QUERY, DOCUMENTS_PER_QUERY};
-use crate::db::{self, Pool};
+use crate::database::{self, Pool};
 use crate::files::FileStore;
 
 /// Writes all of the account's data as a ZIP to `out`.
@@ -35,10 +35,10 @@ pub fn export(
         },
     )?;
 
-    let ids = handle.block_on(db::activity_ids(pool, user_id))?;
+    let ids = handle.block_on(database::activity_ids(pool, user_id))?;
     for chunk in ids.chunks(ACTIVITIES_PER_QUERY) {
-        let mut results = handle.block_on(db::race_results(pool, chunk))?;
-        for activity in handle.block_on(db::activity_exports(pool, user_id, chunk))? {
+        let mut results = handle.block_on(database::race_results(pool, chunk))?;
+        for activity in handle.block_on(database::activity_exports(pool, user_id, chunk))? {
             let dir = format!("activities/{}", activity.id);
             zip.start_file(format!("{dir}/activity.json"), deflated)?;
             serde_json::to_writer(
@@ -72,7 +72,7 @@ pub fn export(
         }
     }
 
-    for route in handle.block_on(db::route_records(pool, user_id))? {
+    for route in handle.block_on(database::route_records(pool, user_id))? {
         zip.start_file(format!("routes/{}.json", route.id), deflated)?;
         serde_json::to_writer(&mut zip, &route)?;
     }
@@ -80,7 +80,12 @@ pub fn export(
     zip.start_file("health.jsonl", deflated)?;
     let mut after = None;
     loop {
-        let page = handle.block_on(db::documents(pool, user_id, after, DOCUMENTS_PER_QUERY))?;
+        let page = handle.block_on(database::documents(
+            pool,
+            user_id,
+            after,
+            DOCUMENTS_PER_QUERY,
+        ))?;
         let Some((kind, period, _)) = page.last() else {
             break;
         };

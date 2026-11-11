@@ -6,7 +6,7 @@ use uuid::Uuid;
 use super::query::text;
 use super::{ApiError, AppState, ErrorBody, require_header};
 use crate::auth::CurrentUser;
-use crate::db::{self};
+use crate::database;
 
 /// Enters the official result of a race, for the personal records. Replaces an
 /// earlier one.
@@ -16,7 +16,7 @@ use crate::db::{self};
     put,
     path = "/api/activities/{id}/result",
     params(("id" = Uuid, Path, description = "The activity's ID")),
-    request_body = db::RaceResult,
+    request_body = database::RaceResult,
     responses(
         (status = 204, description = "Saved"),
         (status = 400, description = "Invalid distance, time, target time or link", body = ErrorBody),
@@ -30,7 +30,7 @@ pub(super) async fn save_result(
     CurrentUser(user): CurrentUser,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-    Json(mut result): Json<db::RaceResult>,
+    Json(mut result): Json<database::RaceResult>,
 ) -> Result<StatusCode, ApiError> {
     require_header(&headers)?;
     let positive = |value: f64| value.is_finite() && value > 0.0;
@@ -52,7 +52,7 @@ pub(super) async fn save_result(
             ));
         }
     }
-    if db::save_race_result(&state.pool, user.id, id, &result).await? {
+    if database::save_race_result(&state.pool, user.id, id, &result).await? {
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(ApiError::NotFound("no such activity"))
@@ -79,6 +79,6 @@ pub(super) async fn delete_result(
     headers: HeaderMap,
 ) -> Result<StatusCode, ApiError> {
     require_header(&headers)?;
-    db::delete_race_result(&state.pool, user.id, id).await?;
+    database::delete_race_result(&state.pool, user.id, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }

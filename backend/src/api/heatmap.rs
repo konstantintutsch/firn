@@ -5,7 +5,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use super::{ApiError, AppState, ErrorBody, FilterQuery};
 use crate::auth::CurrentUser;
-use crate::db::{self};
+use crate::database;
 use crate::heatmap::{self, Position, Viewport};
 
 const MAX_ZOOM: u8 = 22;
@@ -75,7 +75,7 @@ pub(super) async fn heatmap(
     }
 
     let viewport = Viewport::from_degrees(query.west, query.south, query.east, query.north);
-    let matching = db::matching_ids(
+    let matching = database::matching_ids(
         &state.pool,
         &filter.into_filter(&state.pool, user.id).await?,
     )

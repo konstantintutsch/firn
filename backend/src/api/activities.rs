@@ -11,7 +11,7 @@ use uuid::Uuid;
 use super::heatmap::to_degree_bounds;
 use super::{ApiError, AppState, ErrorBody, FilterQuery};
 use crate::auth::CurrentUser;
-use crate::db::{self, Filter};
+use crate::database::{self, Filter};
 use crate::heatmap::Viewport;
 use crate::track::{self};
 
@@ -62,14 +62,14 @@ pub(super) struct ActivityItem {
     /// The primary training effect, from 0 to 5.
     aerobic_training_effect: Option<f64>,
     /// The official result, if it was a race and one was entered.
-    result: Option<db::RaceResult>,
+    result: Option<database::RaceResult>,
 }
 
 impl ActivityItem {
     pub(super) fn new(
-        activity: db::ActivitySummary,
+        activity: database::ActivitySummary,
         bounds: Option<[f64; 4]>,
-        result: Option<db::RaceResult>,
+        result: Option<database::RaceResult>,
     ) -> Self {
         ActivityItem {
             bounds,
@@ -126,10 +126,10 @@ pub(super) async fn activities(
         return Err(ApiError::BadRequest("offset must not be negative"));
     }
     let order = match search.sort.as_deref() {
-        None | Some("newest") => db::Order::Newest,
-        Some("oldest") => db::Order::Oldest,
-        Some("distance") => db::Order::Distance,
-        Some("duration") => db::Order::Duration,
+        None | Some("newest") => database::Order::Newest,
+        Some("oldest") => database::Order::Oldest,
+        Some("distance") => database::Order::Distance,
+        Some("duration") => database::Order::Duration,
         Some(_) => {
             return Err(ApiError::BadRequest(
                 "sort must be newest, oldest, distance or duration",
@@ -140,11 +140,11 @@ pub(super) async fn activities(
         without_gps: search.without_gps,
         ..filter.into_filter(&state.pool, user.id).await?
     };
-    let found = db::search_activities(&state.pool, &filter, order, limit, offset).await?;
+    let found = database::search_activities(&state.pool, &filter, order, limit, offset).await?;
     let tracks = state.tracks(user.id).await?;
     let wanted: HashSet<Uuid> = found.iter().map(|activity| activity.id).collect();
     let ids: Vec<Uuid> = wanted.iter().copied().collect();
-    let mut results = db::race_results(&state.pool, &ids).await?;
+    let mut results = database::race_results(&state.pool, &ids).await?;
     let bounds: HashMap<Uuid, Viewport> = tracks
         .iter()
         .filter(|saved| wanted.contains(&saved.id))

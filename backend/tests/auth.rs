@@ -9,7 +9,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use firn::api::{AppState, router};
 use firn::auth::OidcSettings;
-use firn::db;
+use firn::database;
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -414,7 +414,7 @@ async fn saves_a_garmin_key_that_garmin_accepts_encrypted() {
     assert_eq!(me["has_garmin_key"], true);
     assert!(!me.to_string().contains("good-key"));
 
-    let (user, _) = db::sign_in_user(&pool, common::ISSUER, "tester", None, None)
+    let (user, _) = database::sign_in_user(&pool, common::ISSUER, "tester", None, None)
         .await
         .unwrap();
     let sealed = user.garmin_api_key.unwrap();
@@ -452,12 +452,15 @@ async fn first_account_claims_activities_from_before_accounts() {
     let owned = |user_id| {
         let pool = pool.clone();
         async move {
-            let filter = db::Filter {
+            let filter = database::Filter {
                 user_id,
                 without_gps: true,
                 ..Default::default()
             };
-            db::activity_records(&pool, &filter).await.unwrap().len()
+            database::activity_records(&pool, &filter)
+                .await
+                .unwrap()
+                .len()
         }
     };
     assert_eq!(owned(first).await, 1);
@@ -473,7 +476,7 @@ async fn expired_sessions_stop_working_and_are_removed() {
     let pool = common::test_pool().await;
     let user_id = common::user(&pool).await;
     let token = firn::secret::random_token();
-    db::create_session(
+    database::create_session(
         &pool,
         user_id,
         &firn::secret::sha256(&token),

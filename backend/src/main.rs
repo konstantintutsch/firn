@@ -6,10 +6,10 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use firn::api::{self, AppState, GarminSettings};
 use firn::auth::{Auth, OidcSettings};
-use firn::db;
 use firn::files::FileStore;
 use firn::garmin::DEFAULT_BASE_URL;
 use firn::secret::SecretBox;
+use firn::{backfill, database};
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
@@ -81,13 +81,13 @@ async fn main() -> Result<()> {
         tracing_subscriber::fmt().with_env_filter(filter).init();
     }
 
-    let pool = db::connect(&cli.database_url)?;
-    db::migrate(&pool).await?;
+    let pool = database::connect(&cli.database_url)?;
+    database::migrate(&pool).await?;
     let files = FileStore::new(&cli.data_dir);
-    db::rename_activity_folders(&pool, &files).await?;
-    db::move_files_to_store(&pool, &files).await?;
-    db::backfill_vo2_max(&pool, &files).await?;
-    db::backfill_devices(&pool, &files).await?;
+    backfill::rename_activity_folders(&pool, &files).await?;
+    backfill::move_files_to_store(&pool, &files).await?;
+    backfill::backfill_vo2_max(&pool, &files).await?;
+    backfill::backfill_devices(&pool, &files).await?;
 
     let secret_box = SecretBox::new(&secret_env("APP_SECRET").unwrap_or_default())?;
     let extra_roots = match &cli.oidc_ca_cert {

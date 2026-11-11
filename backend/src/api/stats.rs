@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 use super::heatmap::to_degree_bounds;
 use super::{ApiError, AppState, ErrorBody, FilterQuery};
 use crate::auth::CurrentUser;
-use crate::db::{self};
+use crate::database;
 use crate::heatmap::Viewport;
 
 #[derive(Serialize, ToSchema)]
@@ -34,8 +34,8 @@ pub(super) async fn stats(
     Query(filter): Query<FilterQuery>,
 ) -> Result<Json<Stats>, ApiError> {
     let filter = filter.into_filter(&state.pool, user.id).await?;
-    let totals = db::totals(&state.pool, &filter).await?;
-    let matching = db::matching_ids(&state.pool, &filter).await?;
+    let totals = database::totals(&state.pool, &filter).await?;
+    let matching = database::matching_ids(&state.pool, &filter).await?;
     let tracks = state.tracks(user.id).await?;
     let bounds = tracks
         .iter()

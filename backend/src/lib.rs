@@ -1,7 +1,8 @@
 pub mod api;
 pub mod apple_health;
 pub mod auth;
-pub mod db;
+pub mod backfill;
+pub mod database;
 pub mod files;
 pub mod garmin;
 pub mod heatmap;
@@ -11,5 +12,6 @@ pub mod secret;
 pub mod statistics;
 pub mod sync;
 pub mod track;
+pub mod training_blocks;
 pub mod transfer;
 pub mod wellness;

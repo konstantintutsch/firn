@@ -13,6 +13,14 @@ use super::Pool;
 use crate::garmin::Activity;
 use crate::schema::activities;
 
+mod export;
+mod filter;
+mod search;
+
+pub use export::*;
+pub use filter::*;
+pub use search::*;
+
 #[derive(Insertable)]
 #[diesel(table_name = activities)]
 struct NewActivity<'a> {
@@ -328,4 +336,51 @@ pub async fn save_devices(pool: &Pool, id: Uuid, devices: &[crate::track::Device
         .execute(&mut pool.get().await?)
         .await?;
     Ok(())
+}
+
+/// The Garmin ID and the ID of every activity, of all accounts.
+pub async fn all_garmin_ids(pool: &Pool) -> Result<Vec<(i64, Uuid)>> {
+    Ok(activities::table
+        .select((activities::garmin_id, activities::id))
+        .load(&mut pool.get().await?)
+        .await?)
+}
+
+/// Some of the original files that older versions kept in the database.
+pub async fn stored_originals(pool: &Pool, limit: i64) -> Result<Vec<(Uuid, Option<Vec<u8>>)>> {
+    Ok(activities::table
+        .filter(activities::original_zip.is_not_null())
+        .select((activities::id, activities::original_zip))
+        .limit(limit)
+        .load(&mut pool.get().await?)
+        .await?)
+}
+
+/// Removes an activity's original file from the database.
+pub async fn clear_stored_original(pool: &Pool, id: Uuid) -> Result<()> {
+    diesel::update(activities::table.find(id))
+        .set(activities::original_zip.eq(None::<Vec<u8>>))
+        .execute(&mut pool.get().await?)
+        .await?;
+    Ok(())
+}
+
+/// The activities with a track whose file was not searched for a VO2 max yet.
+pub async fn without_vo2_max_check(pool: &Pool) -> Result<Vec<Uuid>> {
+    Ok(activities::table
+        .filter(activities::vo2_max_checked_at.is_null())
+        .filter(activities::track_synced_at.is_not_null())
+        .select(activities::id)
+        .load(&mut pool.get().await?)
+        .await?)
+}
+
+/// The activities with a track whose file was not searched for devices yet.
+pub async fn without_devices_check(pool: &Pool) -> Result<Vec<Uuid>> {
+    Ok(activities::table
+        .filter(activities::devices_checked_at.is_null())
+        .filter(activities::track_synced_at.is_not_null())
+        .select(activities::id)
+        .load(&mut pool.get().await?)
+        .await?)
 }

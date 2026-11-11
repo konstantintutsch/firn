@@ -12,7 +12,7 @@ use serde::Deserialize;
 use utoipa::IntoParams;
 
 use crate::api::{ApiError, AppState, ErrorBody, require_header};
-use crate::db::{self};
+use crate::database;
 use crate::secret::{self};
 
 use super::SESSION_COOKIE;
@@ -249,7 +249,7 @@ async fn finish_login(
         name = name.or(info.name).or(info.preferred_username);
     }
 
-    let (user, _) = db::sign_in_user(
+    let (user, _) = database::sign_in_user(
         &state.pool,
         &discovery.issuer,
         &claims.sub,
@@ -261,7 +261,7 @@ async fn finish_login(
 
     let token = secret::random_token();
     let expires = Utc::now() + chrono::Duration::days(SESSION_DAYS);
-    db::create_session(&state.pool, user.id, &secret::sha256(&token), expires).await?;
+    database::create_session(&state.pool, user.id, &secret::sha256(&token), expires).await?;
     Ok(token)
 }
 
@@ -288,7 +288,7 @@ pub async fn logout(
 ) -> Result<Response, ApiError> {
     require_header(&headers)?;
     if let Some(token) = cookie(&headers, SESSION_COOKIE) {
-        db::delete_session(&state.pool, &secret::sha256(token)).await?;
+        database::delete_session(&state.pool, &secret::sha256(token)).await?;
     }
     let mut response = StatusCode::NO_CONTENT.into_response();
     response

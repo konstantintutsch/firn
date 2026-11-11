@@ -5,7 +5,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use super::{ApiError, AppState, ErrorBody};
 use crate::auth::CurrentUser;
-use crate::db::{self};
+use crate::database;
 
 #[derive(Serialize, ToSchema)]
 pub(super) struct ActivityType {
@@ -43,7 +43,7 @@ pub(super) async fn activity_types(
     CurrentUser(user): CurrentUser,
     Query(query): Query<ActivityTypeQuery>,
 ) -> Result<Json<ActivityTypeList>, ApiError> {
-    let types = db::activity_types(&state.pool, user.id, query.without_gps).await?;
+    let types = database::activity_types(&state.pool, user.id, query.without_gps).await?;
     Ok(Json(ActivityTypeList {
         types: types
             .into_iter()

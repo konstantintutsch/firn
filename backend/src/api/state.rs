@@ -6,7 +6,7 @@ use tokio::task::AbortHandle;
 
 use super::sync::SyncStatus;
 use crate::auth::Auth;
-use crate::db::{self, ActivityTrack, Pool};
+use crate::database::{self, ActivityTrack, Pool};
 use crate::files::FileStore;
 
 /// Accounts whose tracks stay in memory. More would be rare on one server.
@@ -91,7 +91,11 @@ impl AppState {
             cached.tracks.clone()
         };
         let tracks = cell
-            .get_or_try_init(|| async { db::load_tracks(&self.pool, user_id).await.map(Arc::new) })
+            .get_or_try_init(|| async {
+                database::load_tracks(&self.pool, user_id)
+                    .await
+                    .map(Arc::new)
+            })
             .await?;
         Ok(tracks.clone())
     }

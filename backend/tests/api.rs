@@ -5,7 +5,7 @@ use std::time::Duration;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use firn::api::{AppState, router};
-use firn::db::{self, Pool};
+use firn::database::{self, Pool};
 use firn::track::Point;
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
@@ -56,7 +56,7 @@ async fn add_run(pool: &Pool, id: i64, points: &[Point]) {
         summary,
     };
     let id = common::add_activity(pool, activity).await;
-    db::save_track(pool, id, points).await.unwrap();
+    database::save_track(pool, id, points).await.unwrap();
 }
 
 const BERLIN: Point = Point {
@@ -298,7 +298,7 @@ async fn add_activity(pool: &Pool, id: i64, summary: Value, points: &[Point]) {
         summary: full,
     };
     let id = common::add_activity(pool, activity).await;
-    db::save_track(pool, id, points).await.unwrap();
+    database::save_track(pool, id, points).await.unwrap();
 }
 
 async fn add_two_activities(pool: &Pool) {
@@ -587,9 +587,9 @@ async fn sync_starts_in_the_background_and_saves_runs() {
     assert_eq!(finished["to_download"], 1);
     assert_eq!(finished["downloaded"], 1);
     assert_eq!(
-        db::totals(
+        database::totals(
             &pool,
-            &db::Filter {
+            &database::Filter {
                 user_id: common::user(&pool).await,
                 ..Default::default()
             }
@@ -762,7 +762,7 @@ async fn activity_has_its_summary_and_samples() {
         },
     ]);
     let zip = common::zip_of(&[("1.fit", &fit)]);
-    db::save_track(&pool, common::uuid(1), &[BERLIN])
+    database::save_track(&pool, common::uuid(1), &[BERLIN])
         .await
         .unwrap();
     let files = common::files(&pool).await;
@@ -842,7 +842,7 @@ async fn activities_list_their_weather_devices_and_training_effect() {
     )
     .await;
     add_activity(&pool, 2, json!({"aerobicTrainingEffect": "n/a"}), &[BERLIN]).await;
-    db::save_details(
+    database::save_details(
         &pool,
         common::uuid(1),
         &json!({"weather": {"temp": 59.0, "windSpeed": 7}}),
@@ -855,7 +855,7 @@ async fn activities_list_their_weather_devices_and_training_effect() {
         product: Some("fenix7".to_owned()),
         kind: None,
     };
-    db::save_devices(&pool, common::uuid(1), &[watch])
+    database::save_devices(&pool, common::uuid(1), &[watch])
         .await
         .unwrap();
 
@@ -889,7 +889,7 @@ async fn activity_statistics_include_activities_without_gps() {
         &[BERLIN, NEAR_BERLIN],
     )
     .await;
-    db::save_vo2_max(&pool, common::uuid(1), Some(52.4))
+    database::save_vo2_max(&pool, common::uuid(1), Some(52.4))
         .await
         .unwrap();
     add_activity(
@@ -945,7 +945,7 @@ async fn health_statistics_group_values_by_metric() {
     let pool = common::test_pool().await;
     let user_id = common::user(&pool).await;
     let day = |text: &str| text.parse::<chrono::NaiveDate>().unwrap();
-    db::save_document(
+    database::save_document(
         &pool,
         user_id,
         "hrv_summaries",
@@ -980,7 +980,7 @@ async fn health_statistics_average_the_resting_heart_rate_over_a_week() {
     let pool = common::test_pool().await;
     let user_id = common::user(&pool).await;
     let day = |text: &str| text.parse::<chrono::NaiveDate>().unwrap();
-    db::save_document(
+    database::save_document(
         &pool,
         user_id,
         "user_summaries",
@@ -1118,7 +1118,9 @@ async fn one_activity_can_be_downloaded_again() {
             .status()
     };
     let user_id = common::user(&pool).await;
-    let id = db::ids_by_garmin_id(&pool, user_id, &[1]).await.unwrap()[&1];
+    let id = database::ids_by_garmin_id(&pool, user_id, &[1])
+        .await
+        .unwrap()[&1];
     assert_eq!(
         resync(id, common::cookie(&pool).await).await,
         StatusCode::NO_CONTENT
@@ -1145,7 +1147,7 @@ async fn activity_links_its_neighbors_and_has_its_zones() {
         {"sport": "RUNNING", "zone1Floor": 101, "zone2Floor": 121, "zone3Floor": 141,
          "zone4Floor": 161, "zone5Floor": 176, "maxHeartRateUsed": 191},
     ]);
-    db::save_document(
+    database::save_document(
         &pool,
         common::user(&pool).await,
         "heart_rate_zones",
@@ -1242,7 +1244,7 @@ async fn deleting_the_account_removes_its_data_and_files() {
         get_with(&pool, "/api/me", Some(&cookie)).await.0,
         StatusCode::UNAUTHORIZED
     );
-    assert_eq!(db::owner(&pool, 1).await.unwrap(), None);
+    assert_eq!(database::owner(&pool, 1).await.unwrap(), None);
     assert_eq!(files.original(common::uuid(1)).await.unwrap(), None);
     // Other accounts stay.
     let (status, _) = get_with(
@@ -1265,10 +1267,10 @@ async fn health_needs_no_session() {
 async fn a_photo_never_arrives_as_a_page() {
     let pool = common::test_pool().await;
     add_two_activities(&pool).await;
-    db::save_images(
+    database::save_images(
         &pool,
         common::uuid(1),
-        &[db::Image {
+        &[database::Image {
             id: "a".to_owned(),
             content_type: "text/html".to_owned(),
         }],
@@ -1299,10 +1301,10 @@ async fn a_photo_never_arrives_as_a_page() {
 async fn photos_are_only_for_their_account() {
     let pool = common::test_pool().await;
     add_two_activities(&pool).await;
-    db::save_images(
+    database::save_images(
         &pool,
         common::uuid(1),
-        &[db::Image {
+        &[database::Image {
             id: "a".to_owned(),
             content_type: "image/png".to_owned(),
         }],

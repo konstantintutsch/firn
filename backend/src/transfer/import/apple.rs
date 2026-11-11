@@ -11,7 +11,7 @@ use zip::ZipArchive;
 use super::files::summary_of;
 use super::{AppleHealthScope, Import, ImportReport};
 use crate::apple_health;
-use crate::db::{self};
+use crate::database;
 use crate::garmin::Activity;
 use crate::track::{self, Sample};
 use crate::transfer::entries::{MAX_ENTRY_BYTES, imported_id, read_entry, single_file_zip};
@@ -76,9 +76,11 @@ impl Import<'_> {
                 .iter()
                 .map(|workout| self.workout_id(workout))
                 .collect();
-            let known =
-                self.handle
-                    .block_on(db::ids_by_garmin_id(self.pool, self.user_id, &garmin_ids))?;
+            let known = self.handle.block_on(database::ids_by_garmin_id(
+                self.pool,
+                self.user_id,
+                &garmin_ids,
+            ))?;
             for (workout, garmin_id) in parsed.workouts.iter().zip(garmin_ids) {
                 if let Some(id) = known.get(&garmin_id) {
                     activities.push((workout.start, workout.end, *id));
@@ -87,7 +89,7 @@ impl Import<'_> {
         }
 
         // Each VO2 max goes to the workout that it ended, if there is one.
-        let mut vo2_max: BTreeMap<NaiveDate, Vec<db::Vo2Reading>> = BTreeMap::new();
+        let mut vo2_max: BTreeMap<NaiveDate, Vec<database::Vo2Reading>> = BTreeMap::new();
         for measured in &parsed.vo2_max {
             let slack = chrono::Duration::minutes(VO2_MAX_AFTER_WORKOUT_MINUTES);
             let activity_id = activities
@@ -98,7 +100,7 @@ impl Import<'_> {
             vo2_max
                 .entry(measured.time.naive_local().date())
                 .or_default()
-                .push(db::Vo2Reading {
+                .push(database::Vo2Reading {
                     value: measured.value,
                     activity_id,
                 });
@@ -119,7 +121,7 @@ impl Import<'_> {
         &self,
         day: NaiveDate,
         metrics: &BTreeMap<String, f64>,
-        vo2_max: &[db::Vo2Reading],
+        vo2_max: &[database::Vo2Reading],
     ) -> Result<()> {
         let mut kept = self.kept.borrow_mut();
         kept.documents
@@ -127,10 +129,11 @@ impl Import<'_> {
         kept.metrics
             .extend(metrics.keys().map(|metric| (metric.clone(), day)));
         if !vo2_max.is_empty() {
-            kept.metrics.insert((db::VO2_MAX_METRIC.to_owned(), day));
+            kept.metrics
+                .insert((database::VO2_MAX_METRIC.to_owned(), day));
         }
         drop(kept);
-        self.handle.block_on(db::save_apple_health_day(
+        self.handle.block_on(database::save_apple_health_day(
             self.pool,
             self.user_id,
             day,
@@ -184,11 +187,11 @@ impl Import<'_> {
         self.save_track(&activity, saved, original.as_deref())?;
         // Apple has nothing more for a workout, so syncs never ask.
         self.handle
-            .block_on(db::save_details(self.pool, saved, &json!({})))?;
+            .block_on(database::save_details(self.pool, saved, &json!({})))?;
         self.handle
-            .block_on(db::save_workouts(self.pool, saved, &json!([])))?;
+            .block_on(database::save_workouts(self.pool, saved, &json!([])))?;
         self.handle
-            .block_on(db::save_images(self.pool, saved, &[]))?;
+            .block_on(database::save_images(self.pool, saved, &[]))?;
         Ok(Some(saved))
     }
 }

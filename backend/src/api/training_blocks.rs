@@ -5,12 +5,12 @@ use utoipa::ToSchema;
 
 use super::{ApiError, AppState, ErrorBody};
 use crate::auth::CurrentUser;
-use crate::db::{self};
+use crate::training_blocks;
 
 #[derive(Serialize, ToSchema)]
 pub(super) struct TrainingBlocks {
     /// Newest first.
-    blocks: Vec<db::TrainingBlock>,
+    blocks: Vec<training_blocks::TrainingBlock>,
 }
 
 /// The training blocks of the races that have an official result. A block runs
@@ -29,6 +29,6 @@ pub(super) async fn training_blocks(
     CurrentUser(user): CurrentUser,
 ) -> Result<Json<TrainingBlocks>, ApiError> {
     Ok(Json(TrainingBlocks {
-        blocks: db::training_blocks_of(&state.pool, user.id).await?,
+        blocks: training_blocks::training_blocks_of(&state.pool, user.id).await?,
     }))
 }

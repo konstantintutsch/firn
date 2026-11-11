@@ -17,7 +17,7 @@ mod firn;
 use super::format::{ExportedDocument, LEGACY_MARKER, MARKER};
 use super::{ACTIVITIES_PER_QUERY, DOCUMENTS_PER_QUERY};
 use crate::apple_health;
-use crate::db::{self, Pool};
+use crate::database::{self, Pool};
 use crate::files::FileStore;
 use crate::garmin::Activity;
 use crate::track::{self};
@@ -126,7 +126,7 @@ impl Import<'_> {
         let kept = self.kept.borrow();
         let activities: Vec<Uuid> = self
             .handle
-            .block_on(db::activity_ids(self.pool, self.user_id))?
+            .block_on(database::activity_ids(self.pool, self.user_id))?
             .into_iter()
             .filter(|id| !kept.activities.contains(id))
             .collect();
@@ -136,24 +136,24 @@ impl Import<'_> {
                 self.handle.block_on(self.files.remove_activity(id))?;
             }
             self.handle
-                .block_on(db::delete_activities(self.pool, self.user_id, chunk))?;
+                .block_on(database::delete_activities(self.pool, self.user_id, chunk))?;
         }
         report.removed_activities = activities.len();
 
         let routes: Vec<Uuid> = self
             .handle
-            .block_on(db::route_ids(self.pool, self.user_id))?
+            .block_on(database::route_ids(self.pool, self.user_id))?
             .into_iter()
             .filter(|id| !kept.routes.contains(id))
             .collect();
         self.handle
-            .block_on(db::delete_routes(self.pool, self.user_id, &routes))?;
+            .block_on(database::delete_routes(self.pool, self.user_id, &routes))?;
         report.removed_routes = routes.len();
 
         let mut documents: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for (kind, period) in self
             .handle
-            .block_on(db::document_keys(self.pool, self.user_id))?
+            .block_on(database::document_keys(self.pool, self.user_id))?
         {
             if !kept.documents.contains(&(kind.clone(), period.clone())) {
                 documents.entry(kind).or_default().push(period);
@@ -161,8 +161,12 @@ impl Import<'_> {
         }
         for (kind, periods) in &documents {
             for chunk in periods.chunks(DOCUMENTS_PER_QUERY as usize) {
-                self.handle
-                    .block_on(db::delete_documents(self.pool, self.user_id, kind, chunk))?;
+                self.handle.block_on(database::delete_documents(
+                    self.pool,
+                    self.user_id,
+                    kind,
+                    chunk,
+                ))?;
             }
             report.removed_health_documents += periods.len();
         }
@@ -170,7 +174,7 @@ impl Import<'_> {
         let mut metrics: BTreeMap<String, Vec<NaiveDate>> = BTreeMap::new();
         for (metric, day) in self
             .handle
-            .block_on(db::metric_keys(self.pool, self.user_id))?
+            .block_on(database::metric_keys(self.pool, self.user_id))?
         {
             if !kept.metrics.contains(&(metric.clone(), day)) {
                 metrics.entry(metric).or_default().push(day);
@@ -178,8 +182,12 @@ impl Import<'_> {
         }
         for (metric, days) in &metrics {
             for chunk in days.chunks(DOCUMENTS_PER_QUERY as usize) {
-                self.handle
-                    .block_on(db::delete_metrics(self.pool, self.user_id, metric, chunk))?;
+                self.handle.block_on(database::delete_metrics(
+                    self.pool,
+                    self.user_id,
+                    metric,
+                    chunk,
+                ))?;
             }
         }
         Ok(())
@@ -188,17 +196,19 @@ impl Import<'_> {
     /// Saves the activity for the account and gives its ID, unless another
     /// account has it. A new activity takes `id` if there is one.
     fn claim(&self, activity: &Activity, id: Option<Uuid>) -> Result<Option<Uuid>> {
-        if let Some(Some(owner)) = self.handle.block_on(db::owner(self.pool, activity.id))?
+        if let Some(Some(owner)) = self
+            .handle
+            .block_on(database::owner(self.pool, activity.id))?
             && owner != self.user_id
         {
             return Ok(None);
         }
-        self.handle.block_on(db::upsert_activities_with_ids(
+        self.handle.block_on(database::upsert_activities_with_ids(
             self.pool,
             self.user_id,
             &[(activity, id)],
         ))?;
-        let mut ids = self.handle.block_on(db::ids_by_garmin_id(
+        let mut ids = self.handle.block_on(database::ids_by_garmin_id(
             self.pool,
             self.user_id,
             &[activity.id],
@@ -218,7 +228,7 @@ impl Import<'_> {
         self.handle
             .block_on(self.files.save_original(id, original))?;
         self.handle
-            .block_on(db::save_track(self.pool, id, &points))?;
+            .block_on(database::save_track(self.pool, id, &points))?;
         Ok(())
     }
 
@@ -232,7 +242,7 @@ impl Import<'_> {
                 .map(|metrics| serde_json::from_value(metrics.clone()))
                 .transpose()?
                 .unwrap_or_default();
-            let vo2_max: Vec<db::Vo2Reading> = document
+            let vo2_max: Vec<database::Vo2Reading> = document
                 .data
                 .as_ref()
                 .and_then(|data| data.get("vo2_max"))
@@ -260,7 +270,7 @@ impl Import<'_> {
                 .map(|(day, metric, _)| ((*metric).to_owned(), *day)),
         );
         drop(kept);
-        self.handle.block_on(db::save_document(
+        self.handle.block_on(database::save_document(
             self.pool,
             self.user_id,
             &document.kind,

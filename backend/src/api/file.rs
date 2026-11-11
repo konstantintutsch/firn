@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use super::{ApiError, AppState, ErrorBody};
 use crate::auth::CurrentUser;
-use crate::db::{self};
+use crate::database;
 use crate::garmin::image_type;
 use crate::track::{self};
 
@@ -42,7 +42,7 @@ pub(super) async fn activity_file(
         Some("gpx") => true,
         Some(_) => return Err(ApiError::BadRequest("format must be original or gpx")),
     };
-    let (activity, _) = db::activity_with_summary(&state.pool, user.id, id)
+    let (activity, _) = database::activity_with_summary(&state.pool, user.id, id)
         .await?
         .ok_or(ApiError::NotFound("no such activity"))?;
     let zip = state
@@ -106,7 +106,7 @@ pub(super) async fn activity_image(
     CurrentUser(user): CurrentUser,
     Path((id, image_id)): Path<(Uuid, String)>,
 ) -> Result<Response, ApiError> {
-    let content_type = db::image_type(&state.pool, user.id, id, &image_id)
+    let content_type = database::image_type(&state.pool, user.id, id, &image_id)
         .await?
         .ok_or(ApiError::NotFound("no such image"))?;
     let data = state
