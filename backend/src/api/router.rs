@@ -109,9 +109,12 @@ pub fn router_with(state: AppState, docs: bool) -> Router {
                 .post(sync::start_sync)
                 .delete(sync::cancel_sync),
         )
-        .route("/api/auth/login", get(auth::login))
-        .route("/api/auth/callback", get(auth::callback))
-        .route("/api/auth/logout", post(auth::logout))
+        .merge(auth::limited(
+            Router::new()
+                .route("/api/auth/login", get(auth::login))
+                .route("/api/auth/callback", get(auth::callback))
+                .route("/api/auth/logout", post(auth::logout)),
+        ))
         .route("/api/me", get(auth::me).delete(auth::delete_me))
         .route(
             "/api/me/garmin-key",

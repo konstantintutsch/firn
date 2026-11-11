@@ -490,3 +490,30 @@ async fn expired_sessions_stop_working_and_are_removed() {
         .unwrap();
     assert_eq!(remaining, 1);
 }
+
+#[tokio::test]
+async fn limits_the_sign_ins_of_each_client() {
+    let provider = provider().await;
+    let state = app(&provider, "http://garmin.invalid").await;
+    let app = router(state);
+    let logout = |forwarded: &'static str| {
+        let request = Request::post("/api/auth/logout")
+            .header("x-forwarded-for", forwarded)
+            .body(Body::empty())
+            .unwrap();
+        app.clone().oneshot(request)
+    };
+
+    for _ in 0..20 {
+        let response = logout("203.0.113.1").await.unwrap();
+        assert_ne!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+    // Addresses before the last come from the client and do not count.
+    let response = logout("198.51.100.7, 203.0.113.1").await.unwrap();
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(response.headers().contains_key("retry-after"));
+    assert!(json_body(response).await["error"].is_string());
+
+    let response = logout("203.0.113.2").await.unwrap();
+    assert_ne!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+}

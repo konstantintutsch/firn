@@ -130,9 +130,14 @@ async fn main() -> Result<()> {
 
     let listener = TcpListener::bind(cli.bind).await?;
     tracing::info!(bind = %cli.bind, "listening");
-    axum::serve(listener, api::router_with(state, cli.api_docs))
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    // With the address of each connection, for the limit on sign-ins.
+    let app = api::router_with(state, cli.api_docs);
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
     Ok(())
 }
 
