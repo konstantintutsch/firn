@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Serve the frontend with Caddy instead of nginx.
+- Limit sign-ins in the backend instead of the frontend, still to 20 at once and 10 a minute after that for each client.
+
 ## 0.2.1 - 2026-11-10
 
 Firn now lives on GitHub.

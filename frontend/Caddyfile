@@ -1,0 +1,71 @@
+{
+	# A reverse proxy in front serves HTTPS. Nothing changes the configuration
+	# while the server runs.
+	auto_https off
+	admin off
+	persist_config off
+}
+
+# Imports and exports can be gigabytes and take minutes. Caddy passes both
+# straight through, without a limit on size or time. The backend limits the
+# size of an upload itself. The address of the backend resolves on each
+# connection, because a rebuilt backend container gets a new one.
+(api) {
+	# Without the policy of the pages: the API documentation runs inline scripts.
+	header X-Content-Type-Options nosniff
+	header Referrer-Policy strict-origin-when-cross-origin
+	header X-Frame-Options DENY
+	header -Via
+
+	reverse_proxy backend:3000 {
+		# Sends each part of an export on as it arrives.
+		flush_interval -1
+		header_up X-Forwarded-For {client}
+	}
+}
+
+:8080 {
+	root * /srv
+	header -Server
+
+	encode {
+		gzip
+		minimum_length 1024
+	}
+
+	# A reverse proxy always runs in front, so every request comes from its
+	# address. This takes the client's address from the X-Forwarded-For header
+	# instead, and hands it to the backend, which limits the sign-ins of each
+	# client. The proxy may connect from anywhere. Only the last address counts,
+	# which is the one the proxy added itself: those before it come from the
+	# client and could be made up.
+	map {header.X-Forwarded-For} {client} {
+		~([^,\s]+)\s*$ ${1}
+		default {remote_host}
+	}
+
+	handle /api/* {
+		import api
+	}
+
+	handle {
+		# The map loads its style, tiles and fonts from OpenFreeMap, and place search
+		# asks Photon. MapLibre also starts its worker from a blob: URL.
+		header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://tiles.openfreemap.org https://photon.komoot.io; worker-src 'self' blob:; child-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		header X-Content-Type-Options nosniff
+		header Referrer-Policy strict-origin-when-cross-origin
+		header Permissions-Policy "camera=(), microphone=(), geolocation=(self), payment=()"
+
+		# File names stay the same across versions, so browsers ask again each time
+		# and get a short "not modified" while nothing changed.
+		header Cache-Control no-cache
+
+		file_server
+	}
+
+	# Errors skip the line that hides the server's name above.
+	handle_errors {
+		header -Server
+		respond "{err.status_code} {err.status_text}" {err.status_code}
+	}
+}

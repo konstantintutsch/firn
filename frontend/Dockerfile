@@ -6,6 +6,9 @@ COPY . .
 RUN npm run build
 
 # Runs as an unprivileged user, on port 8080 inside the container.
-FROM nginxinc/nginx-unprivileged:1.29-alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/_site /usr/share/nginx/html
+FROM caddy:2.11-alpine
+COPY Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /app/_site /srv
+# Caddy keeps a lock and an identifier here, even without certificates.
+RUN chown -R 101:101 /data /config
+USER 101:101
