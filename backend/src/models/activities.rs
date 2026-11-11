@@ -6,8 +6,8 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use super::RaceResult;
+use crate::database::schema::activities;
 use crate::heatmap::COORDINATE_SCALE;
-use crate::schema::activities;
 use crate::track::{self, Sample};
 
 /// Enough to scrub along any activity, and few enough to keep the answer small.

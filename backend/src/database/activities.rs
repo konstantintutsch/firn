@@ -10,9 +10,9 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::Pool;
+use crate::database::schema::activities;
 use crate::garmin::Activity;
 use crate::models::{Missing, NewActivity};
-use crate::schema::activities;
 
 mod export;
 mod filter;

@@ -9,8 +9,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::Pool;
+use crate::database::schema::{activities, daily_metrics, garmin_documents};
 use crate::models::Vo2Reading;
-use crate::schema::{activities, daily_metrics, garmin_documents};
 
 /// Daily values from `from` to `to`, sorted by metric and day.
 pub async fn daily_metrics(

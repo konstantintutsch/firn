@@ -8,8 +8,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::database::Pool;
+use crate::database::schema::{activities, track_points};
 use crate::models::{ActivityRecord, ActivitySummary, Filter, Order, Totals};
-use crate::schema::{activities, track_points};
 
 /// The activities that match, for the heatmap to pick from its tracks.
 pub async fn matching_ids(pool: &Pool, filter: &Filter) -> Result<HashSet<Uuid>> {

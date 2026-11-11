@@ -472,7 +472,7 @@ async fn first_account_claims_activities_from_before_accounts() {
 async fn expired_sessions_stop_working_and_are_removed() {
     use diesel::prelude::*;
     use diesel_async::RunQueryDsl;
-    use firn::schema::sessions;
+    use firn::database::schema::sessions;
 
     let pool = common::test_pool().await;
     let user_id = common::user(&pool).await;

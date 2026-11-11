@@ -6,9 +6,9 @@ use chrono::NaiveDate;
 use common::{API_KEY, fit_of, semicircles, zip_of};
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
+use firn::database::schema::{activities, garmin_documents, track_points};
 use firn::database::{self, Pool};
 use firn::garmin::GarminError;
-use firn::schema::{activities, garmin_documents, track_points};
 use firn::sync::{HealthRange, Report, sync_activities, sync_health};
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path, query_param};
@@ -831,7 +831,7 @@ async fn image_that_garmin_refuses_is_skipped_for_good() {
 
 #[tokio::test]
 async fn files_from_the_database_move_to_the_file_store() {
-    use firn::schema::activity_images;
+    use firn::database::schema::activity_images;
 
     let (pool, server) = setup().await;
     mount_list(&server, &[vec![activity(1, "running", true)]]).await;

@@ -8,7 +8,6 @@ pub mod garmin;
 pub mod heatmap;
 pub mod models;
 pub mod routes;
-pub mod schema;
 pub mod secret;
 pub mod state;
 pub mod statistics;

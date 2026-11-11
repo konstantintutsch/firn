@@ -7,8 +7,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::database::Pool;
+use crate::database::schema::{activities, activity_images};
 use crate::models::ActivityExport;
-use crate::schema::{activities, activity_images};
 
 pub async fn activity_exports(
     pool: &Pool,

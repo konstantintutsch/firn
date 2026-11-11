@@ -6,8 +6,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::Pool;
+use crate::database::schema::{activities, routes};
 use crate::models::{NewRoute, RouteRecord, RouteSummary};
-use crate::schema::{activities, routes};
 
 /// The IDs of all of the account's routes.
 pub async fn route_ids(pool: &Pool, user_id: i64) -> Result<Vec<Uuid>> {

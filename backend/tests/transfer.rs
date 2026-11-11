@@ -48,7 +48,7 @@ async fn activity_ids(pool: &Pool) -> Vec<i64> {
 async fn ids_to_garmin(pool: &Pool, ids: &[uuid::Uuid]) -> Vec<i64> {
     use diesel::prelude::*;
     use diesel_async::RunQueryDsl;
-    use firn::schema::activities;
+    use firn::database::schema::activities;
     let mut garmin_ids = Vec::new();
     for id in ids {
         garmin_ids.push(
@@ -497,7 +497,7 @@ async fn an_export_carries_the_health_data_of_apple_health() {
 async fn vo2_max_rows(pool: &Pool) -> Vec<(i32, f64, Option<uuid::Uuid>)> {
     use diesel::prelude::*;
     use diesel_async::RunQueryDsl;
-    use firn::schema::daily_metrics;
+    use firn::database::schema::daily_metrics;
     let user = common::user(pool).await;
     daily_metrics::table
         .filter(daily_metrics::user_id.eq(user))

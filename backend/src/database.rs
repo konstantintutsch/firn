@@ -10,6 +10,7 @@ mod daily_metrics;
 mod garmin_documents;
 mod race_results;
 mod routes;
+pub mod schema;
 mod sessions;
 mod track_points;
 mod users;

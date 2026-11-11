@@ -2,8 +2,8 @@ use diesel::dsl::exists;
 use diesel::pg::Pg;
 use diesel::prelude::*;
 
+use crate::database::schema::{activities, track_points};
 use crate::models::Filter;
-use crate::schema::{activities, track_points};
 
 impl Filter {
     pub(super) fn apply<'a, ST: 'a>(

@@ -5,7 +5,7 @@ use serde_json::Value;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use crate::schema::routes;
+use crate::database::schema::routes;
 
 /// A point of a route: latitude, longitude and elevation in meters, if known.
 pub type RoutePoint = (f64, f64, Option<f64>);

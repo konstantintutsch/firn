@@ -2,7 +2,7 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::schema::users;
+use crate::database::schema::users;
 
 #[derive(Debug, Clone, Queryable, Selectable)]
 #[diesel(table_name = users)]

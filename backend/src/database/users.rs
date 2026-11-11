@@ -4,8 +4,8 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use serde_json::Value;
 
 use super::Pool;
+use crate::database::schema::{activities, users};
 use crate::models::User;
-use crate::schema::{activities, users};
 
 /// Finds or creates the account of an OpenID Connect identity. The first account
 /// claims the activities that were saved before accounts existed.

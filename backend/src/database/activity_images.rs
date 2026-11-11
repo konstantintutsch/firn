@@ -4,8 +4,8 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use uuid::Uuid;
 
 use super::Pool;
+use crate::database::schema::{activities, activity_images};
 use crate::models::Image;
-use crate::schema::{activities, activity_images};
 
 /// Replaces the images of an activity atomically and marks them as done.
 pub async fn save_images(pool: &Pool, id: Uuid, images: &[Image]) -> Result<()> {

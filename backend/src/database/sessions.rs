@@ -4,8 +4,8 @@ use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
 
 use super::Pool;
+use crate::database::schema::{sessions, users};
 use crate::models::User;
-use crate::schema::{sessions, users};
 
 /// Also removes expired sessions of all accounts, so that they do not pile up.
 pub async fn create_session(

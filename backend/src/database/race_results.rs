@@ -8,8 +8,8 @@ use diesel_async::RunQueryDsl;
 use uuid::Uuid;
 
 use super::Pool;
+use crate::database::schema::{activities, race_results};
 use crate::models::{RaceDay, RaceResult};
-use crate::schema::{activities, race_results};
 
 /// The race results of activities, by activity.
 pub async fn race_results(pool: &Pool, ids: &[Uuid]) -> Result<HashMap<Uuid, RaceResult>> {

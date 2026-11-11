@@ -8,7 +8,7 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use serde_json::Value;
 
 use super::Pool;
-use crate::schema::{daily_metrics, garmin_documents};
+use crate::database::schema::{daily_metrics, garmin_documents};
 
 /// The periods of a kind that are saved already.
 pub async fn document_periods(pool: &Pool, user_id: i64, kind: &str) -> Result<HashSet<String>> {

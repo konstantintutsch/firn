@@ -5,9 +5,9 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::Pool;
+use crate::database::schema::{activities, track_points};
 use crate::heatmap::{self, Viewport};
 use crate::models::ActivityTrack;
-use crate::schema::{activities, track_points};
 use crate::track::Point;
 
 /// Postgres allows 65535 bind parameters per statement, and a point uses 4.

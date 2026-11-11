@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 use diesel::prelude::*;
 use uuid::Uuid;
 
-use crate::schema::race_results;
+use crate::database::schema::race_results;
 
 /// The official result of a race, entered by hand.
 #[derive(
