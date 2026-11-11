@@ -6,6 +6,9 @@ services:
   db:
     image: postgres:18-alpine
     container_name: firn-db
+    # The image would start as root to fix the owner of the volume, which
+    # belongs to this user from the start.
+    user: postgres
     environment:
       POSTGRES_USER: firn
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-firn}
@@ -23,6 +26,8 @@ services:
       context: backend
       target: runtime
     container_name: firn-backend
+    # The owner of the data volume, as the image creates it.
+    user: "999:999"
     env_file:
       - path: .env
         required: false

@@ -8,6 +8,9 @@ services:
   db:
     image: postgres:18-alpine
     container_name: firn-db
+    # The image would start as root to fix the owner of the volume, which
+    # belongs to this user from the start.
+    user: postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: firn
@@ -23,6 +26,8 @@ services:
   backend:
     image: ${FIRN_IMAGES:?Set FIRN_IMAGES in .env}/backend:${FIRN_VERSION:-latest}
     container_name: firn-backend
+    # The owner of the data volume, as the image creates it.
+    user: "999:999"
     restart: unless-stopped
     env_file: .env
     environment:
