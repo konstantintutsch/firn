@@ -1262,6 +1262,40 @@ async fn health_needs_no_session() {
 }
 
 #[tokio::test]
+async fn a_photo_never_arrives_as_a_page() {
+    let pool = common::test_pool().await;
+    add_two_activities(&pool).await;
+    db::save_images(
+        &pool,
+        common::uuid(1),
+        &[db::Image {
+            id: "a".to_owned(),
+            content_type: "text/html".to_owned(),
+        }],
+    )
+    .await
+    .unwrap();
+    common::files(&pool)
+        .await
+        .save_image(common::uuid(1), "a", b"<script>alert(1)</script>")
+        .await
+        .unwrap();
+    let state = common::state(pool.clone(), "http://unused", None).await;
+    let request = Request::get(format!("/api/activities/{}/images/a", common::uuid(1)))
+        .header("cookie", common::cookie(&pool).await);
+    let response = router(state)
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-type"], "image/jpeg");
+    assert_eq!(
+        response.headers()["content-security-policy"],
+        "default-src 'none'; sandbox"
+    );
+}
+
+#[tokio::test]
 async fn photos_are_only_for_their_account() {
     let pool = common::test_pool().await;
     add_two_activities(&pool).await;

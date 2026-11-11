@@ -19,11 +19,13 @@ FROM debian:trixie-slim AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    # A fixed ID, so that the files in an existing volume stay readable.
-    && useradd --system --uid 999 firn \
-    && mkdir /data && chown firn /data
+    # Fixed IDs, so that the files in an existing volume stay readable, and so
+    # that docker-compose.yaml can name them.
+    && groupadd --system --gid 999 firn \
+    && useradd --system --uid 999 --gid 999 firn \
+    && mkdir /data && chown firn:firn /data
 COPY --from=build /usr/local/bin/firn /usr/local/bin/firn
-USER firn
+USER 999:999
 # Original files and photos. A new volume takes over the owner from here.
 VOLUME /data
 ENTRYPOINT ["firn"]

@@ -5,7 +5,7 @@ use zip::ZipArchive;
 
 use super::{Import, ImportReport};
 use crate::db::{self};
-use crate::garmin::Activity;
+use crate::garmin::{Activity, image_type};
 use crate::routes;
 use crate::transfer::entries::{optional_entry, read_entry};
 use crate::transfer::format::{
@@ -127,7 +127,8 @@ impl Import<'_> {
                 images.push((image.id.clone(), data));
                 saved.push(db::Image {
                     id: image.id,
-                    content_type: image.content_type,
+                    // The archive may come from anywhere, so it does not choose freely.
+                    content_type: image_type(Some(&image.content_type)).to_owned(),
                 });
             }
         }
