@@ -4,12 +4,13 @@ use axum::Json;
 use axum::extract::{Query, State};
 use uuid::Uuid;
 
-use super::{ApiError, AppState, ErrorBody, FilterQuery};
-use crate::auth::CurrentUser;
+use super::{ApiError, ErrorBody, FilterQuery};
+use crate::authentication::CurrentUser;
 use crate::database;
 use crate::heatmap::{Viewport, to_degree_bounds};
 use crate::models;
 use crate::models::{ActivityItem, ActivityList, Filter, SearchQuery};
+use crate::state::AppState;
 
 const DEFAULT_SEARCH_LIMIT: i64 = 20;
 const MAX_SEARCH_LIMIT: i64 = 100;

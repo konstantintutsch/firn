@@ -1,11 +1,12 @@
 use axum::Json;
 use axum::extract::{Query, State};
 
-use super::{ApiError, AppState, ErrorBody, FilterQuery};
-use crate::auth::CurrentUser;
+use super::{ApiError, ErrorBody, FilterQuery};
+use crate::authentication::CurrentUser;
 use crate::database;
 use crate::heatmap::{Viewport, to_degree_bounds};
 use crate::models::Stats;
+use crate::state::AppState;
 
 /// Totals across the matching activities with GPS.
 #[utoipa::path(

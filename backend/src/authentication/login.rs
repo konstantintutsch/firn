@@ -10,10 +10,11 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
 use serde::Deserialize;
 
-use crate::api::{ApiError, AppState, ErrorBody, require_header};
+use crate::api::{ApiError, ErrorBody, require_header};
 use crate::database;
 use crate::models::CallbackQuery;
 use crate::secret::{self};
+use crate::state::AppState;
 
 use super::SESSION_COOKIE;
 use super::oidc::{LOGIN_TIMEOUT, MAX_PENDING_LOGINS, PendingLogin};

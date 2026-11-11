@@ -4,11 +4,12 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use super::{
-    AppState, activities, activity, activity_types, archive, file, health, heatmap, results, stats,
-    sync, training_blocks,
+    activities, activity, activity_types, archive, file, health, heatmap, results, stats, sync,
+    training_blocks,
 };
-use crate::auth::{self};
+use crate::authentication::{self};
 use crate::routes;
+use crate::state::AppState;
 use crate::statistics;
 
 #[derive(OpenApi)]
@@ -42,13 +43,13 @@ use crate::statistics;
         sync::sync_status,
         sync::start_sync,
         sync::cancel_sync,
-        auth::login,
-        auth::callback,
-        auth::logout,
-        auth::me,
-        auth::delete_me,
-        auth::set_garmin_key,
-        auth::delete_garmin_key,
+        authentication::login,
+        authentication::callback,
+        authentication::logout,
+        authentication::me,
+        authentication::delete_me,
+        authentication::set_garmin_key,
+        authentication::delete_garmin_key,
         statistics::activity_statistics,
         statistics::health_statistics,
     )
@@ -109,16 +110,19 @@ pub fn router_with(state: AppState, docs: bool) -> Router {
                 .post(sync::start_sync)
                 .delete(sync::cancel_sync),
         )
-        .merge(auth::limited(
+        .merge(authentication::limited(
             Router::new()
-                .route("/api/auth/login", get(auth::login))
-                .route("/api/auth/callback", get(auth::callback))
-                .route("/api/auth/logout", post(auth::logout)),
+                .route("/api/auth/login", get(authentication::login))
+                .route("/api/auth/callback", get(authentication::callback))
+                .route("/api/auth/logout", post(authentication::logout)),
         ))
-        .route("/api/me", get(auth::me).delete(auth::delete_me))
+        .route(
+            "/api/me",
+            get(authentication::me).delete(authentication::delete_me),
+        )
         .route(
             "/api/me/garmin-key",
-            put(auth::set_garmin_key).delete(auth::delete_garmin_key),
+            put(authentication::set_garmin_key).delete(authentication::delete_garmin_key),
         )
         .route(
             "/api/statistics/activities",

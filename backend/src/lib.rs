@@ -1,6 +1,6 @@
 pub mod api;
 pub mod apple_health;
-pub mod auth;
+pub mod authentication;
 pub mod backfill;
 pub mod database;
 pub mod files;
@@ -10,6 +10,7 @@ pub mod models;
 pub mod routes;
 pub mod schema;
 pub mod secret;
+pub mod state;
 pub mod statistics;
 pub mod sync;
 pub mod track;

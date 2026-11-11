@@ -1,8 +1,8 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 
-use super::AppState;
 use crate::database;
+use crate::state::AppState;
 
 /// Whether the backend runs and reaches its database, for container health checks.
 #[utoipa::path(

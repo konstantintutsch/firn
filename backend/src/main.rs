@@ -4,11 +4,12 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use firn::api::{self, AppState, GarminSettings};
-use firn::auth::{Auth, OidcSettings};
+use firn::api::{self};
+use firn::authentication::{Auth, OidcSettings};
 use firn::files::FileStore;
 use firn::garmin::DEFAULT_BASE_URL;
 use firn::secret::SecretBox;
+use firn::state::{AppState, GarminSettings};
 use firn::{backfill, database};
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};

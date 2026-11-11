@@ -2,8 +2,9 @@ mod common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use firn::api::{AppState, router};
+use firn::api::router;
 use firn::database::{self, Pool};
+use firn::state::AppState;
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tower::ServiceExt;

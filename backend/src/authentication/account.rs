@@ -4,10 +4,11 @@ use axum::http::header::SET_COOKIE;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 
-use crate::api::{ApiError, AppState, ErrorBody, require_header};
+use crate::api::{ApiError, ErrorBody, require_header};
 use crate::database;
 use crate::garmin::{GarminClient, GarminError};
 use crate::models::{GarminKey, Me};
+use crate::state::AppState;
 
 use super::{CurrentUser, SESSION_COOKIE};
 

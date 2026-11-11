@@ -1,11 +1,12 @@
 use axum::Json;
 use axum::extract::{Query, State};
 
-use super::{ApiError, AppState, ErrorBody, FilterQuery};
-use crate::auth::CurrentUser;
+use super::{ApiError, ErrorBody, FilterQuery};
+use crate::authentication::CurrentUser;
 use crate::database;
 use crate::heatmap::{self, Position, Viewport, to_degrees};
 use crate::models::{HeatLine, Heatmap, HeatmapQuery};
+use crate::state::AppState;
 
 const MAX_ZOOM: u8 = 22;
 

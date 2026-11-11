@@ -2,12 +2,12 @@
 
 use chrono::{Duration as Days, Utc};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
-use firn::api::{AppState, GarminSettings};
-use firn::auth::{Auth, OidcSettings, SESSION_COOKIE};
+use firn::authentication::{Auth, OidcSettings, SESSION_COOKIE};
 use firn::database::{self, Pool};
 use firn::files::FileStore;
 use firn::garmin::GarminClient;
 use firn::secret::{self, SecretBox};
+use firn::state::{AppState, GarminSettings};
 use std::io::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

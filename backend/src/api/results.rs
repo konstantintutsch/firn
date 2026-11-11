@@ -4,10 +4,11 @@ use axum::http::{HeaderMap, StatusCode};
 use uuid::Uuid;
 
 use super::query::text;
-use super::{ApiError, AppState, ErrorBody, require_header};
-use crate::auth::CurrentUser;
+use super::{ApiError, ErrorBody, require_header};
+use crate::authentication::CurrentUser;
 use crate::database;
 use crate::models;
+use crate::state::AppState;
 
 /// Enters the official result of a race, for the personal records. Replaces an
 /// earlier one.

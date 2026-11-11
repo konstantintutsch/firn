@@ -4,11 +4,12 @@ use axum::http::{HeaderMap, StatusCode};
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::{ApiError, AppState, ErrorBody, require_header};
-use crate::auth::CurrentUser;
+use super::{ApiError, ErrorBody, require_header};
+use crate::authentication::CurrentUser;
 use crate::database;
 use crate::garmin::{GarminClient, GarminError};
 use crate::models::{ActivityDetail, ActivityItem, Samples};
+use crate::state::AppState;
 use crate::sync::{self};
 use crate::track::{self};
 

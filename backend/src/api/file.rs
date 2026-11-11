@@ -3,11 +3,12 @@ use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use uuid::Uuid;
 
-use super::{ApiError, AppState, ErrorBody};
-use crate::auth::CurrentUser;
+use super::{ApiError, ErrorBody};
+use crate::authentication::CurrentUser;
 use crate::database;
 use crate::garmin::image_type;
 use crate::models::FileQuery;
+use crate::state::AppState;
 use crate::track::{self};
 
 /// Downloads an activity's file, as the device recorded it or as GPX.

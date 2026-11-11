@@ -9,7 +9,8 @@ use tower_governor::governor::GovernorConfigBuilder;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use tower_governor::{GovernorError, GovernorLayer};
 
-use crate::api::{ApiError, AppState};
+use crate::api::ApiError;
+use crate::state::AppState;
 
 /// Requests that a client may send at once.
 const BURST: u32 = 20;

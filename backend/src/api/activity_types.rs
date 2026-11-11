@@ -1,10 +1,11 @@
 use axum::Json;
 use axum::extract::{Query, State};
 
-use super::{ApiError, AppState, ErrorBody};
-use crate::auth::CurrentUser;
+use super::{ApiError, ErrorBody};
+use crate::authentication::CurrentUser;
 use crate::database;
 use crate::models::{ActivityType, ActivityTypeList, ActivityTypeQuery};
+use crate::state::AppState;
 
 /// All activity types among the saved activities with GPS, or among all of them.
 #[utoipa::path(

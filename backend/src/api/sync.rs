@@ -5,12 +5,13 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use chrono::Utc;
 
-use super::{ApiError, AppState, ErrorBody, require_header};
-use crate::auth::CurrentUser;
+use super::{ApiError, ErrorBody, require_header};
+use crate::authentication::CurrentUser;
 use crate::database;
 use crate::garmin::{GarminClient, GarminError};
 use crate::models;
 use crate::models::{SyncState, SyncStatus};
+use crate::state::AppState;
 use crate::sync::{HealthRange, Report, sync_all};
 
 /// Progress of the account's current or last sync.

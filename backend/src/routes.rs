@@ -11,13 +11,14 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use uuid::Uuid;
 
-use crate::api::{ApiError, AppState, ErrorBody, require_header};
-use crate::auth::CurrentUser;
+use crate::api::{ApiError, ErrorBody, require_header};
+use crate::authentication::CurrentUser;
 use crate::database;
 use crate::models::{
     NewRoute, NewRouteFromActivity, RouteChange, RouteDetail, RouteImportQuery, RouteList,
     RoutePoint, RouteSummary,
 };
+use crate::state::AppState;
 use crate::track::{self, Point, Sample};
 use geometry::route_points;
 

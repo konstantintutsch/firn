@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use tokio::task::AbortHandle;
 
-use crate::auth::Auth;
+use crate::authentication::Auth;
 use crate::database::{self, Pool};
 use crate::files::FileStore;
 use crate::models::{ActivityTrack, SyncStatus};
@@ -33,9 +33,9 @@ pub struct AppState {
     pub(crate) auth: Arc<Auth>,
     pub(crate) files: FileStore,
     /// By account.
-    pub(super) sync: Arc<Mutex<HashMap<i64, SyncStatus>>>,
+    pub(crate) sync: Arc<Mutex<HashMap<i64, SyncStatus>>>,
     /// The running syncs by account, to cancel them.
-    pub(super) sync_tasks: Arc<Mutex<HashMap<i64, AbortHandle>>>,
+    pub(crate) sync_tasks: Arc<Mutex<HashMap<i64, AbortHandle>>>,
     /// By account. Loaded on the first request and again after a sync, because the
     /// heatmap walks every track on every request, which would be slow from the database.
     tracks: Arc<Mutex<HashMap<i64, CachedTracks>>>,
@@ -70,7 +70,7 @@ impl AppState {
     }
 
     /// Loads each account's tracks once. Loading for one account never waits for another.
-    pub(super) async fn tracks(&self, user_id: i64) -> anyhow::Result<Arc<Vec<ActivityTrack>>> {
+    pub(crate) async fn tracks(&self, user_id: i64) -> anyhow::Result<Arc<Vec<ActivityTrack>>> {
         let cell = {
             let mut cache = self.tracks.lock().unwrap();
             if !cache.contains_key(&user_id) && cache.len() >= MAX_CACHED_ACCOUNTS {

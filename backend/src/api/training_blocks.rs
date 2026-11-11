@@ -1,9 +1,10 @@
 use axum::Json;
 use axum::extract::State;
 
-use super::{ApiError, AppState, ErrorBody};
-use crate::auth::CurrentUser;
+use super::{ApiError, ErrorBody};
+use crate::authentication::CurrentUser;
 use crate::models::TrainingBlocks;
+use crate::state::AppState;
 use crate::training_blocks;
 
 /// The training blocks of the races that have an official result. A block runs

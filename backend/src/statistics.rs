@@ -8,11 +8,12 @@ use chrono::{Days, NaiveDate};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::api::{ApiError, AppState, ErrorBody, FilterQuery};
-use crate::auth::CurrentUser;
+use crate::api::{ApiError, ErrorBody, FilterQuery};
+use crate::authentication::CurrentUser;
 use crate::database;
 use crate::models;
 use crate::models::{ActivityStatistic, ActivityStatistics, HealthStatistics, RangeQuery};
+use crate::state::AppState;
 
 fn check_range(from: Option<NaiveDate>, to: Option<NaiveDate>) -> Result<(), ApiError> {
     match (from, to) {

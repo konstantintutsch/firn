@@ -4,10 +4,11 @@ use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 
-use crate::api::{ApiError, AppState};
+use crate::api::ApiError;
 use crate::database;
 use crate::models::User;
 use crate::secret::{self};
+use crate::state::AppState;
 
 pub const SESSION_COOKIE: &str = "firn_session";
 pub(super) const SESSION_DAYS: i64 = 30;
