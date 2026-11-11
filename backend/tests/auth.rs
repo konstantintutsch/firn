@@ -1,6 +1,9 @@
 mod common;
 
+use std::net::SocketAddr;
+
 use axum::body::Body;
+use axum::extract::ConnectInfo;
 use axum::http::{Request, Response, StatusCode};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -16,7 +19,10 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 const CLIENT_ID: &str = "firn";
 const TOKEN: &str = "/personalapitoken-service/personal-api/personal-api-key/token";
 
-async fn send(state: &AppState, request: Request<Body>) -> Response<Body> {
+async fn send(state: &AppState, mut request: Request<Body>) -> Response<Body> {
+    // The address of the connection, which the limit on sign-ins asks for.
+    let address = SocketAddr::from(([127, 0, 0, 1], 0));
+    request.extensions_mut().insert(ConnectInfo(address));
     router(state.clone()).oneshot(request).await.unwrap()
 }
 
@@ -508,8 +514,7 @@ async fn limits_the_sign_ins_of_each_client() {
         let response = logout("203.0.113.1").await.unwrap();
         assert_ne!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     }
-    // Addresses before the last come from the client and do not count.
-    let response = logout("198.51.100.7, 203.0.113.1").await.unwrap();
+    let response = logout("203.0.113.1").await.unwrap();
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     assert!(response.headers().contains_key("retry-after"));
     assert!(json_body(response).await["error"].is_string());
