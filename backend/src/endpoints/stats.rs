@@ -1,12 +1,20 @@
+//! `/api/stats`
+
 use axum::Json;
 use axum::extract::{Query, State};
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
-use super::{ApiError, ErrorBody, FilterQuery};
+use super::ApiError;
 use crate::authentication::CurrentUser;
 use crate::database;
 use crate::heatmap::{Viewport, to_degree_bounds};
-use crate::models::Stats;
+use crate::models::{ErrorBody, FilterQuery, Stats};
 use crate::state::AppState;
+
+pub(super) fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(stats))
+}
 
 /// Totals across the matching activities with GPS.
 #[utoipa::path(

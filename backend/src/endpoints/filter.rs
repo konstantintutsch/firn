@@ -48,7 +48,7 @@ impl FilterQuery {
 }
 
 /// Trimmed text, or `None` if nothing is left.
-pub(super) fn text(value: Option<String>) -> Option<String> {
+pub(crate) fn text(value: Option<String>) -> Option<String> {
     value
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())

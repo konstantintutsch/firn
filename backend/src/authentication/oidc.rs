@@ -108,7 +108,7 @@ impl Auth {
             .await
     }
 
-    pub(super) fn cookie(&self, name: &str, value: &str, max_age: i64, path: &str) -> HeaderValue {
+    pub(crate) fn cookie(&self, name: &str, value: &str, max_age: i64, path: &str) -> HeaderValue {
         let secure = if self.secure_cookies() {
             "; Secure"
         } else {

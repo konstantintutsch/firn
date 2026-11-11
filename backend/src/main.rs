@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use firn::api::{self};
 use firn::authentication::{Auth, OidcSettings};
+use firn::endpoints;
 use firn::files::FileStore;
 use firn::garmin::DEFAULT_BASE_URL;
 use firn::secret::SecretBox;
@@ -126,13 +126,13 @@ async fn main() -> Result<()> {
 
     if cli.sync_interval_hours > 0 {
         let interval = Duration::from_secs(cli.sync_interval_hours * 3600);
-        tokio::spawn(api::sync_periodically(state.clone(), interval));
+        tokio::spawn(firn::sync::sync_periodically(state.clone(), interval));
     }
 
     let listener = TcpListener::bind(cli.bind).await?;
     tracing::info!(bind = %cli.bind, "listening");
     // With the address of each connection, for the limit on sign-ins.
-    let app = api::router_with(state, cli.api_docs);
+    let app = endpoints::router_with(state, cli.api_docs);
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),

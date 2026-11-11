@@ -1,15 +1,24 @@
+//! `/api/export` and `/api/import`: all of an account's data as one ZIP.
+
 use axum::Json;
-use axum::extract::{Query, State};
+use axum::extract::{DefaultBodyLimit, Query, State};
 use axum::http::{HeaderMap, header};
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
+use utoipa_axum::router::{OpenApiRouter, UtoipaMethodRouterExt};
+use utoipa_axum::routes;
 
-use super::{ApiError, ErrorBody, require_header};
+use super::{ApiError, require_header};
 use crate::authentication::CurrentUser;
-use crate::models;
-use crate::models::ImportQuery;
+use crate::models::{self, ErrorBody, ImportQuery};
 use crate::state::AppState;
 use crate::transfer;
+
+pub(super) fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(export))
+        .routes(routes!(import).layer(DefaultBodyLimit::disable()))
+}
 
 /// The largest ZIP that an import accepts.
 const MAX_IMPORT_BYTES: u64 = 4 * 1024 * 1024 * 1024;

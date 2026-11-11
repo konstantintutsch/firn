@@ -1,11 +1,19 @@
+//! `/api/activity-types`
+
 use axum::Json;
 use axum::extract::{Query, State};
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
-use super::{ApiError, ErrorBody};
+use super::ApiError;
 use crate::authentication::CurrentUser;
 use crate::database;
-use crate::models::{ActivityType, ActivityTypeList, ActivityTypeQuery};
+use crate::models::{ActivityType, ActivityTypeList, ActivityTypeQuery, ErrorBody};
 use crate::state::AppState;
+
+pub(super) fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(activity_types))
+}
 
 /// All activity types among the saved activities with GPS, or among all of them.
 #[utoipa::path(

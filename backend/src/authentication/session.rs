@@ -4,14 +4,14 @@ use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 
-use crate::api::ApiError;
 use crate::database;
+use crate::endpoints::ApiError;
 use crate::models::User;
 use crate::secret::{self};
 use crate::state::AppState;
 
 pub const SESSION_COOKIE: &str = "firn_session";
-pub(super) const SESSION_DAYS: i64 = 30;
+pub(crate) const SESSION_DAYS: i64 = 30;
 
 /// The signed-in account. Answers 401 without a valid session.
 pub struct CurrentUser(pub User);
@@ -28,7 +28,7 @@ impl FromRequestParts<AppState> for CurrentUser {
     }
 }
 
-pub(super) fn cookie<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+pub(crate) fn cookie<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers
         .get_all(COOKIE)
         .iter()
@@ -40,7 +40,7 @@ pub(super) fn cookie<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> 
         })
 }
 
-pub(super) fn redirect(location: &str, cookies: Vec<HeaderValue>) -> Response {
+pub(crate) fn redirect(location: &str, cookies: Vec<HeaderValue>) -> Response {
     let mut response = StatusCode::SEE_OTHER.into_response();
     let headers = response.headers_mut();
     headers.insert(

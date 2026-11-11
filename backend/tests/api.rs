@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use firn::api::router;
 use firn::database::{self, Pool};
+use firn::endpoints::router;
 use firn::state::AppState;
 use firn::track::Point;
 use http_body_util::BodyExt;

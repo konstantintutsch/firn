@@ -1,39 +1,26 @@
 use std::time::Instant;
 
 use anyhow::Context;
-use axum::extract::{Query, State};
-use axum::http::header::SET_COOKIE;
-use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::http::HeaderMap;
+use axum::response::Response;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
 use serde::Deserialize;
 
-use crate::api::{ApiError, ErrorBody, require_header};
 use crate::database;
+use crate::endpoints::ApiError;
 use crate::models::CallbackQuery;
 use crate::secret::{self};
 use crate::state::AppState;
 
-use super::SESSION_COOKIE;
-use super::oidc::{LOGIN_TIMEOUT, MAX_PENDING_LOGINS, PendingLogin};
+use super::oidc::{Auth, LOGIN_TIMEOUT, MAX_PENDING_LOGINS, PendingLogin};
 use super::session::{SESSION_DAYS, cookie, redirect};
 
-pub(super) const LOGIN_COOKIE: &str = "firn_login";
+pub(crate) const LOGIN_COOKIE: &str = "firn_login";
 
-/// Sends the browser to the OpenID Connect provider to sign in.
-#[utoipa::path(
-    get,
-    path = "/api/auth/login",
-    responses(
-        (status = 303, description = "Redirects to the provider"),
-        (status = 409, description = "OpenID Connect is not set up", body = ErrorBody),
-        (status = 429, description = "Too many sign-ins are under way", body = ErrorBody),
-    )
-)]
-pub async fn login(State(state): State<AppState>) -> Result<Response, ApiError> {
-    let auth = &state.auth;
+/// Remembers a new sign-in and answers with the redirect to the provider.
+pub(crate) async fn begin_login(auth: &Auth) -> Result<Response, ApiError> {
     let Some(oidc) = &auth.oidc else {
         return Err(ApiError::Conflict(
             "OpenID Connect is not set up. Set OIDC_ISSUER and OIDC_CLIENT_ID in .env",
@@ -82,33 +69,6 @@ pub async fn login(State(state): State<AppState>) -> Result<Response, ApiError> 
         "/api/auth",
     );
     Ok(redirect(url.as_str(), vec![cookie]))
-}
-
-/// Where the provider sends the browser back to. Starts a session and opens the app.
-#[utoipa::path(
-    get,
-    path = "/api/auth/callback",
-    params(CallbackQuery),
-    responses((status = 303, description = "Opens the app, with `?login=failed` on failure"))
-)]
-pub async fn callback(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Query(query): Query<CallbackQuery>,
-) -> Response {
-    let clear_login = state.auth.cookie(LOGIN_COOKIE, "", 0, "/api/auth");
-    match finish_login(&state, &headers, query).await {
-        Ok(token) => {
-            let session = state
-                .auth
-                .cookie(SESSION_COOKIE, &token, SESSION_DAYS * 24 * 3600, "/");
-            redirect("/", vec![clear_login, session])
-        }
-        Err(error) => {
-            tracing::warn!("sign-in failed: {error:#}");
-            redirect("/?login=failed", vec![clear_login])
-        }
-    }
 }
 
 #[derive(Deserialize)]
@@ -160,7 +120,7 @@ impl Audience {
 }
 
 /// Returns the token of the new session.
-async fn finish_login(
+pub(crate) async fn finish_login(
     state: &AppState,
     headers: &HeaderMap,
     query: CallbackQuery,
@@ -263,28 +223,4 @@ fn id_token_claims(id_token: &str) -> anyhow::Result<Claims> {
         .decode(payload.trim_end_matches('='))
         .context("malformed ID token")?;
     Ok(serde_json::from_slice(&payload)?)
-}
-
-/// Ends the session.
-#[utoipa::path(
-    post,
-    path = "/api/auth/logout",
-    responses(
-        (status = 204, description = "Signed out"),
-        (status = 403, description = "The X-Requested-With header is missing", body = ErrorBody),
-    )
-)]
-pub async fn logout(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Response, ApiError> {
-    require_header(&headers)?;
-    if let Some(token) = cookie(&headers, SESSION_COOKIE) {
-        database::delete_session(&state.pool, &secret::sha256(token)).await?;
-    }
-    let mut response = StatusCode::NO_CONTENT.into_response();
-    response
-        .headers_mut()
-        .insert(SET_COOKIE, state.auth.cookie(SESSION_COOKIE, "", 0, "/"));
-    Ok(response)
 }

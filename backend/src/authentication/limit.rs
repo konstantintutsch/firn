@@ -2,14 +2,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::Router;
 use axum::http::header::RETRY_AFTER;
 use axum::response::IntoResponse;
 use tower_governor::governor::GovernorConfigBuilder;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use tower_governor::{GovernorError, GovernorLayer};
+use utoipa_axum::router::OpenApiRouter;
 
-use crate::api::ApiError;
+use crate::endpoints::ApiError;
 use crate::state::AppState;
 
 /// Requests that a client may send at once.
@@ -23,7 +23,7 @@ const CLEANUP: Duration = Duration::from_secs(60);
 ///
 /// The client's address comes from the X-Forwarded-For header, which the
 /// frontend sets to the one address it trusts, or else from the connection.
-pub fn limited(routes: Router<AppState>) -> Router<AppState> {
+pub fn limited(routes: OpenApiRouter<AppState>) -> OpenApiRouter<AppState> {
     let config = GovernorConfigBuilder::default()
         .key_extractor(SmartIpKeyExtractor)
         .period(REFILL)

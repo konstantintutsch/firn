@@ -1,12 +1,20 @@
+//! `/api/heatmap`
+
 use axum::Json;
 use axum::extract::{Query, State};
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
-use super::{ApiError, ErrorBody, FilterQuery};
+use super::ApiError;
 use crate::authentication::CurrentUser;
 use crate::database;
 use crate::heatmap::{self, Position, Viewport, to_degrees};
-use crate::models::{HeatLine, Heatmap, HeatmapQuery};
+use crate::models::{ErrorBody, FilterQuery, HeatLine, Heatmap, HeatmapQuery};
 use crate::state::AppState;
+
+pub(super) fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(heatmap))
+}
 
 const MAX_ZOOM: u8 = 22;
 

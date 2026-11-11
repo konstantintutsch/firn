@@ -3,13 +3,13 @@ use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use uuid::Uuid;
 
-use super::{ApiError, ErrorBody};
 use crate::authentication::CurrentUser;
 use crate::database;
+use crate::endpoints::ApiError;
 use crate::garmin::image_type;
-use crate::models::FileQuery;
+use crate::models::{ErrorBody, FileQuery};
 use crate::state::AppState;
-use crate::track::{self};
+use crate::track;
 
 /// Downloads an activity's file, as the device recorded it or as GPX.
 #[utoipa::path(

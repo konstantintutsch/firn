@@ -1,5 +1,8 @@
+mod background;
 mod health;
 
+pub(crate) use background::start_sync_of;
+pub use background::sync_periodically;
 pub use health::{HealthRange, sync_health};
 
 use std::time::Duration;

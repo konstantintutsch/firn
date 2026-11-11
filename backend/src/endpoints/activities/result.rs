@@ -3,11 +3,11 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use uuid::Uuid;
 
-use super::query::text;
-use super::{ApiError, ErrorBody, require_header};
 use crate::authentication::CurrentUser;
 use crate::database;
-use crate::models;
+use crate::endpoints::filter::text;
+use crate::endpoints::{ApiError, require_header};
+use crate::models::{self, ErrorBody};
 use crate::state::AppState;
 
 /// Enters the official result of a race, for the personal records. Replaces an

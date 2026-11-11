@@ -1,8 +1,8 @@
-pub mod api;
 pub mod apple_health;
 pub mod authentication;
 pub mod backfill;
 pub mod database;
+pub mod endpoints;
 pub mod files;
 pub mod garmin;
 pub mod heatmap;

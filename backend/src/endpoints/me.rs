@@ -1,16 +1,25 @@
+//! `/api/me`: the signed-in account and its Garmin key.
+
 use axum::Json;
 use axum::extract::State;
 use axum::http::header::SET_COOKIE;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
-use crate::api::{ApiError, ErrorBody, require_header};
+use super::{ApiError, require_header};
+use crate::authentication::{CurrentUser, SESSION_COOKIE};
 use crate::database;
 use crate::garmin::{GarminClient, GarminError};
-use crate::models::{GarminKey, Me};
+use crate::models::{ErrorBody, GarminKey, Me};
 use crate::state::AppState;
 
-use super::{CurrentUser, SESSION_COOKIE};
+pub(super) fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(me, delete_me))
+        .routes(routes!(set_garmin_key, delete_garmin_key))
+}
 
 /// Deletes the account with all its activities, files, health data and
 /// sessions, and signs out. This cannot be undone.
@@ -25,7 +34,7 @@ use super::{CurrentUser, SESSION_COOKIE};
         (status = 403, description = "The header is missing", body = ErrorBody),
     )
 )]
-pub async fn delete_me(
+pub(super) async fn delete_me(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
     headers: HeaderMap,
@@ -55,7 +64,7 @@ pub async fn delete_me(
         (status = 401, description = "Not signed in", body = ErrorBody),
     )
 )]
-pub async fn me(CurrentUser(user): CurrentUser) -> Json<Me> {
+pub(super) async fn me(CurrentUser(user): CurrentUser) -> Json<Me> {
     Json(Me {
         id: user.id,
         name: user.name,
@@ -76,7 +85,7 @@ pub async fn me(CurrentUser(user): CurrentUser) -> Json<Me> {
         (status = 403, description = "The X-Requested-With header is missing", body = ErrorBody),
     )
 )]
-pub async fn set_garmin_key(
+pub(super) async fn set_garmin_key(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
     headers: HeaderMap,
@@ -115,7 +124,7 @@ pub async fn set_garmin_key(
         (status = 403, description = "The X-Requested-With header is missing", body = ErrorBody),
     )
 )]
-pub async fn delete_garmin_key(
+pub(super) async fn delete_garmin_key(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
     headers: HeaderMap,

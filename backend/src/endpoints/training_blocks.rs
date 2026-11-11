@@ -1,11 +1,19 @@
+//! `/api/training-blocks`
+
 use axum::Json;
 use axum::extract::State;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
-use super::{ApiError, ErrorBody};
+use super::ApiError;
 use crate::authentication::CurrentUser;
-use crate::models::TrainingBlocks;
+use crate::models::{ErrorBody, TrainingBlocks};
 use crate::state::AppState;
 use crate::training_blocks;
+
+pub(super) fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(training_blocks))
+}
 
 /// The training blocks of the races that have an official result. A block runs
 /// from the last race that was at least as long to the race itself, so shorter

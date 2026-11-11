@@ -1,8 +1,16 @@
+//! `/api/health`
+
 use axum::extract::State;
 use axum::http::StatusCode;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
 use crate::database;
 use crate::state::AppState;
+
+pub(super) fn router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(health))
+}
 
 /// Whether the backend runs and reaches its database, for container health checks.
 #[utoipa::path(
