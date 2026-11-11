@@ -84,6 +84,8 @@ Connect provider like Authentik, Keycloak, Authelia or Google.
    `POSTGRES_PASSWORD`, `APP_SECRET`, `PUBLIC_URL` and the `OIDC_` variables.
 3. Run `docker compose up -d`. Point the reverse proxy at `127.0.0.1:8080`.
    Cookies are only marked secure if `PUBLIC_URL` starts with `https://`.
+   The proxy must send the `X-Forwarded-For` header, which Caddy and Traefik
+   do on their own. Without it, all clients share one limit on sign-ins.
 4. Open `PUBLIC_URL` and sign in.
 5. Create a Personal API key on
    [Garmin Connect](https://connect.garmin.com/app/settings/personalApiToken)
