@@ -38,9 +38,9 @@ lint:
 migration name:
     docker compose run --build --rm --no-deps tools diesel migration generate {{name}}
 
-# Apply migrations to the database and regenerate src/schema.rs
+# Apply migrations to the database and regenerate src/database/schema.rs
 schema:
-    docker compose run --build --rm tools sh -c 'diesel migration run && diesel print-schema > src/schema.rs'
+    docker compose run --build --rm tools sh -c 'diesel migration run && diesel print-schema > src/database/schema.rs'
 
 # Run npm in the frontend, for example `just npm install leaflet`
 npm *args:

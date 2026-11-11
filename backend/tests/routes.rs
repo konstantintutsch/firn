@@ -3,8 +3,8 @@ mod common;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use diesel_async::RunQueryDsl;
-use firn::api::router;
-use firn::db::{self, Pool};
+use firn::database::{self, Pool};
+use firn::endpoints::router;
 use firn::track::Point;
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
@@ -109,7 +109,7 @@ async fn add_run_with_file(pool: &Pool, id: i64, gpx: Option<&str>) {
         summary: json!({"activityId": id, "startTimeGMT": "2026-03-01 08:00:00"}),
     };
     let id = common::add_activity(pool, activity).await;
-    db::save_track(
+    database::save_track(
         pool,
         id,
         &[Point {

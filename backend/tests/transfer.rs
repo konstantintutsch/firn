@@ -2,8 +2,9 @@ mod common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use firn::api::{AppState, router};
-use firn::db::{self, Pool};
+use firn::database::{self, Pool};
+use firn::endpoints::router;
+use firn::state::AppState;
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -40,14 +41,14 @@ async fn import(state: &AppState, zip: Vec<u8>) -> (StatusCode, Value) {
 /// The Garmin IDs of the test account's activities, oldest first.
 async fn activity_ids(pool: &Pool) -> Vec<i64> {
     let user_id = common::user(pool).await;
-    let ids = db::activity_ids(pool, user_id).await.unwrap();
+    let ids = database::activity_ids(pool, user_id).await.unwrap();
     ids_to_garmin(pool, &ids).await
 }
 
 async fn ids_to_garmin(pool: &Pool, ids: &[uuid::Uuid]) -> Vec<i64> {
     use diesel::prelude::*;
     use diesel_async::RunQueryDsl;
-    use firn::schema::activities;
+    use firn::database::schema::activities;
     let mut garmin_ids = Vec::new();
     for id in ids {
         garmin_ids.push(
@@ -302,7 +303,7 @@ async fn a_replacing_import_leaves_only_what_it_holds() {
     let (status, _) = send(&state, request, Body::from(route)).await;
     assert_eq!(status, StatusCode::CREATED);
     let user = common::user(&pool).await;
-    db::save_document(
+    database::save_document(
         &pool,
         user,
         "sleep",
@@ -496,7 +497,7 @@ async fn an_export_carries_the_health_data_of_apple_health() {
 async fn vo2_max_rows(pool: &Pool) -> Vec<(i32, f64, Option<uuid::Uuid>)> {
     use diesel::prelude::*;
     use diesel_async::RunQueryDsl;
-    use firn::schema::daily_metrics;
+    use firn::database::schema::daily_metrics;
     let user = common::user(pool).await;
     daily_metrics::table
         .filter(daily_metrics::user_id.eq(user))
@@ -572,7 +573,7 @@ async fn keeps_every_vo2_max_of_a_day_and_links_it_to_its_workout() {
 
     // Removing the workout leaves the value, without its link.
     let user = common::user(&pool).await;
-    firn::db::delete_activities(&pool, user, &[run])
+    firn::database::delete_activities(&pool, user, &[run])
         .await
         .unwrap();
     assert_eq!(

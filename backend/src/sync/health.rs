@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use chrono::{Days, NaiveDate};
 
-use crate::db::{self, Pool};
+use crate::database::{self, Pool};
 use crate::garmin::{GarminClient, GarminError};
 use crate::wellness::{self, KINDS, Kind, Period};
 
@@ -38,7 +38,7 @@ pub async fn sync_health(
 ) -> Result<(), GarminError> {
     let today = range.today;
     let default_first = today - Days::new(range.history_days);
-    let first = db::first_activity_day(pool, user_id)
+    let first = database::first_activity_day(pool, user_id)
         .await?
         .map_or(default_first, |day| day.min(default_first));
     let requests = health_requests(pool, user_id, first, today).await?;
@@ -59,7 +59,7 @@ pub async fn sync_health(
                     .as_ref()
                     .map(|data| request.kind.extract(data, request.day))
                     .unwrap_or_default();
-                db::save_document(
+                database::save_document(
                     pool,
                     user_id,
                     request.kind.name,
@@ -101,7 +101,7 @@ async fn health_requests(
     let recent = today - Days::new(wellness::REFRESH_DAYS);
     let mut requests: Vec<(NaiveDate, Request)> = Vec::new();
     for kind in KINDS {
-        let saved = db::document_periods(pool, user_id, kind.name).await?;
+        let saved = database::document_periods(pool, user_id, kind.name).await?;
         let mut add = |sort: NaiveDate, period: String, asked: String, day: Option<NaiveDate>| {
             requests.push((
                 sort,

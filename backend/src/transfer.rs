@@ -19,7 +19,7 @@ mod format;
 mod import;
 
 pub use export::export;
-pub use import::{AppleHealthScope, ImportReport, import};
+pub use import::import;
 
 /// Activities read from the database at a time, to keep memory use low.
 const ACTIVITIES_PER_QUERY: usize = 100;

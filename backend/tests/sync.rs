@@ -6,9 +6,9 @@ use chrono::NaiveDate;
 use common::{API_KEY, fit_of, semicircles, zip_of};
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
-use firn::db::{self, Pool};
+use firn::database::schema::{activities, garmin_documents, track_points};
+use firn::database::{self, Pool};
 use firn::garmin::GarminError;
-use firn::schema::{activities, garmin_documents, track_points};
 use firn::sync::{HealthRange, Report, sync_activities, sync_health};
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path, query_param};
@@ -105,7 +105,11 @@ async fn id_of(pool: &Pool, garmin_id: i64) -> uuid::Uuid {
 async fn is_track_synced(pool: &Pool, garmin_id: i64) -> bool {
     let user_id = common::user(pool).await;
     let id = id_of(pool, garmin_id).await;
-    !db::missing(pool, user_id, id).await.unwrap().unwrap().track
+    !database::missing(pool, user_id, id)
+        .await
+        .unwrap()
+        .unwrap()
+        .track
 }
 
 async fn point_count(pool: &Pool, garmin_id: i64) -> i64 {
@@ -188,7 +192,7 @@ async fn activity_of_another_account_is_left_unchanged() {
         has_track: true,
         summary: json!({}),
     };
-    db::upsert_activities(&pool, other, &[renamed])
+    database::upsert_activities(&pool, other, &[renamed])
         .await
         .unwrap();
 
@@ -260,11 +264,11 @@ async fn activities_without_gps_are_saved_but_left_off_the_map() {
             ..Default::default()
         }
     );
-    let filter = db::Filter {
+    let filter = firn::models::Filter {
         user_id: common::user(&pool).await,
         ..Default::default()
     };
-    let totals = db::totals(&pool, &filter).await.unwrap();
+    let totals = database::totals(&pool, &filter).await.unwrap();
     assert_eq!(totals.activities, 1);
     // The virtual run's file has a track, but in a virtual world.
     assert_eq!(point_count(&pool, 2).await, 0);
@@ -610,7 +614,9 @@ async fn saves_health_data_and_reads_daily_values() {
     );
 
     let user_id = common::user(&pool).await;
-    let metrics = db::daily_metrics(&pool, user_id, None, None).await.unwrap();
+    let metrics = database::daily_metrics(&pool, user_id, None, None)
+        .await
+        .unwrap();
     assert!(metrics.contains(&("sleep_h".to_owned(), day("2026-03-09"), 8.0)));
     assert!(metrics.contains(&("sleep_score".to_owned(), day("2026-03-09"), 88.0)));
     assert!(metrics.contains(&("hrv".to_owned(), day("2026-03-08"), 52.0)));
@@ -757,11 +763,13 @@ async fn saves_activity_images_without_sending_the_token() {
     assert!(!image_request.headers.contains_key("authorization"));
     let user_id = common::user(&pool).await;
     assert_eq!(
-        db::image_ids(&pool, id_of(&pool, 1).await).await.unwrap(),
+        database::image_ids(&pool, id_of(&pool, 1).await)
+            .await
+            .unwrap(),
         ["a"]
     );
     assert_eq!(
-        db::image_type(&pool, user_id, id_of(&pool, 1).await, "a")
+        database::image_type(&pool, user_id, id_of(&pool, 1).await, "a")
             .await
             .unwrap(),
         Some("image/jpeg".to_owned())
@@ -814,7 +822,7 @@ async fn image_that_garmin_refuses_is_skipped_for_good() {
     assert_eq!((report.downloaded, report.failed), (1, 0));
     assert_eq!(run_sync(&pool, &server).await.unwrap().to_download, 0);
     assert!(
-        db::image_ids(&pool, id_of(&pool, 1).await)
+        database::image_ids(&pool, id_of(&pool, 1).await)
             .await
             .unwrap()
             .is_empty()
@@ -823,7 +831,7 @@ async fn image_that_garmin_refuses_is_skipped_for_good() {
 
 #[tokio::test]
 async fn files_from_the_database_move_to_the_file_store() {
-    use firn::schema::activity_images;
+    use firn::database::schema::activity_images;
 
     let (pool, server) = setup().await;
     mount_list(&server, &[vec![activity(1, "running", true)]]).await;
@@ -851,7 +859,9 @@ async fn files_from_the_database_move_to_the_file_store() {
     drop(connection);
 
     let files = common::files(&pool).await;
-    db::move_files_to_store(&pool, &files).await.unwrap();
+    firn::backfill::move_files_to_store(&pool, &files)
+        .await
+        .unwrap();
     assert_eq!(
         files.original(id_of(&pool, 1).await).await.unwrap(),
         Some(b"old zip".to_vec())

@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use zip::ZipArchive;
 
 use super::{Import, ImportReport};
-use crate::db::{self};
+use crate::database;
 use crate::garmin::Activity;
 use crate::track::{self, Point, Sample};
 use crate::transfer::entries::{imported_id, read_limited, single_file_zip};
@@ -66,10 +66,11 @@ impl Import<'_> {
         self.save_track(&activity, id, Some(original))?;
         // Garmin has nothing more for files from elsewhere, so syncs never ask.
         self.handle
-            .block_on(db::save_details(self.pool, id, &json!({})))?;
+            .block_on(database::save_details(self.pool, id, &json!({})))?;
         self.handle
-            .block_on(db::save_workouts(self.pool, id, &json!([])))?;
-        self.handle.block_on(db::save_images(self.pool, id, &[]))?;
+            .block_on(database::save_workouts(self.pool, id, &json!([])))?;
+        self.handle
+            .block_on(database::save_images(self.pool, id, &[]))?;
         Ok(true)
     }
 }

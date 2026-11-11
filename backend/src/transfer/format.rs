@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::db::{self};
+use crate::models;
 
 pub(super) const MARKER: &str = "firn-export.json";
 /// Exports made before the project was renamed carry this marker and format.
@@ -29,7 +29,7 @@ pub(super) struct ExportedActivity {
     #[serde(default)]
     pub(super) images: Vec<ExportedImage>,
     #[serde(default)]
-    pub(super) result: Option<db::RaceResult>,
+    pub(super) result: Option<models::RaceResult>,
 }
 
 #[derive(Serialize, Deserialize)]
