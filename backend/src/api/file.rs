@@ -8,6 +8,7 @@ use uuid::Uuid;
 use super::{ApiError, AppState, ErrorBody};
 use crate::auth::CurrentUser;
 use crate::db::{self};
+use crate::garmin::image_type;
 use crate::track::{self};
 
 #[derive(Deserialize, IntoParams)]
@@ -115,7 +116,16 @@ pub(super) async fn activity_image(
         .ok_or(ApiError::NotFound("no such image"))?;
     Ok((
         [
-            (header::CONTENT_TYPE, content_type),
+            // Types saved by older versions were not checked.
+            (
+                header::CONTENT_TYPE,
+                image_type(Some(&content_type)).to_owned(),
+            ),
+            // Should a browser still open it as a page, nothing in it runs.
+            (
+                header::CONTENT_SECURITY_POLICY,
+                "default-src 'none'; sandbox".to_owned(),
+            ),
             // An image never changes under its ID.
             (
                 header::CACHE_CONTROL,

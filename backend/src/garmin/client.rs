@@ -29,6 +29,19 @@ const IMAGE_TYPES: &[&str] = &[
     "image/avif",
 ];
 
+/// The media type to save and serve an image with. Anything but a known image
+/// type becomes JPEG, so that a file never reaches a browser as a page or script.
+pub fn image_type(content_type: Option<&str>) -> &'static str {
+    let named = content_type
+        .map(|value| value.split(';').next().unwrap_or_default().trim())
+        .unwrap_or_default();
+    IMAGE_TYPES
+        .iter()
+        .find(|known| known.eq_ignore_ascii_case(named))
+        .copied()
+        .unwrap_or("image/jpeg")
+}
+
 fn jwt_claim(token: &str, claim: &str) -> Option<Value> {
     let payload = URL_SAFE_NO_PAD.decode(token.split('.').nth(1)?).ok()?;
     serde_json::from_slice::<Value>(&payload)
@@ -128,14 +141,13 @@ impl GarminClient {
             StatusCode::NOT_FOUND => return Err(GarminError::NotFound),
             status => return Err(GarminError::Status(status)),
         }
-        let content_type = response
-            .headers()
-            .get(CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .map(|value| value.split(';').next().unwrap_or_default().trim())
-            .filter(|value| IMAGE_TYPES.contains(value))
-            .unwrap_or("image/jpeg")
-            .to_owned();
+        let content_type = image_type(
+            response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+        )
+        .to_owned();
         Ok((read_limited(response, MAX_IMAGE_BYTES).await?, content_type))
     }
 
@@ -274,6 +286,15 @@ impl GarminClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_known_image_types_stay() {
+        assert_eq!(image_type(Some("image/png")), "image/png");
+        assert_eq!(image_type(Some("IMAGE/WebP; q=1")), "image/webp");
+        assert_eq!(image_type(Some("text/html")), "image/jpeg");
+        assert_eq!(image_type(Some("image/svg+xml")), "image/jpeg");
+        assert_eq!(image_type(None), "image/jpeg");
+    }
     use serde_json::json;
 
     fn jwt(payload: Value) -> String {

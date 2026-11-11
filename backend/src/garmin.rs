@@ -6,5 +6,5 @@ mod client;
 mod error;
 
 pub use activity::*;
-pub use client::{DEFAULT_BASE_URL, GarminClient};
+pub use client::{DEFAULT_BASE_URL, GarminClient, image_type};
 pub use error::GarminError;
