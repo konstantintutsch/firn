@@ -4,13 +4,8 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use uuid::Uuid;
 
 use super::Pool;
+use crate::models::Image;
 use crate::schema::{activities, activity_images};
-
-/// An image whose data is in the file store.
-pub struct Image {
-    pub id: String,
-    pub content_type: String,
-}
 
 /// Replaces the images of an activity atomically and marks them as done.
 pub async fn save_images(pool: &Pool, id: Uuid, images: &[Image]) -> Result<()> {

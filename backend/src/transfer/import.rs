@@ -5,7 +5,6 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use uuid::Uuid;
 use zip::ZipArchive;
@@ -20,42 +19,10 @@ use crate::apple_health;
 use crate::database::{self, Pool};
 use crate::files::FileStore;
 use crate::garmin::Activity;
+use crate::models;
+use crate::models::{AppleHealthScope, ImportReport};
 use crate::track::{self};
 use crate::wellness::KINDS;
-
-#[derive(Debug, Default, Serialize, PartialEq, utoipa::ToSchema)]
-pub struct ImportReport {
-    /// Activities that were saved or updated.
-    pub activities: usize,
-    /// Activities and routes that another account saved already, which stay with it.
-    pub skipped: usize,
-    /// Files that could not be read, like broken ones or ones without a time.
-    pub failed: usize,
-    /// Health documents, like a day of sleep.
-    pub health_documents: usize,
-    /// Routes that were saved or updated.
-    pub routes: usize,
-    /// Activities that were removed because they were not in the import, when
-    /// the import replaces what the account had.
-    pub removed_activities: usize,
-    /// Routes that were removed because they were not in the import.
-    pub removed_routes: usize,
-    /// Health documents that were removed because they were not in the import.
-    pub removed_health_documents: usize,
-    /// True if the import should have replaced the account's data but did not,
-    /// since some files could not be read and would have been lost.
-    pub replace_skipped: bool,
-}
-
-/// What to read from an Apple Health export.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum AppleHealthScope {
-    /// Only the daily health values, like steps, sleep and heart rate.
-    Health,
-    /// The health values and the workouts, which become activities.
-    Workouts,
-}
 
 /// What an import saved, which a replacing import keeps.
 #[derive(Default)]
@@ -242,7 +209,7 @@ impl Import<'_> {
                 .map(|metrics| serde_json::from_value(metrics.clone()))
                 .transpose()?
                 .unwrap_or_default();
-            let vo2_max: Vec<database::Vo2Reading> = document
+            let vo2_max: Vec<models::Vo2Reading> = document
                 .data
                 .as_ref()
                 .and_then(|data| data.get("vo2_max"))

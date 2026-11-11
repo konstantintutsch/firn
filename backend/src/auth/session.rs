@@ -5,7 +5,8 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 
 use crate::api::{ApiError, AppState};
-use crate::database::{self, User};
+use crate::database;
+use crate::models::User;
 use crate::secret::{self};
 
 pub const SESSION_COOKIE: &str = "firn_session";

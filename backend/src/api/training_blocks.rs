@@ -1,17 +1,10 @@
 use axum::Json;
 use axum::extract::State;
-use serde::Serialize;
-use utoipa::ToSchema;
 
 use super::{ApiError, AppState, ErrorBody};
 use crate::auth::CurrentUser;
+use crate::models::TrainingBlocks;
 use crate::training_blocks;
-
-#[derive(Serialize, ToSchema)]
-pub(super) struct TrainingBlocks {
-    /// Newest first.
-    blocks: Vec<training_blocks::TrainingBlock>,
-}
 
 /// The training blocks of the races that have an official result. A block runs
 /// from the last race that was at least as long to the race itself, so shorter

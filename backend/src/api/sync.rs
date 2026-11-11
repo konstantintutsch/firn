@@ -3,66 +3,15 @@ use std::time::Duration;
 use axum::Json;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use chrono::Utc;
 
 use super::{ApiError, AppState, ErrorBody, require_header};
 use crate::auth::CurrentUser;
 use crate::database;
 use crate::garmin::{GarminClient, GarminError};
+use crate::models;
+use crate::models::{SyncState, SyncStatus};
 use crate::sync::{HealthRange, Report, sync_all};
-
-#[derive(Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase")]
-pub(super) enum SyncState {
-    #[default]
-    Idle,
-    Running,
-    Succeeded,
-    Failed,
-    Cancelled,
-}
-
-/// A running sync lives in memory. The last finished one is also saved with the
-/// account, so that it survives a restart. After a restart, the next sync finds
-/// what is still missing.
-#[derive(Clone, Default, Serialize, Deserialize, ToSchema)]
-pub(super) struct SyncStatus {
-    state: SyncState,
-    /// When the sync ended, for finished syncs.
-    finished_at: Option<DateTime<Utc>>,
-    /// Activities found on Garmin so far.
-    listed: usize,
-    /// Activities that this sync has to download.
-    to_download: usize,
-    downloaded: usize,
-    /// Activities that could not be saved. The next sync retries them.
-    failed: usize,
-    /// Requests for health data, like sleep or HRV, that this sync has to make.
-    health_to_fetch: usize,
-    health_fetched: usize,
-    /// Health data that could not be saved. The next sync retries it.
-    health_failed: usize,
-    error: Option<String>,
-}
-
-impl SyncStatus {
-    fn running(report: &Report) -> Self {
-        Self {
-            state: SyncState::Running,
-            listed: report.listed,
-            to_download: report.to_download,
-            downloaded: report.downloaded,
-            failed: report.failed,
-            health_to_fetch: report.health_to_fetch,
-            health_fetched: report.health_fetched,
-            health_failed: report.health_failed,
-            error: None,
-            finished_at: None,
-        }
-    }
-}
 
 /// Progress of the account's current or last sync.
 #[utoipa::path(
@@ -139,7 +88,7 @@ pub(super) async fn start_sync(
 }
 
 /// Starts a sync of the account in the background, unless one is running.
-fn start_sync_of(state: &AppState, user: &database::User) -> Result<SyncStatus, ApiError> {
+fn start_sync_of(state: &AppState, user: &models::User) -> Result<SyncStatus, ApiError> {
     let Some(sealed) = &user.garmin_api_key else {
         return Err(ApiError::Conflict(
             "No Garmin API key is saved. Add one in the settings",

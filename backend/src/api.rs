@@ -14,8 +14,8 @@ mod stats;
 mod sync;
 mod training_blocks;
 
-pub use error::{ApiError, ErrorBody, require_header};
-pub use query::FilterQuery;
+pub use crate::models::{ErrorBody, FilterQuery};
+pub use error::{ApiError, require_header};
 pub use router::{ApiDoc, router, router_with};
 pub use state::{AppState, GarminSettings};
 pub use sync::sync_periodically;

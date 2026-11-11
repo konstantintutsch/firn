@@ -1,32 +1,10 @@
 use axum::Json;
 use axum::extract::{Query, State};
-use serde::{Deserialize, Serialize};
-use utoipa::{IntoParams, ToSchema};
 
 use super::{ApiError, AppState, ErrorBody};
 use crate::auth::CurrentUser;
 use crate::database;
-
-#[derive(Serialize, ToSchema)]
-pub(super) struct ActivityType {
-    /// Garmin's key for the type, like `trail_running`.
-    activity_type: String,
-    activities: i64,
-}
-
-#[derive(Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-pub(super) struct ActivityTypeQuery {
-    /// Also counts activities without GPS, as the statistics do.
-    #[serde(default)]
-    without_gps: bool,
-}
-
-#[derive(Serialize, ToSchema)]
-pub(super) struct ActivityTypeList {
-    /// Most frequent first.
-    types: Vec<ActivityType>,
-}
+use crate::models::{ActivityType, ActivityTypeList, ActivityTypeQuery};
 
 /// All activity types among the saved activities with GPS, or among all of them.
 #[utoipa::path(

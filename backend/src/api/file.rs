@@ -1,23 +1,14 @@
 use axum::extract::{Path, Query, State};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
-use serde::Deserialize;
-use utoipa::IntoParams;
 use uuid::Uuid;
 
 use super::{ApiError, AppState, ErrorBody};
 use crate::auth::CurrentUser;
 use crate::database;
 use crate::garmin::image_type;
+use crate::models::FileQuery;
 use crate::track::{self};
-
-#[derive(Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-pub(super) struct FileQuery {
-    /// `original` for the file the device recorded, usually FIT, or `gpx` for a
-    /// GPX file made from it. Defaults to `original`.
-    format: Option<String>,
-}
 
 /// Downloads an activity's file, as the device recorded it or as GPX.
 #[utoipa::path(

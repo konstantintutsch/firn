@@ -9,6 +9,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::Pool;
+use crate::models::Vo2Reading;
 use crate::schema::{activities, daily_metrics, garmin_documents};
 
 /// Daily values from `from` to `to`, sorted by metric and day.
@@ -38,13 +39,6 @@ pub async fn daily_metrics(
         query = query.filter(daily_metrics::day.le(to));
     }
     Ok(query.load(&mut pool.get().await?).await?)
-}
-
-/// A VO2 max from Apple Health, which belongs to a workout if there is one for it.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Vo2Reading {
-    pub value: f64,
-    pub activity_id: Option<Uuid>,
 }
 
 /// Saves a day of values from Apple Health as a document of its own, so that an

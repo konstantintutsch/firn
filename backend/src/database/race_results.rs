@@ -8,34 +8,8 @@ use diesel_async::RunQueryDsl;
 use uuid::Uuid;
 
 use super::Pool;
+use crate::models::{RaceDay, RaceResult};
 use crate::schema::{activities, race_results};
-use crate::training_blocks::RaceDay;
-
-/// The official result of a race, entered by hand.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Queryable,
-    Selectable,
-    serde::Serialize,
-    serde::Deserialize,
-    utoipa::ToSchema,
-)]
-#[diesel(table_name = race_results)]
-pub struct RaceResult {
-    /// The race's distance, like 21097.5 for a half marathon.
-    pub distance_m: f64,
-    /// The official finish time.
-    pub time_s: f64,
-    /// The name of the race, if it differs from the activity's.
-    pub event: Option<String>,
-    /// Where the official results are published.
-    pub results_url: Option<String>,
-    /// The finish time that was aimed for.
-    #[serde(default)]
-    pub target_time_s: Option<f64>,
-}
 
 /// The race results of activities, by activity.
 pub async fn race_results(pool: &Pool, ids: &[Uuid]) -> Result<HashMap<Uuid, RaceResult>> {

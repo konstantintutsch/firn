@@ -223,6 +223,22 @@ fn distance_to_segment(point: Position, a: Position, b: Position) -> f64 {
     distance(point, [a[0] + delta[0] * t, a[1] + delta[1] * t])
 }
 
+/// About 1 cm. Fewer digits make large responses much smaller.
+pub const COORDINATE_SCALE: f64 = 1e7;
+
+/// West, south, east and north edges in degrees.
+pub fn to_degree_bounds(bounds: Viewport) -> [f64; 4] {
+    // Mercator y grows southward, so the largest y is the south edge.
+    let [west, south] = to_degrees([bounds.min[0], bounds.max[1]]);
+    let [east, north] = to_degrees([bounds.max[0], bounds.min[1]]);
+    [west, south, east, north]
+}
+
+/// A Web Mercator position in degrees, rounded to keep responses small.
+pub fn to_degrees(position: Position) -> Position {
+    unproject(position).map(|degrees| (degrees * COORDINATE_SCALE).round() / COORDINATE_SCALE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

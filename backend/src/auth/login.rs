@@ -9,10 +9,10 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
 use serde::Deserialize;
-use utoipa::IntoParams;
 
 use crate::api::{ApiError, AppState, ErrorBody, require_header};
 use crate::database;
+use crate::models::CallbackQuery;
 use crate::secret::{self};
 
 use super::SESSION_COOKIE;
@@ -81,15 +81,6 @@ pub async fn login(State(state): State<AppState>) -> Result<Response, ApiError> 
         "/api/auth",
     );
     Ok(redirect(url.as_str(), vec![cookie]))
-}
-
-#[derive(Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-pub struct CallbackQuery {
-    code: Option<String>,
-    state: Option<String>,
-    /// Set by the provider if the person did not sign in.
-    error: Option<String>,
 }
 
 /// Where the provider sends the browser back to. Starts a session and opens the app.

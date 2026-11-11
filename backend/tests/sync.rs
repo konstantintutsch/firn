@@ -264,7 +264,7 @@ async fn activities_without_gps_are_saved_but_left_off_the_map() {
             ..Default::default()
         }
     );
-    let filter = database::Filter {
+    let filter = firn::models::Filter {
         user_id: common::user(&pool).await,
         ..Default::default()
     };

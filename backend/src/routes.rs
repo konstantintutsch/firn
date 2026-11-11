@@ -9,57 +9,22 @@ use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use serde::{Deserialize, Serialize};
-use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::api::{ApiError, AppState, ErrorBody, require_header};
 use crate::auth::CurrentUser;
-use crate::database::{self, NewRoute, RouteSummary};
+use crate::database;
+use crate::models::{
+    NewRoute, NewRouteFromActivity, RouteChange, RouteDetail, RouteImportQuery, RouteList,
+    RoutePoint, RouteSummary,
+};
 use crate::track::{self, Point, Sample};
-use geometry::{RoutePoint, route_points};
+use geometry::route_points;
 
 /// The largest GPX file that an import accepts.
 pub const MAX_GPX_BYTES: usize = 32 * 1024 * 1024;
 const MAX_NAME_CHARS: usize = 200;
 const MAX_DESCRIPTION_CHARS: usize = 5000;
-
-#[derive(Serialize, ToSchema)]
-pub struct RouteList {
-    routes: Vec<RouteSummary>,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct RouteDetail {
-    #[serde(flatten)]
-    route: RouteSummary,
-    /// `[latitude, longitude, elevation]` in degrees and meters, with `null` for
-    /// an unknown elevation.
-    #[schema(value_type = Vec<Vec<Option<f64>>>)]
-    points: Vec<RoutePoint>,
-}
-
-#[derive(Deserialize, ToSchema)]
-pub struct NewRouteFromActivity {
-    /// The ID of the activity to take the track from.
-    activity_id: Uuid,
-    /// Defaults to the activity's title.
-    name: Option<String>,
-    description: Option<String>,
-}
-
-#[derive(Deserialize, ToSchema)]
-pub struct RouteChange {
-    name: String,
-    description: Option<String>,
-}
-
-#[derive(Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-pub struct ImportQuery {
-    /// Defaults to `Imported route`.
-    name: Option<String>,
-}
 
 fn text(value: Option<String>) -> Option<String> {
     value
@@ -190,7 +155,7 @@ pub async fn create_route(
 #[utoipa::path(
     post,
     path = "/api/routes/import",
-    params(ImportQuery),
+    params(RouteImportQuery),
     request_body(content = Vec<u8>, content_type = "application/gpx+xml"),
     responses(
         (status = 201, body = RouteSummary),
@@ -202,7 +167,7 @@ pub async fn create_route(
 pub async fn import_route(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Query(query): Query<ImportQuery>,
+    Query(query): Query<RouteImportQuery>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<(StatusCode, Json<RouteSummary>), ApiError> {

@@ -1,5 +1,4 @@
 use anyhow::Result;
-use chrono::{DateTime, Utc};
 use diesel::dsl::exists;
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
@@ -7,6 +6,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::Pool;
+use crate::models::{NewRoute, RouteRecord, RouteSummary};
 use crate::schema::{activities, routes};
 
 /// The IDs of all of the account's routes.
@@ -28,36 +28,6 @@ pub async fn delete_routes(pool: &Pool, user_id: i64, ids: &[Uuid]) -> Result<()
     .execute(&mut pool.get().await?)
     .await?;
     Ok(())
-}
-
-/// A saved route without its points.
-#[derive(Debug, Queryable, Selectable, serde::Serialize, utoipa::ToSchema)]
-#[diesel(table_name = routes)]
-pub struct RouteSummary {
-    pub id: Uuid,
-    pub name: String,
-    pub description: Option<String>,
-    pub distance_m: f64,
-    pub elevation_gain_m: Option<f64>,
-    /// The activity that the route was made from, if it still exists.
-    pub activity_id: Option<Uuid>,
-    pub created_at: DateTime<Utc>,
-    /// About 64 points along the route, as `[latitude, longitude]`, to draw a small picture of it.
-    #[schema(value_type = Vec<Vec<f64>>)]
-    pub preview: Value,
-}
-
-#[derive(Insertable)]
-#[diesel(table_name = routes)]
-pub struct NewRoute<'a> {
-    pub user_id: i64,
-    pub name: &'a str,
-    pub description: Option<&'a str>,
-    pub distance_m: f64,
-    pub elevation_gain_m: Option<f64>,
-    pub points: &'a Value,
-    pub preview: &'a Value,
-    pub activity_id: Option<Uuid>,
 }
 
 pub async fn insert_route(pool: &Pool, route: &NewRoute<'_>) -> Result<RouteSummary> {
@@ -118,20 +88,6 @@ pub async fn delete_route(pool: &Pool, user_id: i64, id: Uuid) -> Result<()> {
     .execute(&mut pool.get().await?)
     .await?;
     Ok(())
-}
-
-/// A route as an export holds it.
-#[derive(Debug, Queryable, Selectable, serde::Serialize, serde::Deserialize)]
-#[diesel(table_name = routes)]
-pub struct RouteRecord {
-    pub id: Uuid,
-    pub name: String,
-    pub description: Option<String>,
-    pub distance_m: f64,
-    pub elevation_gain_m: Option<f64>,
-    pub points: Value,
-    pub activity_id: Option<Uuid>,
-    pub created_at: DateTime<Utc>,
 }
 
 /// All of the account's routes, oldest first.

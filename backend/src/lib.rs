@@ -6,6 +6,7 @@ pub mod database;
 pub mod files;
 pub mod garmin;
 pub mod heatmap;
+pub mod models;
 pub mod routes;
 pub mod schema;
 pub mod secret;

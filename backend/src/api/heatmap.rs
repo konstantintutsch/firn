@@ -1,46 +1,13 @@
 use axum::Json;
 use axum::extract::{Query, State};
-use serde::{Deserialize, Serialize};
-use utoipa::{IntoParams, ToSchema};
 
 use super::{ApiError, AppState, ErrorBody, FilterQuery};
 use crate::auth::CurrentUser;
 use crate::database;
-use crate::heatmap::{self, Position, Viewport};
+use crate::heatmap::{self, Position, Viewport, to_degrees};
+use crate::models::{HeatLine, Heatmap, HeatmapQuery};
 
 const MAX_ZOOM: u8 = 22;
-/// About 1 cm. Fewer digits make large responses much smaller.
-pub(super) const COORDINATE_SCALE: f64 = 1e7;
-
-#[derive(Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-pub(super) struct HeatmapQuery {
-    /// Map zoom level from 0 to 22. Sets how much detail the lines keep.
-    zoom: u8,
-    /// Western edge of the viewport, from -180 to 180 degrees.
-    west: f64,
-    /// Southern edge of the viewport, from -90 to 90 degrees.
-    south: f64,
-    /// Eastern edge of the viewport, from -180 to 180 degrees.
-    east: f64,
-    /// Northern edge of the viewport, from -90 to 90 degrees.
-    north: f64,
-}
-
-#[derive(Serialize, ToSchema)]
-pub(super) struct HeatLine {
-    /// From 0 for the fewest activities in the viewport to 1 for the most, on a log scale.
-    weight: f64,
-    /// Longitude and latitude pairs.
-    #[schema(value_type = Vec<Vec<f64>>)]
-    path: Vec<Position>,
-}
-
-#[derive(Serialize, ToSchema)]
-pub(super) struct Heatmap {
-    /// Sorted from the quietest line to the busiest.
-    lines: Vec<HeatLine>,
-}
 
 /// Colored lines of the matching activities in a viewport.
 #[utoipa::path(
@@ -102,17 +69,4 @@ pub(super) async fn heatmap(
             })
             .collect(),
     }))
-}
-
-/// West, south, east and north edges in degrees.
-pub(super) fn to_degree_bounds(bounds: Viewport) -> [f64; 4] {
-    // Mercator y grows southward, so the largest y is the south edge.
-    let [west, south] = to_degrees([bounds.min[0], bounds.max[1]]);
-    let [east, north] = to_degrees([bounds.max[0], bounds.min[1]]);
-    [west, south, east, north]
-}
-
-fn to_degrees(position: Position) -> Position {
-    heatmap::unproject(position)
-        .map(|degrees| (degrees * COORDINATE_SCALE).round() / COORDINATE_SCALE)
 }

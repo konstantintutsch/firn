@@ -3,11 +3,11 @@ use axum::extract::{Query, State};
 use axum::http::{HeaderMap, header};
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
-use serde::Deserialize;
-use utoipa::IntoParams;
 
 use super::{ApiError, AppState, ErrorBody, require_header};
 use crate::auth::CurrentUser;
+use crate::models;
+use crate::models::ImportQuery;
 use crate::transfer;
 
 /// The largest ZIP that an import accepts.
@@ -61,20 +61,6 @@ pub(super) async fn export(
         .into_response())
 }
 
-#[derive(Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-pub(super) struct ImportQuery {
-    /// Leaves the account with what the import holds and nothing else: its
-    /// other activities, routes and health data are removed. Does nothing if
-    /// some files of the import could not be read. Defaults to `false`.
-    replace: Option<bool>,
-    /// Reads the ZIP as the export of the Apple Health app: `health` for only
-    /// its daily values, like steps, sleep and heart rate, or `workouts` for
-    /// those and its workouts, which become activities. Values that Garmin
-    /// saved already stay.
-    apple_health: Option<transfer::AppleHealthScope>,
-}
-
 /// Imports a ZIP: a Firn export, or FIT, GPX and TCX files from other apps and
 /// devices, also in ZIPs of their own. Importing the same file again updates it.
 /// Files from elsewhere get a negative ID, since they have none from Garmin.
@@ -86,7 +72,7 @@ pub(super) struct ImportQuery {
     params(ImportQuery),
     request_body(content = Vec<u8>, content_type = "application/zip"),
     responses(
-        (status = 200, body = transfer::ImportReport),
+        (status = 200, body = models::ImportReport),
         (status = 400, description = "Not a ZIP, or too large", body = ErrorBody),
         (status = 401, description = "Not signed in", body = ErrorBody),
         (status = 403, description = "The header is missing", body = ErrorBody),
@@ -99,7 +85,7 @@ pub(super) async fn import(
     Query(query): Query<ImportQuery>,
     headers: HeaderMap,
     body: axum::body::Body,
-) -> Result<Json<transfer::ImportReport>, ApiError> {
+) -> Result<Json<models::ImportReport>, ApiError> {
     use futures_util::StreamExt;
     use tokio::io::AsyncWriteExt;
 

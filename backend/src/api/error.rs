@@ -1,13 +1,7 @@
+use crate::models::ErrorBody;
 use axum::Json;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use serde::Serialize;
-use utoipa::ToSchema;
-
-#[derive(Serialize, ToSchema)]
-pub struct ErrorBody {
-    error: String,
-}
 
 #[derive(Debug)]
 pub enum ApiError {

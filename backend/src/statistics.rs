@@ -5,23 +5,14 @@ use std::collections::BTreeMap;
 use axum::Json;
 use axum::extract::{Query, State};
 use chrono::{Days, NaiveDate};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::api::{ApiError, AppState, ErrorBody, FilterQuery};
 use crate::auth::CurrentUser;
 use crate::database;
-
-#[derive(Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-pub struct RangeQuery {
-    /// First day to include, in local time.
-    from: Option<NaiveDate>,
-    /// Last day to include, in local time.
-    to: Option<NaiveDate>,
-}
+use crate::models;
+use crate::models::{ActivityStatistic, ActivityStatistics, HealthStatistics, RangeQuery};
 
 fn check_range(from: Option<NaiveDate>, to: Option<NaiveDate>) -> Result<(), ApiError> {
     match (from, to) {
@@ -32,36 +23,6 @@ fn check_range(from: Option<NaiveDate>, to: Option<NaiveDate>) -> Result<(), Api
 
 /// Days in the rolling average of the resting heart rate.
 const RESTING_AVERAGE_DAYS: u64 = 7;
-
-#[derive(Serialize, ToSchema)]
-pub struct ActivityStatistic {
-    id: Uuid,
-    name: String,
-    activity_type: String,
-    /// The local day it started.
-    day: Option<String>,
-    distance_m: Option<f64>,
-    duration_s: Option<f64>,
-    moving_duration_s: Option<f64>,
-    elevation_gain_m: Option<f64>,
-    average_heart_rate: Option<f64>,
-    max_heart_rate: Option<f64>,
-    calories: Option<f64>,
-    average_speed_mps: Option<f64>,
-    /// The VO2 max that the activity's file recorded.
-    vo2_max: Option<f64>,
-    aerobic_training_effect: Option<f64>,
-    anaerobic_training_effect: Option<f64>,
-    training_load: Option<f64>,
-    /// The official result, for races that have one entered.
-    result: Option<database::RaceResult>,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct ActivityStatistics {
-    /// The matching activities, with or without GPS, oldest first.
-    activities: Vec<ActivityStatistic>,
-}
 
 fn number(summary: &Value, key: &str) -> Option<f64> {
     summary.get(key)?.as_f64().filter(|value| value.is_finite())
@@ -83,7 +44,7 @@ pub async fn activity_statistics(
     CurrentUser(user): CurrentUser,
     Query(filter): Query<FilterQuery>,
 ) -> Result<Json<ActivityStatistics>, ApiError> {
-    let filter = database::Filter {
+    let filter = models::Filter {
         without_gps: true,
         ..filter.into_filter(&state.pool, user.id).await?
     };
@@ -120,14 +81,6 @@ pub async fn activity_statistics(
             })
             .collect(),
     }))
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct HealthStatistics {
-    /// Each metric, like `sleep_h` or `hrv`, with its days and values, oldest first.
-    /// `resting_heart_rate_7d` averages the resting heart rate over each day and the 6 before.
-    #[schema(value_type = Object, example = json!({"resting_heart_rate": [["2026-01-01", 48.0]]}))]
-    metrics: BTreeMap<String, Vec<(NaiveDate, f64)>>,
 }
 
 /// Daily health values in a range, like sleep, HRV, resting heart rate and stress.

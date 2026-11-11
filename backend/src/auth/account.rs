@@ -3,12 +3,11 @@ use axum::extract::State;
 use axum::http::header::SET_COOKIE;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
 use crate::api::{ApiError, AppState, ErrorBody, require_header};
 use crate::database;
 use crate::garmin::{GarminClient, GarminError};
+use crate::models::{GarminKey, Me};
 
 use super::{CurrentUser, SESSION_COOKIE};
 
@@ -46,15 +45,6 @@ pub async fn delete_me(
     Ok(response)
 }
 
-#[derive(Serialize, ToSchema)]
-pub struct Me {
-    id: i64,
-    name: Option<String>,
-    email: Option<String>,
-    /// Whether a Garmin Personal API key is saved. The key itself is never returned.
-    has_garmin_key: bool,
-}
-
 /// The signed-in account.
 #[utoipa::path(
     get,
@@ -71,12 +61,6 @@ pub async fn me(CurrentUser(user): CurrentUser) -> Json<Me> {
         email: user.email,
         has_garmin_key: user.garmin_api_key.is_some(),
     })
-}
-
-#[derive(Deserialize, ToSchema)]
-pub struct GarminKey {
-    /// Created at https://connect.garmin.com/app/settings/personalApiToken
-    api_key: String,
 }
 
 /// Saves the account's Garmin Personal API key, after checking that Garmin accepts it.

@@ -3,7 +3,8 @@ use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
 
-use super::{Pool, User};
+use super::Pool;
+use crate::models::User;
 use crate::schema::{sessions, users};
 
 /// Also removes expired sessions of all accounts, so that they do not pile up.

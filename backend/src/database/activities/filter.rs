@@ -1,31 +1,9 @@
-use chrono::NaiveDate;
 use diesel::dsl::exists;
 use diesel::pg::Pg;
 use diesel::prelude::*;
-use uuid::Uuid;
 
+use crate::models::Filter;
 use crate::schema::{activities, track_points};
-
-/// Limits which activities count. All set fields must match.
-#[derive(Debug, Default, Clone)]
-pub struct Filter {
-    /// The account whose activities count.
-    pub user_id: i64,
-    pub id: Option<Uuid>,
-    pub query: Option<String>,
-    pub activity_types: Vec<String>,
-    pub title: Option<String>,
-    pub description: Option<String>,
-    pub location: Option<String>,
-    pub min_distance_m: Option<f64>,
-    pub max_distance_m: Option<f64>,
-    pub min_duration_s: Option<f64>,
-    pub max_duration_s: Option<f64>,
-    pub from: Option<NaiveDate>,
-    pub to: Option<NaiveDate>,
-    /// Also counts activities without GPS, which have no place on a map but do in statistics.
-    pub without_gps: bool,
-}
 
 impl Filter {
     pub(super) fn apply<'a, ST: 'a>(

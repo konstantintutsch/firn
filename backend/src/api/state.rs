@@ -4,10 +4,10 @@ use std::time::{Duration, Instant};
 
 use tokio::task::AbortHandle;
 
-use super::sync::SyncStatus;
 use crate::auth::Auth;
-use crate::database::{self, ActivityTrack, Pool};
+use crate::database::{self, Pool};
 use crate::files::FileStore;
+use crate::models::{ActivityTrack, SyncStatus};
 
 /// Accounts whose tracks stay in memory. More would be rare on one server.
 const MAX_CACHED_ACCOUNTS: usize = 32;

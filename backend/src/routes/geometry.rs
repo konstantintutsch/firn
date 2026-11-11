@@ -1,4 +1,5 @@
 use crate::api::ApiError;
+use crate::models::RoutePoint;
 use crate::track::{Point, Sample};
 
 /// Enough to follow a route on a map, and few enough to keep the answer small.
@@ -8,9 +9,6 @@ const PREVIEW_POINTS: usize = 64;
 /// Smaller changes of elevation count as noise, which would otherwise add up to a climb.
 const ELEVATION_NOISE_M: f64 = 3.0;
 const EARTH_RADIUS_M: f64 = 6_371_000.0;
-
-/// A point of a route: latitude, longitude and elevation in meters, if known.
-pub(super) type RoutePoint = (f64, f64, Option<f64>);
 
 /// Meters between two points along the Earth's surface.
 fn haversine(a: &RoutePoint, b: &RoutePoint) -> f64 {

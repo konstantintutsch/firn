@@ -6,6 +6,7 @@ use zip::ZipArchive;
 use super::{Import, ImportReport};
 use crate::database;
 use crate::garmin::{Activity, image_type};
+use crate::models;
 use crate::routes;
 use crate::transfer::entries::{optional_entry, read_entry};
 use crate::transfer::format::{
@@ -81,7 +82,7 @@ impl Import<'_> {
         archive: &mut ZipArchive<File>,
         name: &str,
     ) -> Result<bool> {
-        let mut route: database::RouteRecord = serde_json::from_slice(&read_entry(archive, name)?)?;
+        let mut route: models::RouteRecord = serde_json::from_slice(&read_entry(archive, name)?)?;
         let points: Vec<(f64, f64, Option<f64>)> = serde_json::from_value(route.points)?;
         let prepared = routes::prepare(points).map_err(|error| anyhow::anyhow!("{error:?}"))?;
         route.points = serde_json::to_value(&prepared.points)?;
@@ -128,7 +129,7 @@ impl Import<'_> {
         for (index, image) in exported.images.into_iter().enumerate() {
             if let Some(data) = optional_entry(archive, &format!("{dir}/images/{index}"))? {
                 images.push((image.id.clone(), data));
-                saved.push(database::Image {
+                saved.push(models::Image {
                     id: image.id,
                     // The archive may come from anywhere, so it does not choose freely.
                     content_type: image_type(Some(&image.content_type)).to_owned(),

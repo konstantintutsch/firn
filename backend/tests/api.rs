@@ -589,7 +589,7 @@ async fn sync_starts_in_the_background_and_saves_runs() {
     assert_eq!(
         database::totals(
             &pool,
-            &database::Filter {
+            &firn::models::Filter {
                 user_id: common::user(&pool).await,
                 ..Default::default()
             }
@@ -1270,7 +1270,7 @@ async fn a_photo_never_arrives_as_a_page() {
     database::save_images(
         &pool,
         common::uuid(1),
-        &[database::Image {
+        &[firn::models::Image {
             id: "a".to_owned(),
             content_type: "text/html".to_owned(),
         }],
@@ -1304,7 +1304,7 @@ async fn photos_are_only_for_their_account() {
     database::save_images(
         &pool,
         common::uuid(1),
-        &[database::Image {
+        &[firn::models::Image {
             id: "a".to_owned(),
             content_type: "image/png".to_owned(),
         }],

@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::database::{self, Pool};
 use crate::files::FileStore;
 use crate::garmin::{self, Activity, GarminClient, GarminError};
+use crate::models;
 use crate::track;
 
 /// The default page size of Garmin's activity search.
@@ -117,7 +118,7 @@ async fn download_activity(
     client: &mut GarminClient,
     activity: &Activity,
     id: Uuid,
-    missing: &database::Missing,
+    missing: &models::Missing,
 ) -> Result<(), GarminError> {
     if missing.track {
         save_original(pool, files, client, activity, id).await?;
@@ -154,7 +155,7 @@ pub async fn resync_activity(
         return Ok(None);
     };
     let activity = Activity::from_summary(summary)?;
-    let everything = database::Missing {
+    let everything = models::Missing {
         track: true,
         details: true,
         workouts: true,
@@ -250,7 +251,7 @@ async fn save_images(
             Err(error) => return Err(error),
         };
         downloads.push((image.id.clone(), data));
-        saved.push(database::Image {
+        saved.push(models::Image {
             id: image.id,
             content_type,
         });

@@ -1,15 +1,14 @@
 use std::collections::HashSet;
 
 use anyhow::Result;
-use chrono::{DateTime, Utc};
 use diesel::dsl::{count_star, exists, sum};
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::Filter;
 use crate::database::Pool;
+use crate::models::{ActivityRecord, ActivitySummary, Filter, Order, Totals};
 use crate::schema::{activities, track_points};
 
 /// The activities that match, for the heatmap to pick from its tracks.
@@ -21,41 +20,7 @@ pub async fn matching_ids(pool: &Pool, filter: &Filter) -> Result<HashSet<Uuid>>
     Ok(ids.into_iter().collect())
 }
 
-#[derive(Queryable, Selectable)]
-#[diesel(table_name = activities)]
-pub struct ActivitySummary {
-    pub id: Uuid,
-    pub garmin_id: i64,
-    pub name: String,
-    pub activity_type: String,
-    pub started_at: DateTime<Utc>,
-    pub distance_m: Option<f64>,
-    pub duration_s: Option<f64>,
-    pub description: Option<String>,
-    pub location: Option<String>,
-    /// About 64 points along the track as `[latitude, longitude]`.
-    pub preview: Option<Value>,
-    /// Garmin's weather at the start, if it listed one.
-    pub weather: Option<Value>,
-    /// The watch and sensors that recorded the activity.
-    pub devices: Option<Value>,
-    /// What the activity trained most, like `TEMPO`, as Garmin names it.
-    pub training_effect_label: Option<String>,
-    /// How much the activity improved aerobic fitness, from 0 to 5.
-    pub aerobic_training_effect: Option<f64>,
-}
-
-/// The newest activities that match, after skipping the `offset` newest.
-#[derive(Debug, Clone, Copy)]
-pub enum Order {
-    Newest,
-    Oldest,
-    /// The longest distance first.
-    Distance,
-    /// The longest time first.
-    Duration,
-}
-
+/// The first activities that match in this order, after skipping `offset` of them.
 pub async fn search_activities(
     pool: &Pool,
     filter: &Filter,
@@ -123,11 +88,6 @@ pub async fn activity_types(
     Ok(query.load(&mut pool.get().await?).await?)
 }
 
-pub struct Totals {
-    pub activities: i64,
-    pub distance_m: f64,
-}
-
 pub async fn totals(pool: &Pool, filter: &Filter) -> Result<Totals> {
     let (count, distance): (i64, Option<f64>) = filter
         .apply(
@@ -141,19 +101,6 @@ pub async fn totals(pool: &Pool, filter: &Filter) -> Result<Totals> {
         activities: count,
         distance_m: distance.unwrap_or(0.0),
     })
-}
-
-#[derive(Queryable, Selectable)]
-#[diesel(table_name = activities)]
-pub struct ActivityRecord {
-    pub id: Uuid,
-    pub name: String,
-    pub activity_type: String,
-    pub started_local: Option<String>,
-    pub distance_m: Option<f64>,
-    pub duration_s: Option<f64>,
-    pub summary: Value,
-    pub vo2_max: Option<f64>,
 }
 
 /// The matching activities, oldest first.

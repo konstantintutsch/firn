@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use super::Pool;
 use crate::garmin::Activity;
+use crate::models::{Missing, NewActivity};
 use crate::schema::activities;
 
 mod export;
@@ -18,23 +19,7 @@ mod filter;
 mod search;
 
 pub use export::*;
-pub use filter::*;
 pub use search::*;
-
-#[derive(Insertable)]
-#[diesel(table_name = activities)]
-struct NewActivity<'a> {
-    /// `None` gives the activity a new random ID, unless it is saved already.
-    id: Option<Uuid>,
-    garmin_id: i64,
-    user_id: i64,
-    name: &'a str,
-    activity_type: &'a str,
-    started_at: DateTime<Utc>,
-    distance_m: Option<f64>,
-    duration_s: Option<f64>,
-    summary: &'a Value,
-}
 
 /// Inserts or updates activity metadata. Never touches a run's saved track, and
 /// never changes or moves an activity that another account saved already.
@@ -90,14 +75,6 @@ pub async fn upsert_activities_with_ids(
     .execute(&mut pool.get().await?)
     .await?;
     Ok(())
-}
-
-/// What a sync still has to download for an activity.
-pub struct Missing {
-    pub track: bool,
-    pub details: bool,
-    pub workouts: bool,
-    pub images: bool,
 }
 
 /// `None` if the activity belongs to another account.

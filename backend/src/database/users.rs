@@ -4,16 +4,8 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use serde_json::Value;
 
 use super::Pool;
+use crate::models::User;
 use crate::schema::{activities, users};
-
-#[derive(Debug, Clone, Queryable, Selectable)]
-#[diesel(table_name = users)]
-pub struct User {
-    pub id: i64,
-    pub email: Option<String>,
-    pub name: Option<String>,
-    pub garmin_api_key: Option<Vec<u8>>,
-}
 
 /// Finds or creates the account of an OpenID Connect identity. The first account
 /// claims the activities that were saved before accounts existed.

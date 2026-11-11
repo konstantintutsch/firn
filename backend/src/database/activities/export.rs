@@ -7,17 +7,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::database::Pool;
+use crate::models::ActivityExport;
 use crate::schema::{activities, activity_images};
-
-/// Everything about activities that an export holds, apart from files.
-pub struct ActivityExport {
-    pub id: Uuid,
-    pub summary: Value,
-    pub details: Option<Value>,
-    pub workouts: Option<Value>,
-    /// Image IDs with their media types, in Garmin's order.
-    pub images: Vec<(String, String)>,
-}
 
 pub async fn activity_exports(
     pool: &Pool,

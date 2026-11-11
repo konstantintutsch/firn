@@ -1,22 +1,11 @@
 use axum::Json;
 use axum::extract::{Query, State};
-use serde::Serialize;
-use utoipa::ToSchema;
 
-use super::heatmap::to_degree_bounds;
 use super::{ApiError, AppState, ErrorBody, FilterQuery};
 use crate::auth::CurrentUser;
 use crate::database;
-use crate::heatmap::Viewport;
-
-#[derive(Serialize, ToSchema)]
-pub(super) struct Stats {
-    activities: i64,
-    distance_m: f64,
-    /// West, south, east and north edges around all matching tracks, in degrees.
-    #[schema(value_type = Option<Vec<f64>>)]
-    bounds: Option<[f64; 4]>,
-}
+use crate::heatmap::{Viewport, to_degree_bounds};
+use crate::models::Stats;
 
 /// Totals across the matching activities with GPS.
 #[utoipa::path(

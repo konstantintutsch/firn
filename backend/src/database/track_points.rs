@@ -5,7 +5,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::Pool;
-use crate::heatmap::{self, Track, Viewport};
+use crate::heatmap::{self, Viewport};
+use crate::models::ActivityTrack;
 use crate::schema::{activities, track_points};
 use crate::track::Point;
 
@@ -83,11 +84,4 @@ pub async fn load_tracks(pool: &Pool, user_id: i64) -> Result<Vec<ActivityTrack>
         activity.bounds = heatmap::bounds(&activity.track).expect("a track has a point");
     }
     Ok(tracks)
-}
-
-pub struct ActivityTrack {
-    pub id: Uuid,
-    pub track: Track,
-    /// Around the whole track, so that the heatmap can skip tracks outside the viewport.
-    pub bounds: Viewport,
 }

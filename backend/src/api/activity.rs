@@ -1,113 +1,16 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
-use serde::Serialize;
 use serde_json::Value;
-use utoipa::ToSchema;
 use uuid::Uuid;
 
-use super::activities::ActivityItem;
-use super::heatmap::COORDINATE_SCALE;
 use super::{ApiError, AppState, ErrorBody, require_header};
 use crate::auth::CurrentUser;
 use crate::database;
 use crate::garmin::{GarminClient, GarminError};
+use crate::models::{ActivityDetail, ActivityItem, Samples};
 use crate::sync::{self};
-use crate::track::{self, Sample};
-
-/// Enough to scrub along any activity, and few enough to keep the answer small.
-const MAX_SAMPLES: usize = 3000;
-
-/// What the device recorded along an activity, as columns of the same length.
-/// A column is left out if the device did not record it, and a value is `null`
-/// where it is missing.
-#[derive(Serialize, ToSchema)]
-pub(super) struct Samples {
-    /// Seconds since the first sample, including pauses.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    time_s: Option<Vec<Option<f64>>>,
-    /// Longitude and latitude pairs.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Option<Vec<Option<Vec<f64>>>>)]
-    position: Option<Vec<Option<[f64; 2]>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    distance_m: Option<Vec<Option<f64>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    elevation_m: Option<Vec<Option<f64>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    heart_rate: Option<Vec<Option<f64>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    speed_m_s: Option<Vec<Option<f64>>>,
-    /// Revolutions, or strides of one foot, per minute.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cadence: Option<Vec<Option<f64>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    power_w: Option<Vec<Option<f64>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    temperature_c: Option<Vec<Option<f64>>>,
-}
-
-impl Samples {
-    /// Keeps every nth sample, so that at most `MAX_SAMPLES` remain.
-    fn from_samples(samples: &[Sample]) -> Self {
-        let step = samples.len().div_ceil(MAX_SAMPLES).max(1);
-        let kept: Vec<&Sample> = samples.iter().step_by(step).collect();
-        let start = samples.iter().find_map(|sample| sample.timestamp);
-        let column = |value: fn(&Sample) -> Option<f64>| {
-            let values: Vec<Option<f64>> = kept
-                .iter()
-                .map(|sample| value(sample).map(|value| (value * 100.0).round() / 100.0))
-                .collect();
-            values.iter().any(Option::is_some).then_some(values)
-        };
-        let positions: Vec<Option<[f64; 2]>> = kept
-            .iter()
-            .map(|sample| {
-                sample.position.map(|point| {
-                    [point.lon, point.lat]
-                        .map(|degrees| (degrees * COORDINATE_SCALE).round() / COORDINATE_SCALE)
-                })
-            })
-            .collect();
-        Samples {
-            time_s: start.map(|start| {
-                kept.iter()
-                    .map(|sample| sample.timestamp.map(|time| time - start))
-                    .collect()
-            }),
-            position: positions.iter().any(Option::is_some).then_some(positions),
-            distance_m: column(|sample| sample.distance_m),
-            elevation_m: column(|sample| sample.elevation_m),
-            heart_rate: column(|sample| sample.heart_rate),
-            speed_m_s: column(|sample| sample.speed_m_s),
-            cadence: column(|sample| sample.cadence),
-            power_w: column(|sample| sample.power_w),
-            temperature_c: column(|sample| sample.temperature_c),
-        }
-    }
-}
-
-#[derive(Serialize, ToSchema)]
-pub(super) struct ActivityDetail {
-    activity: ActivityItem,
-    /// The activity exactly as Garmin listed it, with all its metrics.
-    #[schema(value_type = Object)]
-    summary: serde_json::Value,
-    samples: Samples,
-    /// The URLs of the photos added to the activity on Garmin Connect, in Garmin's order.
-    images: Vec<String>,
-    /// The lowest heart rate of zones 1 to 5 and the maximum, from the zones
-    /// that Garmin has for this sport, or else its default ones.
-    heart_rate_zones: Option<Vec<f64>>,
-    /// `fit`, `gpx` or `tcx`: the kind of file the device recorded, or `None` without one.
-    original_format: Option<String>,
-    /// The official result, if it was a race and one was entered.
-    result: Option<database::RaceResult>,
-    /// The account's activity that started just before this one.
-    previous_id: Option<Uuid>,
-    /// The account's activity that started just after this one.
-    next_id: Option<Uuid>,
-}
+use crate::track::{self};
 
 /// Garmin lists zones per sport, like RUNNING or CYCLING, and DEFAULT for the rest.
 fn heart_rate_zones(document: &Value, activity_type: &str) -> Option<Vec<f64>> {
